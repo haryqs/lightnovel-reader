@@ -24,6 +24,8 @@ export const tauriBridge: ReaderBridge = {
     invoke<CalibreBook[]>('list_calibre_books', { library }),
   importLibraryBook: (path) =>
     invoke<ImportOutcome>('library_import', { path }),
+  importLibraryBookFromBytes: (data, fileName) =>
+    invoke<ImportOutcome>('library_import_bytes', { data, fileName }),
   listLibraryBooks: () => invoke<LibraryBook[]>('library_list'),
   searchLibraryBooks: (query) =>
     invoke<LibraryBook[]>('library_search', { query }),

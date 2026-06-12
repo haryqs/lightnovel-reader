@@ -3,6 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="stylesheet" href="/src/styles.css" />
+    <link rel="icon" href="data:," />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>阅读器</title>
     <script type="module" src="/src/main.ts" defer></script>
@@ -92,8 +93,10 @@
           </div>
           <div class="library-path">
             <input id="library-path-input" type="text" spellcheck="false" placeholder="Calibre 书库路径（导入来源）" />
+            <button id="btn-library-import-epub" class="btn">导入 EPUB</button>
             <button id="btn-library-import-calibre" class="btn">导入 Calibre</button>
             <button id="btn-library-refresh" class="btn">刷新书架</button>
+            <input id="library-import-input" type="file" accept=".epub" multiple hidden />
           </div>
           <div class="library-search">
             <input id="library-search-input" type="search" placeholder="搜索书名或作者" spellcheck="false" />

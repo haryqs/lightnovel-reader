@@ -11,6 +11,14 @@ use crate::html_sanitizer;
 pub struct EpubMetadata {
     pub title: String,
     pub author: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub series: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub series_index: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -62,11 +70,10 @@ pub fn parse_book_info(data: &[u8]) -> Result<BookInfo, String> {
     parse_book_info_from_archive(&mut archive)
 }
 
-fn find_opf_path<R: std::io::Read + std::io::Seek>(archive: &mut zip::ZipArchive<R>) -> Result<String, String> {
-    let container = read_zip_entry(
-        archive,
-        "META-INF/container.xml",
-    )?;
+fn find_opf_path<R: std::io::Read + std::io::Seek>(
+    archive: &mut zip::ZipArchive<R>,
+) -> Result<String, String> {
+    let container = read_zip_entry(archive, "META-INF/container.xml")?;
     parse_container(&container)
 }
 
@@ -84,9 +91,7 @@ fn parse_container(xml: &str) -> Result<String, String> {
                 if e.name().as_ref() == b"rootfile" {
                     for attr in e.attributes().flatten() {
                         if attr.key.as_ref() == b"full-path" {
-                            full_path = Some(
-                                String::from_utf8_lossy(&attr.value).to_string(),
-                            );
+                            full_path = Some(String::from_utf8_lossy(&attr.value).to_string());
                         }
                     }
                 }
@@ -95,9 +100,7 @@ fn parse_container(xml: &str) -> Result<String, String> {
                 if e.name().as_ref() == b"rootfile" {
                     for attr in e.attributes().flatten() {
                         if attr.key.as_ref() == b"full-path" {
-                            full_path = Some(
-                                String::from_utf8_lossy(&attr.value).to_string(),
-                            );
+                            full_path = Some(String::from_utf8_lossy(&attr.value).to_string());
                         }
                     }
                 }
@@ -134,6 +137,7 @@ pub struct ManifestItem {
     pub id: String,
     pub href: String,
     pub media_type: String,
+    pub properties: String,
 }
 
 fn resolve_path(base_dir: &str, href: &str) -> String {
@@ -156,7 +160,9 @@ fn resolve_path(base_dir: &str, href: &str) -> String {
     parts.join("/")
 }
 
-fn parse_opf(xml: &str) -> Result<(EpubMetadata, HashMap<String, ManifestItem>, Vec<SpineItem>), String> {
+fn parse_opf(
+    xml: &str,
+) -> Result<(EpubMetadata, HashMap<String, ManifestItem>, Vec<SpineItem>), String> {
     let mut reader = Reader::from_str(xml);
     reader.config_mut().trim_text(true);
 
@@ -164,6 +170,10 @@ fn parse_opf(xml: &str) -> Result<(EpubMetadata, HashMap<String, ManifestItem>, 
     let mut metadata = EpubMetadata {
         title: String::new(),
         author: None,
+        language: None,
+        description: None,
+        series: None,
+        series_index: None,
     };
     let mut manifest: HashMap<String, ManifestItem> = HashMap::new();
     let mut spine: Vec<SpineItem> = Vec::new();
@@ -173,6 +183,8 @@ fn parse_opf(xml: &str) -> Result<(EpubMetadata, HashMap<String, ManifestItem>, 
 
     // 收集 manifest id → (href, media_type) 映射
     let mut manifest_hrefs: HashMap<String, String> = HashMap::new();
+    let mut current_meta_key: Option<String> = None;
+    let mut current_meta_text = String::new();
 
     loop {
         match reader.read_event_into(&mut buf) {
@@ -184,17 +196,54 @@ fn parse_opf(xml: &str) -> Result<(EpubMetadata, HashMap<String, ManifestItem>, 
                         let mut id = String::new();
                         let mut href = String::new();
                         let mut media_type = String::new();
+                        let mut properties = String::new();
                         for attr in e.attributes().flatten() {
                             match attr.key.as_ref() {
                                 b"id" => id = String::from_utf8_lossy(&attr.value).to_string(),
                                 b"href" => href = String::from_utf8_lossy(&attr.value).to_string(),
-                                b"media-type" => media_type = String::from_utf8_lossy(&attr.value).to_string(),
+                                b"media-type" => {
+                                    media_type = String::from_utf8_lossy(&attr.value).to_string()
+                                }
+                                b"properties" => {
+                                    properties = String::from_utf8_lossy(&attr.value).to_string()
+                                }
                                 _ => {}
                             }
                         }
                         if !id.is_empty() && !href.is_empty() {
                             manifest_hrefs.insert(id.clone(), href.clone());
-                            manifest.insert(id.clone(), ManifestItem { id, href, media_type });
+                            manifest.insert(
+                                id.clone(),
+                                ManifestItem {
+                                    id,
+                                    href,
+                                    media_type,
+                                    properties,
+                                },
+                            );
+                        }
+                    }
+                    "meta" | "opf:meta" => {
+                        let mut name = String::new();
+                        let mut property = String::new();
+                        let mut content = String::new();
+                        for attr in e.attributes().flatten() {
+                            match attr.key.as_ref() {
+                                b"name" => name = String::from_utf8_lossy(&attr.value).to_string(),
+                                b"property" => {
+                                    property = String::from_utf8_lossy(&attr.value).to_string()
+                                }
+                                b"content" => {
+                                    content = String::from_utf8_lossy(&attr.value).to_string()
+                                }
+                                _ => {}
+                            }
+                        }
+                        let key = if name.is_empty() { property } else { name };
+                        apply_metadata_meta(&mut metadata, &key, &content);
+                        if !key.is_empty() {
+                            current_meta_key = Some(key);
+                            current_meta_text.clear();
                         }
                     }
                     "itemref" | "opf:itemref" => {
@@ -205,7 +254,10 @@ fn parse_opf(xml: &str) -> Result<(EpubMetadata, HashMap<String, ManifestItem>, 
                             }
                         }
                         if let Some(href) = manifest_hrefs.get(&idref) {
-                            spine.push(SpineItem { id: idref, href: href.clone() });
+                            spine.push(SpineItem {
+                                id: idref,
+                                href: href.clone(),
+                            });
                         }
                     }
                     "reference" => {
@@ -213,8 +265,12 @@ fn parse_opf(xml: &str) -> Result<(EpubMetadata, HashMap<String, ManifestItem>, 
                         let mut ref_href = String::new();
                         for attr in e.attributes().flatten() {
                             match attr.key.as_ref() {
-                                b"type" => ref_type = String::from_utf8_lossy(&attr.value).to_string(),
-                                b"href" => ref_href = String::from_utf8_lossy(&attr.value).to_string(),
+                                b"type" => {
+                                    ref_type = String::from_utf8_lossy(&attr.value).to_string()
+                                }
+                                b"href" => {
+                                    ref_href = String::from_utf8_lossy(&attr.value).to_string()
+                                }
                                 _ => {}
                             }
                         }
@@ -232,18 +288,51 @@ fn parse_opf(xml: &str) -> Result<(EpubMetadata, HashMap<String, ManifestItem>, 
                         let mut id = String::new();
                         let mut href = String::new();
                         let mut media_type = String::new();
+                        let mut properties = String::new();
                         for attr in e.attributes().flatten() {
                             match attr.key.as_ref() {
                                 b"id" => id = String::from_utf8_lossy(&attr.value).to_string(),
                                 b"href" => href = String::from_utf8_lossy(&attr.value).to_string(),
-                                b"media-type" => media_type = String::from_utf8_lossy(&attr.value).to_string(),
+                                b"media-type" => {
+                                    media_type = String::from_utf8_lossy(&attr.value).to_string()
+                                }
+                                b"properties" => {
+                                    properties = String::from_utf8_lossy(&attr.value).to_string()
+                                }
                                 _ => {}
                             }
                         }
                         if !id.is_empty() && !href.is_empty() {
                             manifest_hrefs.insert(id.clone(), href.clone());
-                            manifest.insert(id.clone(), ManifestItem { id, href, media_type });
+                            manifest.insert(
+                                id.clone(),
+                                ManifestItem {
+                                    id,
+                                    href,
+                                    media_type,
+                                    properties,
+                                },
+                            );
                         }
+                    }
+                    "meta" | "opf:meta" => {
+                        let mut name = String::new();
+                        let mut property = String::new();
+                        let mut content = String::new();
+                        for attr in e.attributes().flatten() {
+                            match attr.key.as_ref() {
+                                b"name" => name = String::from_utf8_lossy(&attr.value).to_string(),
+                                b"property" => {
+                                    property = String::from_utf8_lossy(&attr.value).to_string()
+                                }
+                                b"content" => {
+                                    content = String::from_utf8_lossy(&attr.value).to_string()
+                                }
+                                _ => {}
+                            }
+                        }
+                        let key = if name.is_empty() { property } else { name };
+                        apply_metadata_meta(&mut metadata, &key, &content);
                     }
                     "itemref" | "opf:itemref" => {
                         let mut idref = String::new();
@@ -253,7 +342,10 @@ fn parse_opf(xml: &str) -> Result<(EpubMetadata, HashMap<String, ManifestItem>, 
                             }
                         }
                         if let Some(href) = manifest_hrefs.get(&idref) {
-                            spine.push(SpineItem { id: idref, href: href.clone() });
+                            spine.push(SpineItem {
+                                id: idref,
+                                href: href.clone(),
+                            });
                         }
                     }
                     "reference" => {
@@ -261,8 +353,12 @@ fn parse_opf(xml: &str) -> Result<(EpubMetadata, HashMap<String, ManifestItem>, 
                         let mut ref_href = String::new();
                         for attr in e.attributes().flatten() {
                             match attr.key.as_ref() {
-                                b"type" => ref_type = String::from_utf8_lossy(&attr.value).to_string(),
-                                b"href" => ref_href = String::from_utf8_lossy(&attr.value).to_string(),
+                                b"type" => {
+                                    ref_type = String::from_utf8_lossy(&attr.value).to_string()
+                                }
+                                b"href" => {
+                                    ref_href = String::from_utf8_lossy(&attr.value).to_string()
+                                }
                                 _ => {}
                             }
                         }
@@ -275,10 +371,32 @@ fn parse_opf(xml: &str) -> Result<(EpubMetadata, HashMap<String, ManifestItem>, 
             }
             Ok(Event::Text(ref e)) => {
                 let t = e.unescape().unwrap_or_default().to_string();
+                if current_meta_key.is_some() {
+                    current_meta_text.push_str(&t);
+                    buf.clear();
+                    continue;
+                }
                 match current_tag.as_str() {
-                    "title" | "dc:title" => { metadata.title = format!("{}{}", metadata.title, t); }
+                    "title" | "dc:title" => {
+                        metadata.title = format!("{}{}", metadata.title, t);
+                    }
                     "creator" | "dc:creator" => {
-                        metadata.author = Some(format!("{}{}", metadata.author.as_deref().unwrap_or(""), t));
+                        metadata.author =
+                            Some(format!("{}{}", metadata.author.as_deref().unwrap_or(""), t));
+                    }
+                    "language" | "dc:language" => {
+                        metadata.language = Some(format!(
+                            "{}{}",
+                            metadata.language.as_deref().unwrap_or(""),
+                            t
+                        ));
+                    }
+                    "description" | "dc:description" => {
+                        metadata.description = Some(format!(
+                            "{}{}",
+                            metadata.description.as_deref().unwrap_or(""),
+                            t
+                        ));
                     }
                     _ => {}
                 }
@@ -286,7 +404,22 @@ fn parse_opf(xml: &str) -> Result<(EpubMetadata, HashMap<String, ManifestItem>, 
             Ok(Event::End(ref e)) => {
                 let tag_bytes = e.name().0.to_vec();
                 let tag = String::from_utf8_lossy(&tag_bytes);
-                if tag == "title" || tag == "dc:title" || tag == "creator" || tag == "dc:creator" {
+                if (tag == "meta" || tag == "opf:meta") && current_meta_key.is_some() {
+                    if let Some(key) = current_meta_key.take() {
+                        apply_metadata_meta(&mut metadata, &key, &current_meta_text);
+                    }
+                    current_meta_text.clear();
+                    current_tag.clear();
+                }
+                if tag == "title"
+                    || tag == "dc:title"
+                    || tag == "creator"
+                    || tag == "dc:creator"
+                    || tag == "language"
+                    || tag == "dc:language"
+                    || tag == "description"
+                    || tag == "dc:description"
+                {
                     current_tag.clear();
                 }
             }
@@ -299,16 +432,69 @@ fn parse_opf(xml: &str) -> Result<(EpubMetadata, HashMap<String, ManifestItem>, 
 
     // guide 封面：若不在 spine 中则插入首部
     if let Some(ref href) = guide_cover {
-        let already_in_spine = spine.iter().any(|s| s.href == *href || s.href.ends_with(href));
+        let already_in_spine = spine
+            .iter()
+            .any(|s| s.href == *href || s.href.ends_with(href));
         if !already_in_spine {
-            spine.insert(0, SpineItem {
-                id: "cover".into(),
-                href: href.clone(),
-            });
+            spine.insert(
+                0,
+                SpineItem {
+                    id: "cover".into(),
+                    href: href.clone(),
+                },
+            );
         }
     }
 
     Ok((metadata, manifest, spine))
+}
+
+fn apply_metadata_meta(metadata: &mut EpubMetadata, key: &str, value: &str) {
+    let key = key.trim().to_ascii_lowercase();
+    let value = value.trim();
+    if key.is_empty() || value.is_empty() {
+        return;
+    }
+
+    match key.as_str() {
+        "calibre:series" | "belongs-to-collection" | "schema:partofseries" | "series" => {
+            set_metadata_text(&mut metadata.series, value);
+        }
+        "calibre:series_index"
+        | "group-position"
+        | "schema:position"
+        | "series-index"
+        | "series_index" => {
+            if let Some(index) = parse_series_index(value) {
+                metadata.series_index = Some(index);
+            }
+        }
+        "dc:language" | "language" => {
+            set_metadata_text(&mut metadata.language, value);
+        }
+        "dc:description" | "description" => {
+            set_metadata_text(&mut metadata.description, value);
+        }
+        _ => {}
+    }
+}
+
+fn parse_series_index(value: &str) -> Option<f64> {
+    value.trim().parse::<f64>().ok()
+}
+
+fn set_metadata_text(target: &mut Option<String>, value: &str) {
+    let value = value.trim();
+    if value.is_empty() {
+        return;
+    }
+    if target
+        .as_deref()
+        .map(|current| current.trim().is_empty())
+        .unwrap_or(true)
+    {
+        *target = Some(value.to_string());
+    }
 }
 
 fn parse_toc<R: std::io::Read + std::io::Seek>(
@@ -434,8 +620,7 @@ fn find_ncx_href(opf_xml: &str, manifest: &HashMap<String, ManifestItem>) -> Opt
                 if e.name().as_ref() == b"spine" {
                     for attr in e.attributes().flatten() {
                         if attr.key.as_ref() == b"toc" {
-                            let ncx_id =
-                                String::from_utf8_lossy(&attr.value).to_string();
+                            let ncx_id = String::from_utf8_lossy(&attr.value).to_string();
                             if let Some(item) = manifest.get(&ncx_id) {
                                 return Some(item.href.clone());
                             }
@@ -495,9 +680,8 @@ fn parse_ncx(xml: &str, opf_dir: &str) -> Result<Vec<TocItem>, String> {
                     "content" => {
                         for attr in e.attributes().flatten() {
                             if attr.key.as_ref() == b"src" {
-                                pending_href = Some(
-                                    String::from_utf8_lossy(&attr.value).to_string(),
-                                );
+                                pending_href =
+                                    Some(String::from_utf8_lossy(&attr.value).to_string());
                             }
                         }
                     }
@@ -518,9 +702,7 @@ fn parse_ncx(xml: &str, opf_dir: &str) -> Result<Vec<TocItem>, String> {
                         in_label = false;
                     }
                     "content" => {
-                        if let (Some(href), Some(item)) =
-                            (pending_href.take(), stack.last_mut())
-                        {
+                        if let (Some(href), Some(item)) = (pending_href.take(), stack.last_mut()) {
                             item.href = resolve_path(opf_dir, &href);
                         }
                     }
@@ -529,11 +711,7 @@ fn parse_ncx(xml: &str, opf_dir: &str) -> Result<Vec<TocItem>, String> {
                             let label = label_buf.trim().to_string();
                             let filled = TocItem {
                                 label: if label.is_empty() {
-                                    item.href
-                                        .rsplit('/')
-                                        .next()
-                                        .unwrap_or("")
-                                        .to_string()
+                                    item.href.rsplit('/').next().unwrap_or("").to_string()
                                 } else {
                                     label
                                 },
@@ -580,9 +758,7 @@ fn parse_nav_xhtml(xml: &str, opf_dir: &str) -> Result<Vec<TocItem>, String> {
                 // 检测 toc nav 标签
                 if tag == "nav" {
                     for attr in e.attributes().flatten() {
-                        if attr.key.as_ref() == b"epub:type"
-                            && attr.value.as_ref() == b"toc"
-                        {
+                        if attr.key.as_ref() == b"epub:type" && attr.value.as_ref() == b"toc" {
                             in_toc_nav = true;
                         }
                     }
@@ -590,7 +766,7 @@ fn parse_nav_xhtml(xml: &str, opf_dir: &str) -> Result<Vec<TocItem>, String> {
 
                 if in_toc_nav {
                     match tag.as_str() {
-                        "ol" => {},
+                        "ol" => {}
                         "li" => {
                             stack.push(TocItem {
                                 label: String::new(),
@@ -601,9 +777,8 @@ fn parse_nav_xhtml(xml: &str, opf_dir: &str) -> Result<Vec<TocItem>, String> {
                         "a" => {
                             for attr in e.attributes().flatten() {
                                 if attr.key.as_ref() == b"href" {
-                                    pending_href = Some(
-                                        String::from_utf8_lossy(&attr.value).to_string(),
-                                    );
+                                    pending_href =
+                                        Some(String::from_utf8_lossy(&attr.value).to_string());
                                 }
                             }
                         }
@@ -614,8 +789,7 @@ fn parse_nav_xhtml(xml: &str, opf_dir: &str) -> Result<Vec<TocItem>, String> {
             Ok(Event::Text(ref e)) => {
                 if in_toc_nav && pending_href.is_some() {
                     if let Some(item) = stack.last_mut() {
-                        item.label
-                            .push_str(&e.unescape().unwrap_or_default());
+                        item.label.push_str(&e.unescape().unwrap_or_default());
                     }
                 }
             }
@@ -628,7 +802,7 @@ fn parse_nav_xhtml(xml: &str, opf_dir: &str) -> Result<Vec<TocItem>, String> {
 
                 if in_toc_nav {
                     match tag.as_str() {
-                        "ol" => {},
+                        "ol" => {}
                         "a" => {
                             if let (Some(href), Some(item)) =
                                 (pending_href.take(), stack.last_mut())
@@ -664,7 +838,10 @@ fn read_zip_entry<R: std::io::Read + std::io::Seek>(
     name: &str,
 ) -> Result<String, String> {
     let name_normalized = name.to_lowercase().replace('\\', "/");
-    let name_basename = name_normalized.rsplit('/').next().unwrap_or(&name_normalized);
+    let name_basename = name_normalized
+        .rsplit('/')
+        .next()
+        .unwrap_or(&name_normalized);
 
     // 先精确查找
     let mut found_name: Option<String> = None;
@@ -690,8 +867,8 @@ fn read_zip_entry<R: std::io::Read + std::io::Seek>(
         }
     }
 
-    let entry_name = found_name
-        .ok_or_else(|| format!("ZIP 中未找到: {} ({} 条目)", name, archive.len()))?;
+    let entry_name =
+        found_name.ok_or_else(|| format!("ZIP 中未找到: {} ({} 条目)", name, archive.len()))?;
     let mut entry = archive
         .by_name(&entry_name)
         .map_err(|e| format!("读取 ZIP 条目失败 '{}': {}", entry_name, e))?;
@@ -708,7 +885,11 @@ pub fn read_image_from_zip(data: &[u8], path: &str) -> Option<(String, Vec<u8>)>
     let want = path.replace('\\', "/");
     let want = want.trim_start_matches("./").replace("../", "");
     let want_lower = want.to_lowercase();
-    let want_base = want_lower.rsplit('/').next().unwrap_or(&want_lower).to_string();
+    let want_base = want_lower
+        .rsplit('/')
+        .next()
+        .unwrap_or(&want_lower)
+        .to_string();
 
     let mut found: Option<String> = None;
     for i in 0..archive.len() {
@@ -756,16 +937,201 @@ fn mime_from_ext(name: &str) -> String {
     m.to_string()
 }
 
+#[derive(Debug, Clone)]
+pub struct CoverImage {
+    pub mime: String,
+    pub extension: String,
+    pub bytes: Vec<u8>,
+}
+
+/// 提取 OPF 声明的封面图。优先 EPUB3 `properties="cover-image"`，
+/// 兼容 EPUB2 `<meta name="cover" content="manifest-id">`。
+pub fn extract_cover_image(data: &[u8]) -> Result<Option<CoverImage>, String> {
+    let cursor = Cursor::new(data);
+    let mut archive = zip::ZipArchive::new(cursor).map_err(|e| format!("无法打开 ZIP: {}", e))?;
+    let opf_path = find_opf_path(&mut archive)?;
+    let opf_dir = Path::new(&opf_path)
+        .parent()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let opf_content = read_zip_entry(&mut archive, &opf_path)?;
+    let cover_href = find_cover_href(&opf_content)?;
+    let Some(href) = cover_href else {
+        return Ok(None);
+    };
+    let resolved = resolve_path(&opf_dir, &href);
+    let Some((mime, bytes)) = read_image_from_archive(&mut archive, &resolved) else {
+        return Ok(None);
+    };
+    let extension = extension_from_mime_or_path(&mime, &resolved);
+    Ok(Some(CoverImage {
+        mime,
+        extension,
+        bytes,
+    }))
+}
+
+fn find_cover_href(opf_xml: &str) -> Result<Option<String>, String> {
+    let mut reader = Reader::from_str(opf_xml);
+    reader.config_mut().trim_text(true);
+
+    let mut buf = Vec::new();
+    let mut cover_id: Option<String> = None;
+    let mut items: Vec<ManifestItem> = Vec::new();
+
+    loop {
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Start(ref e)) | Ok(Event::Empty(ref e)) => {
+                let tag = String::from_utf8_lossy(e.name().as_ref()).to_string();
+                match tag.as_str() {
+                    "meta" | "opf:meta" => {
+                        let mut name = String::new();
+                        let mut content = String::new();
+                        for attr in e.attributes().flatten() {
+                            match attr.key.as_ref() {
+                                b"name" => name = String::from_utf8_lossy(&attr.value).to_string(),
+                                b"content" => {
+                                    content = String::from_utf8_lossy(&attr.value).to_string()
+                                }
+                                _ => {}
+                            }
+                        }
+                        if name.eq_ignore_ascii_case("cover") && !content.is_empty() {
+                            cover_id = Some(content);
+                        }
+                    }
+                    "item" | "opf:item" => {
+                        let mut id = String::new();
+                        let mut href = String::new();
+                        let mut media_type = String::new();
+                        let mut properties = String::new();
+                        for attr in e.attributes().flatten() {
+                            match attr.key.as_ref() {
+                                b"id" => id = String::from_utf8_lossy(&attr.value).to_string(),
+                                b"href" => href = String::from_utf8_lossy(&attr.value).to_string(),
+                                b"media-type" => {
+                                    media_type = String::from_utf8_lossy(&attr.value).to_string()
+                                }
+                                b"properties" => {
+                                    properties = String::from_utf8_lossy(&attr.value).to_string()
+                                }
+                                _ => {}
+                            }
+                        }
+                        if !id.is_empty() && !href.is_empty() {
+                            items.push(ManifestItem {
+                                id,
+                                href,
+                                media_type,
+                                properties,
+                            });
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            Ok(Event::Eof) => break,
+            Err(e) => return Err(format!("OPF 封面解析失败: {}", e)),
+            _ => {}
+        }
+        buf.clear();
+    }
+
+    if let Some(item) = items.iter().find(|item| {
+        item.media_type.starts_with("image/")
+            && item
+                .properties
+                .split_whitespace()
+                .any(|p| p == "cover-image")
+    }) {
+        return Ok(Some(item.href.clone()));
+    }
+
+    if let Some(id) = cover_id {
+        if let Some(item) = items
+            .iter()
+            .find(|item| item.id == id && item.media_type.starts_with("image/"))
+        {
+            return Ok(Some(item.href.clone()));
+        }
+    }
+
+    if let Some(item) = items.iter().find(|item| {
+        item.media_type.starts_with("image/")
+            && (item.id.to_ascii_lowercase().contains("cover")
+                || item.href.to_ascii_lowercase().contains("cover"))
+    }) {
+        return Ok(Some(item.href.clone()));
+    }
+
+    Ok(None)
+}
+
+fn read_image_from_archive<R: std::io::Read + std::io::Seek>(
+    archive: &mut zip::ZipArchive<R>,
+    path: &str,
+) -> Option<(String, Vec<u8>)> {
+    let name_normalized = path.to_lowercase().replace('\\', "/");
+    let name_basename = name_normalized
+        .rsplit('/')
+        .next()
+        .unwrap_or(&name_normalized);
+
+    let mut found_name: Option<String> = None;
+    for i in 0..archive.len() {
+        let entry = archive.by_index(i).ok()?;
+        let entry_lower = entry.name().to_lowercase().replace('\\', "/");
+        if entry_lower == name_normalized || entry_lower.ends_with(&format!("/{}", name_normalized))
+        {
+            found_name = Some(entry.name().to_string());
+            break;
+        }
+    }
+    if found_name.is_none() {
+        for i in 0..archive.len() {
+            let entry = archive.by_index(i).ok()?;
+            let entry_lower = entry.name().to_lowercase().replace('\\', "/");
+            let entry_basename = entry_lower.rsplit('/').next().unwrap_or(&entry_lower);
+            if entry_basename == name_basename {
+                found_name = Some(entry.name().to_string());
+                break;
+            }
+        }
+    }
+
+    let entry_name = found_name?;
+    let mime = mime_from_ext(&entry_name);
+    let mut entry = archive.by_name(&entry_name).ok()?;
+    let mut buf = Vec::new();
+    std::io::Read::read_to_end(&mut entry, &mut buf).ok()?;
+    Some((mime, buf))
+}
+
+fn extension_from_mime_or_path(mime: &str, path: &str) -> String {
+    match mime {
+        "image/png" => "png".to_string(),
+        "image/jpeg" => "jpg".to_string(),
+        "image/gif" => "gif".to_string(),
+        "image/svg+xml" => "svg".to_string(),
+        "image/webp" => "webp".to_string(),
+        _ => path
+            .rsplit('.')
+            .next()
+            .filter(|ext| ext.len() <= 8 && ext.chars().all(|c| c.is_ascii_alphanumeric()))
+            .unwrap_or("bin")
+            .to_ascii_lowercase(),
+    }
+}
+
 fn read_entry_bytes(entry: &mut zip::read::ZipFile) -> Result<Vec<u8>, String> {
     let mut buf = Vec::new();
-    std::io::Read::read_to_end(entry, &mut buf)
-        .map_err(|e| format!("读取条目失败: {}", e))?;
+    std::io::Read::read_to_end(entry, &mut buf).map_err(|e| format!("读取条目失败: {}", e))?;
     Ok(buf)
 }
 
 fn decode_text(raw: &[u8]) -> Result<String, String> {
-    let (bom_encoding, bom_len) = encoding_rs::Encoding::for_bom(raw)
-        .unwrap_or((encoding_rs::UTF_8, 0));
+    let (bom_encoding, bom_len) =
+        encoding_rs::Encoding::for_bom(raw).unwrap_or((encoding_rs::UTF_8, 0));
 
     let raw_no_bom = &raw[bom_len..];
 
@@ -856,8 +1222,7 @@ pub fn parse_single_chapter(
         return Err("空章节 href".to_string());
     }
     let cursor = Cursor::new(data);
-    let mut archive =
-        zip::ZipArchive::new(cursor).map_err(|e| format!("无法打开 ZIP: {}", e))?;
+    let mut archive = zip::ZipArchive::new(cursor).map_err(|e| format!("无法打开 ZIP: {}", e))?;
 
     let opf_path = find_opf_path(&mut archive)?;
     let opf_dir = Path::new(&opf_path)
@@ -871,9 +1236,10 @@ pub fn parse_single_chapter(
         .find(|s| s.href == href)
         .or_else(|| {
             let basename = href.rsplit('/').next().unwrap_or(href);
-            book_info.spine.iter().find(|s| {
-                s.href.rsplit('/').next().unwrap_or(&s.href) == basename
-            })
+            book_info
+                .spine
+                .iter()
+                .find(|s| s.href.rsplit('/').next().unwrap_or(&s.href) == basename)
         })
         .ok_or_else(|| format!("spine 中未找到章节: {}", href))?;
 
@@ -905,7 +1271,10 @@ mod tests {
         let toc = parse_ncx(ncx, "OEBPS").unwrap();
         assert_eq!(toc.len(), 2, "顶层应有两章");
         assert_eq!(toc[0].label, "第一章");
-        assert_eq!(toc[0].href, "OEBPS/Text/ch1.html", "href 不能为空（修复前正是空）");
+        assert_eq!(
+            toc[0].href, "OEBPS/Text/ch1.html",
+            "href 不能为空（修复前正是空）"
+        );
         assert_eq!(toc[1].subitems.len(), 1, "第二章应有一个子节点");
         assert_eq!(toc[1].subitems[0].href, "OEBPS/Text/ch2.html#s1");
     }

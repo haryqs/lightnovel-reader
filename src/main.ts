@@ -533,6 +533,7 @@ const DEFAULT_CALIBRE_LIBRARY = 'F:\\Calibre书库'
 const libraryView = $('#library-view')
 const libraryGrid = $('#library-grid')
 const libraryPathInput = $<HTMLInputElement>('#library-path-input')
+const libraryImportInput = $<HTMLInputElement>('#library-import-input')
 const librarySearchInput = $<HTMLInputElement>('#library-search-input')
 let libraryBooks: LibraryBook[] = []
 let librarySearchTimer: number | null = null
@@ -541,7 +542,13 @@ libraryPathInput.value = localStorage.getItem(LIBRARY_PATH_KEY) || DEFAULT_CALIB
 $('#btn-library')?.addEventListener('click', openLibrary)
 $('#btn-library-close')?.addEventListener('click', () => { libraryView.hidden = true })
 $('#btn-library-refresh')?.addEventListener('click', refreshLibraryBooks)
+$('#btn-library-import-epub')?.addEventListener('click', () => libraryImportInput.click())
 $('#btn-library-import-calibre')?.addEventListener('click', importCalibreLibrary)
+libraryImportInput.addEventListener('change', async () => {
+  const files = Array.from(libraryImportInput.files || [])
+  libraryImportInput.value = ''
+  await importEpubFiles(files)
+})
 libraryPathInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') importCalibreLibrary()
 })
@@ -594,7 +601,7 @@ async function importCalibreLibrary() {
     }
     let imported = 0
     let duplicate = 0
-    let failed = 0
+    const failedItems: string[] = []
     for (let i = 0; i < calibreBooks.length; i++) {
       const b = calibreBooks[i]
       libraryGrid.innerHTML = `<div style="color:var(--muted);padding:20px">导入中 ${i + 1}/${calibreBooks.length}：${b.title || b.path}</div>`
@@ -603,25 +610,100 @@ async function importCalibreLibrary() {
         if (result.duplicate) duplicate += 1
         else imported += 1
       } catch (err) {
-        failed += 1
+        failedItems.push(`${b.title || b.path}: ${formatError(err)}`)
         console.warn('导入失败', b.path, err)
       }
     }
     await refreshLibraryBooks()
-    if (failed > 0) {
-      const msg = document.createElement('div')
-      msg.style.cssText = 'grid-column:1/-1;color:#c5221f;padding:4px 0 8px;font-size:13px'
-      msg.textContent = `导入完成：新增 ${imported} 本，已存在 ${duplicate} 本，失败 ${failed} 本`
-      libraryGrid.prepend(msg)
-    } else if (imported > 0 || duplicate > 0) {
-      const msg = document.createElement('div')
-      msg.style.cssText = 'grid-column:1/-1;color:var(--muted);padding:4px 0 8px;font-size:13px'
-      msg.textContent = `导入完成：新增 ${imported} 本，已存在 ${duplicate} 本`
-      libraryGrid.prepend(msg)
-    }
+    prependLibraryImportSummary(imported, duplicate, failedItems)
   } catch (e: any) {
     libraryGrid.innerHTML = `<div style="color:#c5221f;padding:20px">导入失败：${e?.message || e}</div>`
   }
+}
+
+async function importEpubFiles(files: File[]) {
+  if (files.length === 0) return
+  libraryView.hidden = false
+  if (!isTauriRuntime()) {
+    libraryGrid.innerHTML = '<div style="color:var(--muted);padding:20px;line-height:1.7">书库导入需要 Tauri 桌面窗口。<br>请在终端运行：<code>npm run tauri dev</code></div>'
+    return
+  }
+
+  let imported = 0
+  let duplicate = 0
+  const failedItems: string[] = []
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i]
+    libraryGrid.innerHTML = `<div style="color:var(--muted);padding:20px">导入中 ${i + 1}/${files.length}：${file.name}</div>`
+    try {
+      const data = new Uint8Array(await file.arrayBuffer())
+      const result = await bridge.importLibraryBookFromBytes(data, file.name)
+      if (result.duplicate) duplicate += 1
+      else imported += 1
+    } catch (err) {
+      failedItems.push(`${file.name}: ${formatError(err)}`)
+      console.warn('导入失败', file.name, err)
+    }
+  }
+
+  await refreshLibraryBooks()
+  prependLibraryImportSummary(imported, duplicate, failedItems)
+}
+
+function formatError(err: unknown): string {
+  if (err instanceof Error) return err.message
+  if (typeof err === 'string') return err
+  return String(err)
+}
+
+function prependLibraryImportSummary(
+  imported: number,
+  duplicate: number,
+  failedItems: string[],
+) {
+  const failed = failedItems.length
+  if (imported === 0 && duplicate === 0 && failed === 0) return
+  const msg = document.createElement('div')
+  msg.className = `library-import-summary${failed > 0 ? ' error' : ''}`
+  const summary = document.createElement('div')
+  summary.textContent = failed > 0
+    ? `导入完成：新增 ${imported} 本，已存在 ${duplicate} 本，失败 ${failed} 本`
+    : `导入完成：新增 ${imported} 本，已存在 ${duplicate} 本`
+  msg.appendChild(summary)
+  if (failedItems.length > 0) {
+    const details = document.createElement('details')
+    const label = document.createElement('summary')
+    label.textContent = '查看失败条目'
+    const list = document.createElement('ul')
+    for (const item of failedItems.slice(0, 20)) {
+      const li = document.createElement('li')
+      li.textContent = item
+      list.appendChild(li)
+    }
+    if (failedItems.length > 20) {
+      const li = document.createElement('li')
+      li.textContent = `还有 ${failedItems.length - 20} 条失败未显示`
+      list.appendChild(li)
+    }
+    details.append(label, list)
+    msg.appendChild(details)
+  }
+  libraryGrid.prepend(msg)
+}
+
+function formatSeriesLabel(book: LibraryBook): string {
+  if (!book.series) return ''
+  if (book.seriesIndex === undefined || book.seriesIndex === null) return book.series
+  const index = Number.isInteger(book.seriesIndex)
+    ? String(book.seriesIndex)
+    : String(book.seriesIndex).replace(/\.0+$/, '')
+  return `${book.series} #${index}`
+}
+
+function formatLanguageLabel(language?: string): string {
+  if (!language) return ''
+  const normalized = language.trim()
+  return normalized.length <= 3 ? normalized.toUpperCase() : normalized
 }
 
 function renderLibraryBooks() {
@@ -651,12 +733,26 @@ function renderLibraryBooks() {
     }
     const t = document.createElement('div'); t.className = 'title'; t.textContent = b.title || '未命名'
     const a = document.createElement('div'); a.className = 'author'; a.textContent = b.author || '佚名'
+    const series = formatSeriesLabel(b)
+    const language = formatLanguageLabel(b.language)
+    const tags = document.createElement('div')
+    tags.className = 'book-tags'
+    for (const value of [series, language].filter(Boolean)) {
+      const tag = document.createElement('span')
+      tag.textContent = value
+      tags.appendChild(tag)
+    }
     const meta = document.createElement('div')
     meta.className = 'meta'
     const sizeMb = Math.max(0.1, b.fileSize / 1024 / 1024).toFixed(1)
     const lastRead = b.lastReadAt ? `上次阅读 ${new Date(b.lastReadAt).toLocaleDateString('zh-CN')}` : '未读'
     meta.textContent = `${sizeMb} MB · ${lastRead}`
-    card.append(cover, t, a, meta)
+    card.title = [b.title, b.author, series, language, b.description]
+      .filter(Boolean)
+      .join('\n')
+    card.append(cover, t, a)
+    if (tags.childElementCount > 0) card.appendChild(tags)
+    card.appendChild(meta)
     card.addEventListener('click', () => openLibraryBook(b))
     libraryGrid.appendChild(card)
   }

@@ -202,6 +202,22 @@ fn library_import(
 }
 
 #[tauri::command]
+fn library_import_bytes(
+    state: tauri::State<AppState>,
+    data: Vec<u8>,
+    file_name: Option<String>,
+) -> Result<library::ImportOutcome, String> {
+    let db = state.library_db.lock().map_err(|e| e.to_string())?;
+    library::import_epub_bytes(
+        &db,
+        &state.library_dir,
+        &data,
+        file_name.as_deref(),
+        now_ms(),
+    )
+}
+
+#[tauri::command]
 fn library_list(state: tauri::State<AppState>) -> Result<Vec<library::LibraryBook>, String> {
     let db = state.library_db.lock().map_err(|e| e.to_string())?;
     library::list_books(&db).map_err(|e| e.to_string())
@@ -340,6 +356,7 @@ pub fn run() {
             open_book_path,
             list_calibre_books,
             library_import,
+            library_import_bytes,
             library_list,
             library_search,
             library_open,

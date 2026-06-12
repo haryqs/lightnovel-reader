@@ -1,0 +1,83 @@
+# 项目长期记忆
+
+## 项目定位
+
+`lightnovel-reader` 是一个开源、免费、无广告、本地优先的轻小说/电子书阅读器。
+
+核心路线：
+
+```text
+本地优先阅读器
++ 自有 SQLite 书库
++ 全球书目/元数据图谱
++ 合法资源入口
++ 可控插件生态
+```
+
+不做“内置全网轻小说正文资源”的 App。
+
+## 当前阶段
+
+当前阶段优先级是 v0.3 本地书库闭环。
+
+已经具备：
+
+- Rust EPUB 解析与 HTML 清洗。
+- TypeScript 阅读引擎。
+- Tauri v2 桌面壳。
+- 阅读进度持久化。
+- 标注与 Markdown 导出。
+- 本地书库 SQLite。
+- SHA-256 对象仓库去重。
+- Calibre 作为导入来源。
+- 插件契约文档与 SDK 骨架。
+
+近期状态：
+
+- 单本/多本 EPUB 直接导入到书库已完成。
+- 封面提取与 `books.cover_path` 回填已完成。
+- `language`、`description`、`series`、`series_index` 元数据提取已完成。
+- 书架 UI 已展示封面、系列、语言，并支持批量导入失败详情。
+- 仍需 `npm.cmd run tauri dev` 做桌面实机冒烟测试。
+
+## 不可变约束
+
+- 离线优先。
+- AGPL / Copyleft。
+- 静态客户端优先，不做 SaaS。
+- 不内置盗版源。
+- 不绕过付费、登录、DRM。
+- 不把“开源免费”当作版权免责。
+- 多端终局使用系统 WebView，不自写排版引擎。
+
+## 架构纪律
+
+```text
+reading-core(Rust)
++ reader-engine(TypeScript)
++ N 个薄平台壳(WebView)
+```
+
+- 前端只 import `src/platform/`，不直接碰 Tauri API。
+- 业务逻辑进 `crates/reading-core`。
+- Tauri command 只做平台胶水。
+- 协议字段用 camelCase。
+- 改协议必须同步代码和 `docs/resource-library-plan/8_桥接协议_v0.1.md`。
+
+## 版权与资源边界
+
+资源最大化靠：
+
+- 元数据。
+- 官方入口。
+- OPDS。
+- 公共版权。
+- 开放授权。
+- 用户本地文件。
+- 用户私有源。
+
+不靠：
+
+- 盗版正文聚合。
+- 自动抓取商业站正文。
+- 插件市场分发高风险源。

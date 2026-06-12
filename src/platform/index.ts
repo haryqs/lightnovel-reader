@@ -22,6 +22,7 @@ const noBridge: ReaderBridge = {
   getChapter: async () => unavailable('chapter.get'),
   listCalibreBooks: async () => unavailable('library.listCalibre'),
   importLibraryBook: async () => unavailable('library.import'),
+  importLibraryBookFromBytes: async () => unavailable('library.importBytes'),
   listLibraryBooks: async () => unavailable('library.list'),
   searchLibraryBooks: async () => unavailable('library.search'),
   openLibraryBook: async () => unavailable('library.open'),

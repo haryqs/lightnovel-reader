@@ -8,7 +8,14 @@ export const PROTOCOL_VERSION = '0.1'
 // ---- 数据传输对象(与 reading-core 的 serde 结构一一对应)----
 
 export interface BookInfo {
-  metadata: { title: string; author?: string }
+  metadata: {
+    title: string
+    author?: string
+    language?: string
+    description?: string
+    series?: string
+    seriesIndex?: number
+  }
   toc: TocItem[]
   spine: SpineItem[]
 }
@@ -106,6 +113,8 @@ export interface ReaderBridge {
   listCalibreBooks(library: string): Promise<CalibreBook[]>
   /** library.import — 导入 EPUB 到自有书库对象仓库 */
   importLibraryBook(path: string): Promise<ImportOutcome>
+  /** library.importBytes — 从文件选择器字节导入 EPUB 到自有书库对象仓库 */
+  importLibraryBookFromBytes(data: Uint8Array, fileName?: string): Promise<ImportOutcome>
   /** library.list — 列出自有书库 */
   listLibraryBooks(): Promise<LibraryBook[]>
   /** library.search — 搜索自有书库 */

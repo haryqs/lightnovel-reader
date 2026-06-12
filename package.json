@@ -6,6 +6,9 @@
   "scripts": {
     "dev": "vite",
     "check:arch": "node scripts/check-arch.mjs",
+    "check:memory": "node scripts/check-dev-memory.mjs",
+    "check:project": "node scripts/check-arch.mjs && node scripts/check-dev-memory.mjs",
+    "dev:note": "node scripts/dev-note.mjs",
     "build": "node scripts/check-arch.mjs && tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri"

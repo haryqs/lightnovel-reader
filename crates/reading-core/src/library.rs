@@ -96,37 +96,59 @@ pub fn import_epub(
     now_ms: i64,
 ) -> Result<ImportOutcome, String> {
     let data = std::fs::read(epub_path).map_err(|e| format!("读取文件失败: {}", e))?;
-    let id = compute_book_id(&data);
+    let file_name = epub_path
+        .file_name()
+        .map(|s| s.to_string_lossy().into_owned());
+    import_epub_bytes(conn, library_dir, &data, file_name.as_deref(), now_ms)
+}
+
+/// 从文件选择器/移动端沙盒传入的 EPUB 字节导入书库。
+/// 这样 UI 不依赖平台是否能暴露真实本地路径。
+pub fn import_epub_bytes(
+    conn: &Connection,
+    library_dir: &Path,
+    data: &[u8],
+    file_name: Option<&str>,
+    now_ms: i64,
+) -> Result<ImportOutcome, String> {
+    let id = compute_book_id(data);
 
     if let Some(existing) = get_book(conn, &id).map_err(|e| e.to_string())? {
-        return Ok(ImportOutcome { book: existing, duplicate: true });
+        return Ok(ImportOutcome {
+            book: existing,
+            duplicate: true,
+        });
     }
 
-    let info = epub_parser::parse_book_info(&data)?;
+    let info = epub_parser::parse_book_info(data)?;
 
     let objects_dir = library_dir.join("objects");
     std::fs::create_dir_all(&objects_dir).map_err(|e| format!("创建对象仓库失败: {}", e))?;
     let dest = objects_dir.join(format!("{}.epub", id));
-    std::fs::write(&dest, &data).map_err(|e| format!("写入对象仓库失败: {}", e))?;
+    std::fs::write(&dest, data).map_err(|e| format!("写入对象仓库失败: {}", e))?;
+    let cover_path = save_cover_image(library_dir, &id, data)?;
 
     let book = LibraryBook {
         id: id.clone(),
         title: if info.metadata.title.trim().is_empty() {
-            epub_path
-                .file_stem()
-                .map(|s| s.to_string_lossy().into_owned())
+            file_name
+                .and_then(|name| {
+                    Path::new(name)
+                        .file_stem()
+                        .map(|s| s.to_string_lossy().into_owned())
+                })
                 .unwrap_or_else(|| id.clone())
         } else {
             info.metadata.title
         },
         author: info.metadata.author,
-        language: None,
-        series: None,
-        series_index: None,
-        description: None,
+        language: info.metadata.language,
+        series: info.metadata.series,
+        series_index: info.metadata.series_index,
+        description: info.metadata.description,
         file_path: dest.to_string_lossy().into_owned(),
         file_size: data.len() as i64,
-        cover_path: None,
+        cover_path,
         added_at: now_ms,
         last_read_at: None,
     };
@@ -137,14 +159,41 @@ pub fn import_epub(
             file_path, file_size, cover_path, added_at, last_read_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
         params![
-            book.id, book.title, book.author, book.language, book.series,
-            book.series_index, book.description, book.file_path, book.file_size,
-            book.cover_path, book.added_at, book.last_read_at
+            book.id,
+            book.title,
+            book.author,
+            book.language,
+            book.series,
+            book.series_index,
+            book.description,
+            book.file_path,
+            book.file_size,
+            book.cover_path,
+            book.added_at,
+            book.last_read_at
         ],
     )
     .map_err(|e| e.to_string())?;
 
-    Ok(ImportOutcome { book, duplicate: false })
+    Ok(ImportOutcome {
+        book,
+        duplicate: false,
+    })
+}
+
+fn save_cover_image(
+    library_dir: &Path,
+    book_id: &str,
+    epub_data: &[u8],
+) -> Result<Option<String>, String> {
+    let Some(cover) = epub_parser::extract_cover_image(epub_data)? else {
+        return Ok(None);
+    };
+    let covers_dir = library_dir.join("covers");
+    std::fs::create_dir_all(&covers_dir).map_err(|e| format!("创建封面目录失败: {}", e))?;
+    let dest = covers_dir.join(format!("{}.{}", book_id, cover.extension));
+    std::fs::write(&dest, &cover.bytes).map_err(|e| format!("写入封面失败: {}", e))?;
+    Ok(Some(dest.to_string_lossy().into_owned()))
 }
 
 const BOOK_COLS: &str = "id, title, author, language, series, series_index, description,
@@ -214,7 +263,10 @@ pub fn search_books(conn: &Connection, query: &str) -> rusqlite::Result<Vec<Libr
     }
 
     // 短查询:LIKE 子串,通配符转义
-    let escaped = q.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_");
+    let escaped = q
+        .replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_");
     let pattern = format!("%{}%", escaped);
     let sql = format!(
         "SELECT {} FROM books
@@ -281,13 +333,108 @@ mod tests {
         )
         .unwrap();
         w.start_file("ch1.xhtml", opts).unwrap();
-        w.write_all(b"<html><body><p>text</p></body></html>").unwrap();
+        w.write_all(b"<html><body><p>text</p></body></html>")
+            .unwrap();
+        w.finish().unwrap().into_inner()
+    }
+
+    fn make_epub_with_cover(title: &str, author: &str) -> Vec<u8> {
+        let mut w = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        let opts = SimpleFileOptions::default();
+        w.start_file("mimetype", opts).unwrap();
+        w.write_all(b"application/epub+zip").unwrap();
+        w.start_file("META-INF/container.xml", opts).unwrap();
+        w.write_all(
+            br#"<?xml version="1.0"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles>
+    <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
+  </rootfiles>
+</container>"#,
+        )
+        .unwrap();
+        w.start_file("OEBPS/content.opf", opts).unwrap();
+        w.write_all(
+            format!(
+                r#"<?xml version="1.0"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="uid">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:identifier id="uid">test-{title}</dc:identifier>
+    <dc:title>{title}</dc:title>
+    <dc:creator>{author}</dc:creator>
+  </metadata>
+  <manifest>
+    <item id="cover-img" href="Images/cover.png" media-type="image/png" properties="cover-image"/>
+    <item id="ch1" href="Text/ch1.xhtml" media-type="application/xhtml+xml"/>
+  </manifest>
+  <spine>
+    <itemref idref="ch1"/>
+  </spine>
+</package>"#
+            )
+            .as_bytes(),
+        )
+        .unwrap();
+        w.start_file("OEBPS/Images/cover.png", opts).unwrap();
+        w.write_all(b"fake-png-cover").unwrap();
+        w.start_file("OEBPS/Text/ch1.xhtml", opts).unwrap();
+        w.write_all(b"<html><body><p>text</p></body></html>")
+            .unwrap();
+        w.finish().unwrap().into_inner()
+    }
+
+    fn make_epub_with_rich_metadata(title: &str, author: &str) -> Vec<u8> {
+        let mut w = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        let opts = SimpleFileOptions::default();
+        w.start_file("mimetype", opts).unwrap();
+        w.write_all(b"application/epub+zip").unwrap();
+        w.start_file("META-INF/container.xml", opts).unwrap();
+        w.write_all(
+            br#"<?xml version="1.0"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles>
+    <rootfile full-path="content.opf" media-type="application/oebps-package+xml"/>
+  </rootfiles>
+</container>"#,
+        )
+        .unwrap();
+        w.start_file("content.opf", opts).unwrap();
+        w.write_all(
+            format!(
+                r#"<?xml version="1.0"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="uid">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:identifier id="uid">test-rich-{title}</dc:identifier>
+    <dc:title>{title}</dc:title>
+    <dc:creator>{author}</dc:creator>
+    <dc:language>ja</dc:language>
+    <dc:description>First volume description</dc:description>
+    <meta property="belongs-to-collection">Skyline Chronicle</meta>
+    <meta property="group-position">2.5</meta>
+  </metadata>
+  <manifest>
+    <item id="ch1" href="ch1.xhtml" media-type="application/xhtml+xml"/>
+  </manifest>
+  <spine>
+    <itemref idref="ch1"/>
+  </spine>
+</package>"#
+            )
+            .as_bytes(),
+        )
+        .unwrap();
+        w.start_file("ch1.xhtml", opts).unwrap();
+        w.write_all(b"<html><body><p>text</p></body></html>")
+            .unwrap();
         w.finish().unwrap().into_inner()
     }
 
     fn temp_library(tag: &str) -> std::path::PathBuf {
-        let dir = std::env::temp_dir()
-            .join(format!("reading-core-libtest-{}-{}", tag, std::process::id()));
+        let dir = std::env::temp_dir().join(format!(
+            "reading-core-libtest-{}-{}",
+            tag,
+            std::process::id()
+        ));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         dir
@@ -324,6 +471,60 @@ mod tests {
         assert!(r2.duplicate);
         assert_eq!(r2.book.id, r1.book.id);
         assert_eq!(list_books(&conn).unwrap().len(), 1);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn import_bytes_uses_filename_when_title_missing() {
+        let dir = temp_library("import-bytes");
+        let conn = open_library(&dir.join("library.sqlite")).unwrap();
+        let data = make_epub("", "作者");
+
+        let result =
+            import_epub_bytes(&conn, &dir, &data, Some("fallback-title.epub"), 1000).unwrap();
+
+        assert_eq!(result.book.title, "fallback-title");
+        assert!(!result.duplicate);
+        assert!(std::path::Path::new(&result.book.file_path).exists());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn import_extracts_cover_image() {
+        let dir = temp_library("cover");
+        let conn = open_library(&dir.join("library.sqlite")).unwrap();
+        let data = make_epub_with_cover("有封面的书", "作者");
+
+        let result = import_epub_bytes(&conn, &dir, &data, Some("covered.epub"), 1000).unwrap();
+
+        let cover_path = result.book.cover_path.expect("应提取封面");
+        assert!(cover_path.ends_with(".png"));
+        assert_eq!(std::fs::read(&cover_path).unwrap(), b"fake-png-cover");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn import_extracts_rich_metadata() {
+        let dir = temp_library("metadata");
+        let conn = open_library(&dir.join("library.sqlite")).unwrap();
+        let data = make_epub_with_rich_metadata("Rich Book", "Metadata Author");
+
+        let result = import_epub_bytes(&conn, &dir, &data, Some("rich.epub"), 1000).unwrap();
+
+        assert_eq!(result.book.language.as_deref(), Some("ja"));
+        assert_eq!(
+            result.book.description.as_deref(),
+            Some("First volume description")
+        );
+        assert_eq!(result.book.series.as_deref(), Some("Skyline Chronicle"));
+        assert_eq!(result.book.series_index, Some(2.5));
+
+        let hit = search_books(&conn, "Skyline").unwrap();
+        assert_eq!(hit.len(), 1);
+        assert_eq!(hit[0].id, result.book.id);
 
         let _ = std::fs::remove_dir_all(&dir);
     }
