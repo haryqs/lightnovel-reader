@@ -237,3 +237,30 @@
 
 - 提交当前本地书库 v0.3 基线。
 - 运行 `npm.cmd run tauri dev` 做桌面实机冒烟。
+
+## 2026-06-12：GitHub 同步与跨机器记忆入口
+
+变更：
+
+- 确认 `origin/main` 已同步到 `c540c3b reader: 完成本地书库 v0.3 基线`。
+- 更新状态文档，把本轮状态从“未提交未推送”改为“已提交并推送”。
+- 补充跨机器记忆入口，说明回寝室后应从 `AGENTS.md`、`docs/dev-memory/PROJECT_MEMORY.md`、`docs/dev-memory/NEXT_ACTIONS.md` 接续。
+
+修改文件：
+
+- `docs/current-project/10_开发状态_2026-06-12_Codex.md`
+- `docs/dev-memory/NEXT_ACTIONS.md`
+- `docs/dev-memory/DEV_LOG.md`
+
+验证：
+
+- `git ls-remote --heads origin main` 返回 `c540c3b79812136fa97dc74c7ddfad5224d9a6d7`。
+
+未验证/阻塞：
+
+- 无。
+
+下一步：
+
+- 在另一台电脑 `git pull origin main`。
+- 运行 `npm.cmd run tauri dev` 做桌面实机冒烟。
