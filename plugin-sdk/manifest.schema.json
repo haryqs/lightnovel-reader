@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://reader.invalid/plugin-sdk/manifest.schema.json",
+  "title": "阅读器源插件 manifest",
+  "description": "源插件的声明文件。安装时逐项展示给用户;domains 之外的网络请求会被宿主拒绝。",
+  "type": "object",
+  "required": ["apiVersion", "id", "name", "version", "entry", "domains", "permissions", "legal"],
+  "additionalProperties": false,
+  "properties": {
+    "apiVersion": {
+      "type": "string",
+      "description": "插件 API 版本(对应 host-api.d.ts 的版本),当前为 0.1",
+      "enum": ["0.1"]
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{1,63}$",
+      "description": "全局唯一 id,小写字母/数字/连字符"
+    },
+    "name": { "type": "string", "maxLength": 64 },
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "description": "插件自身的 semver"
+    },
+    "description": { "type": "string", "maxLength": 500 },
+    "author": { "type": "string", "maxLength": 128 },
+    "language": {
+      "type": "string",
+      "description": "该源的主要内容语言,BCP 47(如 ja、zh-CN、en)"
+    },
+    "entry": {
+      "type": "string",
+      "pattern": "^[^/\\\\]+\\.js$",
+      "description": "入口脚本文件名(包内相对路径,不允许目录穿越)"
+    },
+    "domains": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "pattern": "^([a-z0-9-]+\\.)+[a-z]{2,}$" },
+      "description": "允许访问的域名白名单(精确匹配,含子域需逐一列出)。host.http 仅放行这些域名。"
+    },
+    "permissions": {
+      "type": "array",
+      "items": { "type": "string", "enum": ["http", "kv"] },
+      "uniqueItems": true,
+      "description": "申请的能力。没有文件系统、没有 eval、没有进程——这些能力不存在,不是未申请。"
+    },
+    "legal": {
+      "type": "object",
+      "required": ["kind"],
+      "additionalProperties": false,
+      "description": "来源的授权性质声明。官方仓库只收 public-domain / open-license / official-free。",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["public-domain", "open-license", "official-free", "user-declared"],
+          "description": "public-domain=公共版权;open-license=开放许可(如 CC);official-free=官方免费连载(须遵守其 ToS);user-declared=作者自担声明,官方仓库不收"
+        },
+        "note": { "type": "string", "maxLength": 500 }
+      }
+    }
+  }
+}

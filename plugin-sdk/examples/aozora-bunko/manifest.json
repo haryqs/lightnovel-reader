@@ -1,0 +1,17 @@
+{
+  "$schema": "../../manifest.schema.json",
+  "apiVersion": "0.1",
+  "id": "aozora-bunko",
+  "name": "青空文库",
+  "version": "0.1.0",
+  "description": "日本公共版权文库(著作权保护期已满的作品)。示例骨架:选择器待对站校准。",
+  "author": "reader 官方示例",
+  "language": "ja",
+  "entry": "plugin.js",
+  "domains": ["www.aozora.gr.jp"],
+  "permissions": ["http"],
+  "legal": {
+    "kind": "public-domain",
+    "note": "青空文库收录著作权已消灭或作者明示自由利用的作品"
+  }
+}
