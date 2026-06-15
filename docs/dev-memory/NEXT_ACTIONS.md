@@ -1,40 +1,34 @@
 # 下一步任务队列
 
-## P0：环境与验证
+## 进度快照（2026-06-13）
 
-- 当前机器已完成 `git pull origin main`、`npm.cmd install`、`cargo test --workspace`、`npm.cmd run build` 基础验证。
-- `npm.cmd run tauri dev` 已确认可启动 Vite 与 `reader.exe`，但当前 Codex shell 未暴露可见 Tauri 主窗口，仍需在可交互桌面窗口做冒烟测试。
-- ✅ `npm.cmd run smoke:tauri`（UI 启动自动冒烟）**已跑通**（2026-06-13，Claude）：
-  标题/品牌/插画加载/默认主题 light/书库浮层（导入 EPUB/文件夹/搜索齐全、Calibre 在折叠面板内）/关闭。
-- ✅ `npm.cmd run smoke:p0`（P0 桥接深度自动冒烟）**已跑通**（2026-06-13，Claude）：
-  导入(vol1/vol2)/去重/元数据/封面/library_list/library_open/get_chapter/解析缓存落盘/
-  **内联图片解码 256×320**/进度保存/标注保存/**第二会话重启后进度+标注+缓存全部恢复**；
-  首开 11.33ms vs 二开 7.39ms（解析缓存提速）。
-  过程中定位并修复一处坏测试样本 PNG（GDI+ 宽容、Chromium 严格拒解码），reader-img 传输零损耗确认无 bug，
-  详见 DEV_LOG 2026-06-13 同日条目。
-- ⚠️ 自动化**不覆盖**：系统文件/文件夹选择器、真实翻页热区、鼠标划词创建高亮的 UI 交互、真实
-  Calibre 库迁移——这几项仍需按 doc 13 人工补一遍，补完即可打 v0.3.1。
-- 冒烟样本 / 便携包 / Web 安装器 / 打包 / 安装卸载验证：统一见 `docs/current-project/发布与测试.md`。
-- 验证：打开 EPUB、翻页、关闭重开恢复进度、高亮重开仍可见。
-- 验证：“本地书库”中的“导入 EPUB”和“导入文件夹”可导入单本/多本 EPUB。
+**已完成（4 个主题提交，分支已推送，[PR #1](https://github.com/haryqs/lightnovel-reader/pull/1) 待合并）：**
 
-## P0.5：v0.3.1 测试版打包（安装器 + 卸载器）
+- v0.2 阅读内核 + v0.3 本地书库（导入·去重·封面·元数据·FTS 搜索·最近阅读）。
+- v0.3.1 core 加固：SQLite 迁移框架、持久化解析缓存、章节 HTML 安全清洗（防 XSS）、
+  EPUB 解析健壮性。**reading-core 测试 47 全过**。
+- 前端 UI 减法（简明大方）、NSIS 安装器配置、二次元插画资源。
+- **三套自动冒烟全绿**：`smoke:tauri`（UI 启动）/ `smoke:p0`（桥接+重启恢复+解析缓存+图片）/
+  `smoke:p1`（开书·翻页·划词高亮+重开渲染·真实 Calibre 读取）。
+- **真实 NSIS 安装器/卸载器静默装卸验证通过**（≈7.4MB）。
+- 文档整理 37 → 23（建 `docs/README.md` 索引、合并去重）。
 
-> Claude 已预配好 `src-tauri/tauri.conf.json`（productName=LightNovel Reader、
-> version=0.3.1、NSIS 当前用户安装/中英双语、publisher/描述/分类齐全）。
-> 以下步骤需在**可见桌面 + Rust 工具链**环境由 Codex 执行验证（Claude 无法实机验证）。
+**距 v0.3.1 发版仅剩：**
 
-- 先完成 P0 实机冒烟，**冒烟通过才打包**，别发未验证的包。
-- 运行 `npm.cmd run tauri build`，确认在 `src-tauri/target/release/bundle/` 下产出：
-  - NSIS 安装器 `nsis/LightNovel Reader_0.3.1_x64-setup.exe`（自带卸载器）。
-  - MSI 安装器 `msi/*.msi`（如不需要可在 bundle.targets 改为 `["nsis"]` 只出 NSIS）。
-- 实机验证安装器全流程：安装 → 桌面/开始菜单图标 → 启动 → 控制面板可正常卸载。
-- 确认卸载后 `%APPDATA%` 下的书库数据按预期保留（卸载不应删用户书库）。
-- 待决（非阻塞，发版前确认一次）：
-  - `identifier` 仍是占位 `com.tauri-app.reader`，决定 1.0 前是否改为正式域名
-    （改 identifier 会变更 `$APPDATA` 路径，迁移现有 `library.sqlite`，趁无真实用户时改）。
-  - 是否接入 Tauri updater 插件做「检查更新」（替代独立登录器/启动器，见 12 号审阅意见）。
-- 不做：账号登录器（与离线优先/不做 SaaS 冲突）、脱离连接器的下载器（撞合规红线）。
+1. 合并 [PR #1](https://github.com/haryqs/lightnovel-reader/pull/1) 到 main。
+2. 人工点一次原生文件/文件夹选择对话框（约 20 秒；导入逻辑已由 smoke:p0 路径版证过，自动化够不着原生对话框）。
+3. `npm.cmd run package:beta` 出便携测试包发版。
+
+## P0.5：打包发版（配置就绪，已验证一次）
+
+- ✅ `npm.cmd run tauri build` 出 NSIS `LightNovel Reader_0.3.1_x64-setup.exe` + MSI（≈7.4MB）。
+- ✅ 静默安装 `/S` → `%LOCALAPPDATA%\LightNovel Reader\` + 开始菜单快捷方式 + `uninstall.exe`；
+  静默卸载 `/S` 安装目录与快捷方式干净移除。
+- 待发版前确认一次：卸载是否保留 `%APPDATA%` 用户书库（本轮用隔离临时数据目录，未在真实数据目录下验证）。
+- 待决（非阻塞，1.0 前）：占位 `identifier`（`com.tauri-app.reader`）是否改正式域名
+  （会迁移 `$APPDATA` 书库路径，趁无真实用户时改）；是否上 Tauri updater 做「检查更新」。
+- 不做：账号登录器（撞离线优先/不做 SaaS）、脱离连接器的下载器（撞合规红线）。
+- 命令与清单统一见 `docs/current-project/发布与测试.md`。
 
 ## P1：v0.3 本地书库补齐
 
