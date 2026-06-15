@@ -4,10 +4,11 @@
 
 ## 阅读顺序
 
+0. `docs/README.md`（文档地图，先看）
 1. `docs/dev-memory/PROJECT_MEMORY.md`
 2. `docs/dev-memory/DEVELOPMENT_OUTLINE.md`
-3. `docs/current-project/AI协作指南.md`
-4. `docs/current-project/9_开发状态_2026-06-11_Codex.md`
+3. `docs/dev-memory/NEXT_ACTIONS.md`
+4. `docs/dev-memory/工程约定与陷阱.md`
 5. `docs/resource-library-plan/0_方案总览.md`
 6. `docs/resource-library-plan/7_终局架构_多端与插件运行时.md`
 7. `docs/resource-library-plan/8_桥接协议_v0.1.md`

@@ -8,6 +8,8 @@ use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
+use crate::migrations::{self, Migration};
+
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Annotation {
@@ -45,9 +47,13 @@ CREATE TABLE IF NOT EXISTS reading_state (
 );
 "#;
 
+/// 标注 + 阅读进度库的迁移序列。基线即现有 SCHEMA（全部 IF NOT EXISTS，
+/// 框架上线前 user_version=0 的旧库会被幂等补盖并盖戳到 1）。
+const MIGRATIONS: &[Migration] = &[Migration { version: 1, sql: SCHEMA }];
+
 pub fn init(path: &Path) -> rusqlite::Result<Connection> {
     let conn = Connection::open(path)?;
-    conn.execute_batch(SCHEMA)?;
+    migrations::run(&conn, MIGRATIONS)?;
     Ok(conn)
 }
 

@@ -4,10 +4,11 @@
 
 ## 阅读顺序
 
+0. `docs/README.md` —— 文档地图（全部文档分类导航，先看这个）。
 1. `docs/dev-memory/PROJECT_MEMORY.md` —— 当前目标、边界、技术纪律、已知风险。
 2. `docs/dev-memory/DEVELOPMENT_OUTLINE.md` —— 从 v0.3 到 v1.0 的开发大纲。
-3. `docs/current-project/AI协作指南.md` —— 已收敛技术决策，不要重开争论。
-4. `docs/current-project/9_开发状态_2026-06-11_Codex.md` —— 最近开发状态和未完成项。
+3. `docs/dev-memory/NEXT_ACTIONS.md` —— 下一步任务队列。
+4. `docs/dev-memory/工程约定与陷阱.md` —— 代码/协作约定与会再踩的工程陷阱。
 5. `docs/resource-library-plan/0_方案总览.md` —— 资源书库长期路线。
 6. `docs/resource-library-plan/7_终局架构_多端与插件运行时.md` —— 多端与插件运行时终局架构。
 7. `docs/resource-library-plan/8_桥接协议_v0.1.md` —— engine/core/平台壳之间的协议边界。

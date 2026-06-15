@@ -9,8 +9,11 @@
 - `DECISIONS.md`：决策日志，记录为什么这么做。
 - `DEV_LOG.md`：开发日志，每次重要改动后追加。
 - `NEXT_ACTIONS.md`：下一步任务队列。
+- `工程约定与陷阱.md`：代码/协作约定 + 会再踩的工程陷阱。
 - `SESSION_TEMPLATE.md`：开工/收工模板。
 - `TOOLING_BACKLOG.md`：未来可安装的 skill、插件、工具候选。
+
+全部文档的分类导航见 `docs/README.md`（文档地图）。
 
 ## 使用方式
 

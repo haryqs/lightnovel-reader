@@ -14,7 +14,8 @@ Use this skill to keep project memory synchronized with actual development.
 - `docs/dev-memory/DEV_LOG.md`
 - `docs/dev-memory/NEXT_ACTIONS.md`
 - `docs/dev-memory/SESSION_TEMPLATE.md`
-- `docs/current-project/9_开发状态_2026-06-11_Codex.md`
+- `docs/dev-memory/工程约定与陷阱.md`
+- `docs/README.md`
 - `docs/resource-library-plan/8_桥接协议_v0.1.md`
 
 ## Workflow
