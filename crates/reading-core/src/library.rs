@@ -12,6 +12,7 @@ use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
+use crate::migrations::{self, Migration};
 use crate::{compute_book_id, epub_parser};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -41,9 +42,9 @@ pub struct ImportOutcome {
     pub duplicate: bool,
 }
 
-const SCHEMA: &str = r#"
-PRAGMA user_version = 1;
-
+/// 基线 schema（迁移 v1）。版本号由迁移框架经 `PRAGMA user_version` 盖戳，
+/// 此处不再硬编码 pragma。`IF NOT EXISTS` 让框架上线前的旧库被幂等补盖。
+const SCHEMA_V1: &str = r#"
 CREATE TABLE IF NOT EXISTS books (
   id            TEXT PRIMARY KEY,
   title         TEXT NOT NULL,
@@ -81,9 +82,12 @@ CREATE TRIGGER IF NOT EXISTS books_au AFTER UPDATE ON books BEGIN
 END;
 "#;
 
+/// 书库数据库的迁移序列。v0.5 实体模型（series/volume/edition/asset）作为 v2 追加。
+const MIGRATIONS: &[Migration] = &[Migration { version: 1, sql: SCHEMA_V1 }];
+
 pub fn open_library(db_path: &Path) -> rusqlite::Result<Connection> {
     let conn = Connection::open(db_path)?;
-    conn.execute_batch(SCHEMA)?;
+    migrations::run(&conn, MIGRATIONS)?;
     Ok(conn)
 }
 
@@ -555,6 +559,22 @@ mod tests {
 
         // 空查询 = 全部
         assert_eq!(search_books(&conn, "  ").unwrap().len(), 2);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn open_library_stamps_schema_version() {
+        let dir = temp_library("version");
+        let path = dir.join("library.sqlite");
+
+        let conn = open_library(&path).unwrap();
+        assert_eq!(crate::migrations::current_version(&conn).unwrap(), 1);
+        drop(conn);
+
+        // 重开已有库：迁移幂等跳过，版本不变、数据仍在。
+        let conn = open_library(&path).unwrap();
+        assert_eq!(crate::migrations::current_version(&conn).unwrap(), 1);
 
         let _ = std::fs::remove_dir_all(&dir);
     }

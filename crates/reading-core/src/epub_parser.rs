@@ -87,17 +87,10 @@ fn parse_container(xml: &str) -> Result<String, String> {
 
     loop {
         match reader.read_event_into(&mut buf) {
-            Ok(Event::Start(ref e)) => {
-                if e.name().as_ref() == b"rootfile" {
-                    for attr in e.attributes().flatten() {
-                        if attr.key.as_ref() == b"full-path" {
-                            full_path = Some(String::from_utf8_lossy(&attr.value).to_string());
-                        }
-                    }
-                }
-            }
-            Ok(Event::Empty(ref e)) => {
-                if e.name().as_ref() == b"rootfile" {
+            // OCF 规范：以第一个 rootfile 为默认 rendition。多 rootfile 时只认首个，
+            // 已取到就不再被后续覆盖（修复此前“取了最后一个”的隐性 bug）。
+            Ok(Event::Start(ref e)) | Ok(Event::Empty(ref e)) => {
+                if full_path.is_none() && e.name().as_ref() == b"rootfile" {
                     for attr in e.attributes().flatten() {
                         if attr.key.as_ref() == b"full-path" {
                             full_path = Some(String::from_utf8_lossy(&attr.value).to_string());
@@ -1277,6 +1270,90 @@ mod tests {
         );
         assert_eq!(toc[1].subitems.len(), 1, "第二章应有一个子节点");
         assert_eq!(toc[1].subitems[0].href, "OEBPS/Text/ch2.html#s1");
+    }
+
+    #[test]
+    fn container_takes_first_rootfile() {
+        // 多 rootfile：必须取第一个（OCF 默认 rendition），不被后续覆盖。
+        let xml = r#"<?xml version="1.0"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles>
+    <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
+    <rootfile full-path="OEBPS/alt.opf" media-type="application/oebps-package+xml"/>
+  </rootfiles>
+</container>"#;
+        assert_eq!(parse_container(xml).unwrap(), "OEBPS/content.opf");
+    }
+
+    #[test]
+    fn container_missing_rootfile_errors() {
+        let xml = r#"<?xml version="1.0"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles></rootfiles>
+</container>"#;
+        assert!(parse_container(xml).is_err());
+    }
+
+    #[test]
+    fn opf_builds_spine_and_skips_missing_idref() {
+        let opf = r#"<?xml version="1.0"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="3.0">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:title>书名</dc:title>
+  </metadata>
+  <manifest>
+    <item id="ch1" href="Text/ch1.xhtml" media-type="application/xhtml+xml"/>
+    <item id="ch2" href="Text/ch2.xhtml" media-type="application/xhtml+xml"/>
+  </manifest>
+  <spine>
+    <itemref idref="ch1"/>
+    <itemref idref="ghost"/>
+    <itemref idref="ch2"/>
+  </spine>
+</package>"#;
+        let (meta, manifest, spine) = parse_opf(opf).unwrap();
+        assert_eq!(meta.title, "书名");
+        assert_eq!(manifest.len(), 2);
+        // 缺失的 idref="ghost" 被跳过，不会 panic 也不进 spine
+        assert_eq!(spine.len(), 2);
+        assert_eq!(spine[0].href, "Text/ch1.xhtml");
+        assert_eq!(spine[1].href, "Text/ch2.xhtml");
+    }
+
+    #[test]
+    fn opf_missing_title_yields_empty_string() {
+        let opf = r#"<?xml version="1.0"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="3.0">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/"></metadata>
+  <manifest></manifest>
+  <spine></spine>
+</package>"#;
+        let (meta, _m, spine) = parse_opf(opf).unwrap();
+        assert_eq!(meta.title, "", "无标题应为空串，由上层用文件名兜底");
+        assert!(spine.is_empty());
+    }
+
+    #[test]
+    fn parse_book_info_rejects_non_zip() {
+        // 畸形/非 EPUB 字节应优雅报错而非 panic。
+        assert!(parse_book_info(b"this is definitely not a zip file").is_err());
+    }
+
+    #[test]
+    fn parse_single_chapter_empty_href_errors() {
+        let info = BookInfo {
+            metadata: EpubMetadata {
+                title: "t".into(),
+                author: None,
+                language: None,
+                description: None,
+                series: None,
+                series_index: None,
+            },
+            toc: vec![],
+            spine: vec![],
+        };
+        assert!(parse_single_chapter(b"", "   ", &info).is_err(), "空 href 应报错");
     }
 
     #[test]

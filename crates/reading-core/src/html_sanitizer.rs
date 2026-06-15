@@ -8,13 +8,360 @@ pub fn clean_chapter(
     _manifest: &HashMap<String, ManifestItem>,
 ) -> Result<String, String> {
     let body_content = extract_body(raw);
-    let no_font = strip_font_tags(&body_content);
+    // 安全清洗先行：EPUB 正文是不可信输入，正文经 innerHTML 注入主文档
+    // （持有 window.__TAURI__、CSP=null）。必须先剥掉脚本、事件处理属性与
+    // javascript: URL，后续排版改写都在已净化的 HTML 上进行。
+    let safe = sanitize_security(&body_content);
+    let no_font = strip_font_tags(&safe);
     let cleaned = strip_line_heights(&no_font);
     let cleaned = strip_dangerous_styles(&cleaned);
     let imgs = rewrite_img_tags(&cleaned);
     let svgs = rewrite_svg_image_blocks(&imgs);
     let final_html = inject_typography(&svgs);
     Ok(final_html)
+}
+
+/// 安全清洗：移除可执行/危险元素、事件处理属性与脚本类 URL。
+///
+/// 注：这是基于字符串扫描的“足够好”防线，不是 HTML5 解析器级别的清洗。
+/// 长期建议（见 DECISIONS.md）评估引入 `ammonia` 等基于真正 HTML 解析的清洗库，
+/// 以抵御畸形/嵌套绕过。当前实现覆盖常见向量并有充分单测。
+fn sanitize_security(html: &str) -> String {
+    // 1) 整块移除可执行/危险容器元素（连同内容）
+    let s = remove_container_elements(html, &["script", "iframe", "object", "applet"]);
+    // 2) 移除危险空元素（embed 无闭合标签；base/link/meta 可重定向/改写基址/加载外部资源）
+    let s = remove_void_elements(&s, &["embed", "base", "link", "meta"]);
+    // 3) 逐标签剥事件处理属性，并中和 javascript:/vbscript: URL
+    scrub_attributes(&s)
+}
+
+/// 移除 `<name ...>...</name>` 容器元素（含内容）。未闭合则删到结尾。大小写无关。
+fn remove_container_elements(html: &str, names: &[&str]) -> String {
+    let mut s = html.to_string();
+    for name in names {
+        s = remove_one_container(&s, name);
+    }
+    s
+}
+
+fn remove_one_container(html: &str, name: &str) -> String {
+    let open = format!("<{}", name);
+    let close = format!("</{}>", name);
+    let mut result = String::with_capacity(html.len());
+    let mut pos = 0;
+    while let Some(start) = find_ci(html, &open, pos) {
+        let after = start + open.len();
+        // 边界校验：`<script` 命中，`<scripting` 不命中
+        let boundary_ok = html[after..]
+            .chars()
+            .next()
+            .map_or(true, |c| c.is_whitespace() || c == '>' || c == '/');
+        if !boundary_ok {
+            result.push_str(&html[pos..after]);
+            pos = after;
+            continue;
+        }
+        result.push_str(&html[pos..start]);
+        match find_ci(html, &close, after) {
+            Some(c) => pos = c + close.len(),
+            None => pos = html.len(), // 未闭合 → 删到结尾
+        }
+    }
+    result.push_str(&html[pos..]);
+    result
+}
+
+/// 移除 `<name ...>` 空元素（无闭合标签）。大小写无关。
+fn remove_void_elements(html: &str, names: &[&str]) -> String {
+    let mut s = html.to_string();
+    for name in names {
+        let open = format!("<{}", name);
+        let mut result = String::with_capacity(s.len());
+        let mut pos = 0;
+        while let Some(start) = find_ci(&s, &open, pos) {
+            let after = start + open.len();
+            let boundary_ok = s[after..]
+                .chars()
+                .next()
+                .map_or(true, |c| c.is_whitespace() || c == '>' || c == '/');
+            if !boundary_ok {
+                result.push_str(&s[pos..after]);
+                pos = after;
+                continue;
+            }
+            result.push_str(&s[pos..start]);
+            match s[after..].find('>') {
+                Some(g) => pos = after + g + 1,
+                None => pos = s.len(),
+            }
+        }
+        result.push_str(&s[pos..]);
+        s = result;
+    }
+    s
+}
+
+/// 找到从 `start`（指向 `<`）起的标签结束 `>` 的字节下标，跳过引号内的 `>`。
+/// `<`、`>`、引号均为 ASCII，按字节扫描对 UTF-8 安全。
+fn find_tag_end(html: &str, start: usize) -> Option<usize> {
+    let b = html.as_bytes();
+    let mut i = start + 1;
+    let mut quote: Option<u8> = None;
+    while i < b.len() {
+        let c = b[i];
+        match quote {
+            Some(q) => {
+                if c == q {
+                    quote = None;
+                }
+            }
+            None => match c {
+                b'"' | b'\'' => quote = Some(c),
+                b'>' => return Some(i),
+                _ => {}
+            },
+        }
+        i += 1;
+    }
+    None
+}
+
+/// 逐标签扫描：剥掉所有 `on*` 事件处理属性，并中和 href/src 中的脚本类 URL。
+/// 非标签文本原样保留；`</...>`、注释 `<!--`、`<?...?>` 不动。
+fn scrub_attributes(html: &str) -> String {
+    let b = html.as_bytes();
+    let mut result = String::with_capacity(html.len());
+    let mut i = 0;
+    while i < html.len() {
+        if b[i] == b'<' {
+            let next = b.get(i + 1).copied();
+            let is_tag = matches!(next, Some(c) if c.is_ascii_alphabetic() || c == b'/' || c == b'!' || c == b'?');
+            if is_tag {
+                if let Some(end) = find_tag_end(html, i) {
+                    let inner = &html[i + 1..end];
+                    if inner.starts_with('/') || inner.starts_with('!') || inner.starts_with('?') {
+                        result.push_str(&html[i..=end]);
+                    } else {
+                        result.push_str(&scrub_one_tag(inner));
+                    }
+                    i = end + 1;
+                    continue;
+                } else {
+                    result.push_str(&html[i..]);
+                    break;
+                }
+            }
+            // 不是标签（如正文里的 `a < b`），按文本输出
+            result.push('<');
+            i += 1;
+        } else {
+            // ASCII '<' 之外按 UTF-8 字符推进
+            let ch = html[i..].chars().next().unwrap();
+            result.push(ch);
+            i += ch.len_utf8();
+        }
+    }
+    result
+}
+
+/// 重建单个开始标签（`inner` 是 `<` 与 `>` 之间的内容），丢弃 on* 属性与脚本类 URL。
+fn scrub_one_tag(inner: &str) -> String {
+    let chars: Vec<char> = inner.chars().collect();
+    let mut idx = 0;
+    let n = chars.len();
+
+    // 标签名
+    let mut name = String::new();
+    while idx < n && !chars[idx].is_whitespace() && chars[idx] != '/' {
+        name.push(chars[idx]);
+        idx += 1;
+    }
+
+    let mut out = format!("<{}", name);
+    let mut self_closing = false;
+
+    loop {
+        // 跳过空白
+        while idx < n && chars[idx].is_whitespace() {
+            idx += 1;
+        }
+        if idx >= n {
+            break;
+        }
+        if chars[idx] == '/' {
+            self_closing = true;
+            idx += 1;
+            continue;
+        }
+
+        // 属性名
+        let mut attr = String::new();
+        while idx < n && !chars[idx].is_whitespace() && chars[idx] != '=' && chars[idx] != '/' {
+            attr.push(chars[idx]);
+            idx += 1;
+        }
+        if attr.is_empty() {
+            idx += 1;
+            continue;
+        }
+
+        // 可选 = 值
+        let mut value: Option<(char, String)> = None; // (quote, value)；quote=' ' 表示无引号
+        let save = idx;
+        while idx < n && chars[idx].is_whitespace() {
+            idx += 1;
+        }
+        if idx < n && chars[idx] == '=' {
+            idx += 1;
+            while idx < n && chars[idx].is_whitespace() {
+                idx += 1;
+            }
+            if idx < n && (chars[idx] == '"' || chars[idx] == '\'') {
+                let q = chars[idx];
+                idx += 1;
+                let mut v = String::new();
+                while idx < n && chars[idx] != q {
+                    v.push(chars[idx]);
+                    idx += 1;
+                }
+                if idx < n {
+                    idx += 1; // 跳过结束引号
+                }
+                value = Some((q, v));
+            } else {
+                let mut v = String::new();
+                while idx < n && !chars[idx].is_whitespace() && chars[idx] != '/' {
+                    v.push(chars[idx]);
+                    idx += 1;
+                }
+                value = Some((' ', v));
+            }
+        } else {
+            idx = save; // 没有 =，是布尔属性
+        }
+
+        let attr_lower = attr.to_ascii_lowercase();
+
+        // 丢弃事件处理属性
+        if attr_lower.starts_with("on") {
+            continue;
+        }
+        // 中和脚本类 URL 属性
+        if matches!(attr_lower.as_str(), "href" | "src" | "xlink:href" | "formaction" | "action") {
+            if let Some((_, ref v)) = value {
+                if is_script_url(v) {
+                    continue; // 直接丢弃该属性
+                }
+            }
+        }
+
+        // 重建属性
+        match value {
+            None => {
+                out.push(' ');
+                out.push_str(&attr);
+            }
+            Some((q, v)) => {
+                out.push(' ');
+                out.push_str(&attr);
+                out.push('=');
+                // 值含双引号则用单引号包裹，否则统一双引号
+                if q == '\'' || v.contains('"') {
+                    out.push('\'');
+                    out.push_str(&v.replace('\'', "&#39;"));
+                    out.push('\'');
+                } else {
+                    out.push('"');
+                    out.push_str(&v);
+                    out.push('"');
+                }
+            }
+        }
+    }
+
+    if self_closing {
+        out.push_str(" /");
+    }
+    out.push('>');
+    out
+}
+
+/// 判断 URL 值是否为脚本类协议。先解码 HTML 实体（浏览器会在属性值里解码
+/// `javascript&#58;` → `javascript:`），再去空白/控制字符与大小写，最后比对前缀。
+fn is_script_url(value: &str) -> bool {
+    let decoded = decode_entities_for_scheme(value);
+    let mut s = String::new();
+    for c in decoded.chars() {
+        // 去掉空白与控制字符（绕过手法如 "java\tscript:" / "&#9;"）
+        if c.is_whitespace() || c.is_control() {
+            continue;
+        }
+        s.push(c.to_ascii_lowercase());
+    }
+    s.starts_with("javascript:") || s.starts_with("vbscript:") || s.starts_with("data:text/html")
+}
+
+/// 解码与 scheme 检测相关的 HTML 实体：数字实体 `&#58;`/`&#x3a;`（分号可选）与
+/// 命名实体 `&colon;`。其它实体保持原样——对 scheme 前缀判断够用，且字母数字实体
+/// （如 `&#115;`=s）也能解出，挫败 `java&#115;cript:` 这类拆字绕过。
+fn decode_entities_for_scheme(s: &str) -> String {
+    let chars: Vec<char> = s.chars().collect();
+    let n = chars.len();
+    let mut out = String::new();
+    let mut i = 0;
+    while i < n {
+        if chars[i] == '&' {
+            // 命名 &colon;
+            let window: String = chars[i..(i + 7).min(n)].iter().collect();
+            if window.eq_ignore_ascii_case("&colon;") {
+                out.push(':');
+                i += 7;
+                continue;
+            }
+            // 数字实体 &#dd; / &#xhh;
+            if i + 1 < n && chars[i + 1] == '#' {
+                let mut j = i + 2;
+                let hex = j < n && (chars[j] == 'x' || chars[j] == 'X');
+                if hex {
+                    j += 1;
+                }
+                let start = j;
+                while j < n
+                    && (if hex {
+                        chars[j].is_ascii_hexdigit()
+                    } else {
+                        chars[j].is_ascii_digit()
+                    })
+                {
+                    j += 1;
+                }
+                if j > start {
+                    let num: String = chars[start..j].iter().collect();
+                    let code = if hex {
+                        u32::from_str_radix(&num, 16)
+                    } else {
+                        num.parse::<u32>()
+                    };
+                    if let Ok(cp) = code {
+                        if let Some(ch) = char::from_u32(cp) {
+                            out.push(ch);
+                        }
+                    }
+                    if j < n && chars[j] == ';' {
+                        j += 1;
+                    }
+                    i = j;
+                    continue;
+                }
+            }
+            out.push('&');
+            i += 1;
+        } else {
+            out.push(chars[i]);
+            i += 1;
+        }
+    }
+    out
 }
 
 /// 从标签里取某属性值（支持单/双引号；`href` 也能命中 `xlink:href`）。
@@ -435,5 +782,127 @@ mod tests {
         let out = rewrite_svg_image_blocks(html);
         assert!(out.contains("reader-img") && out.contains("a.png"), "svg 内图片应改写");
         assert!(!out.to_lowercase().contains("<svg"), "svg 块应被移除");
+    }
+
+    // ===== 安全清洗 =====
+
+    #[test]
+    fn removes_script_blocks_with_content() {
+        let html = r#"<p>前</p><script>window.__TAURI__.core.invoke('library_list')</script><p>后</p>"#;
+        let out = sanitize_security(html);
+        assert!(!out.to_lowercase().contains("<script"), "script 标签应移除");
+        assert!(!out.contains("__TAURI__"), "script 内容应一并移除");
+        assert!(out.contains("前") && out.contains("后"), "正文保留");
+    }
+
+    #[test]
+    fn removes_unclosed_script_to_end() {
+        let html = r#"<p>正文</p><script>evil()"#;
+        let out = sanitize_security(html);
+        assert!(!out.to_lowercase().contains("<script"));
+        assert!(!out.contains("evil()"));
+        assert!(out.contains("正文"));
+    }
+
+    #[test]
+    fn strips_event_handler_attributes() {
+        let html = r#"<p onclick="steal()" class="x">文</p><div onmouseover="evil()">块</div>"#;
+        let out = sanitize_security(html);
+        assert!(!out.to_lowercase().contains("onclick"), "onclick 应剥除");
+        assert!(!out.to_lowercase().contains("onmouseover"), "onmouseover 应剥除");
+        assert!(out.contains(r#"class="x""#), "正常属性保留");
+        assert!(out.contains("文") && out.contains("块"));
+    }
+
+    #[test]
+    fn strips_onerror_on_arbitrary_elements() {
+        // img 会被后续重建，但 details/video 等元素的 onerror/ontoggle 也必须剥除
+        let html = r#"<details ontoggle="invoke()"><summary>S</summary>X</details><video onerror="hack()"></video>"#;
+        let out = sanitize_security(html);
+        assert!(!out.to_lowercase().contains("ontoggle"));
+        assert!(!out.to_lowercase().contains("onerror"));
+        assert!(out.contains("<details") && out.contains("<summary"), "元素本身保留");
+    }
+
+    #[test]
+    fn neutralizes_javascript_href() {
+        let html = r#"<a href="javascript:alert(1)">点</a><a href="Text/ch2.xhtml">正常</a>"#;
+        let out = sanitize_security(html);
+        assert!(!out.to_lowercase().contains("javascript:"), "js: 链接应去除");
+        assert!(out.contains(r#"href="Text/ch2.xhtml""#), "正常链接保留");
+        assert!(out.contains("点") && out.contains("正常"));
+    }
+
+    #[test]
+    fn neutralizes_obfuscated_js_url() {
+        // 大小写 + 内嵌空白/制表符的绕过手法
+        let html = "<a href=\"Java\tScript:evil()\">x</a>";
+        let out = sanitize_security(html);
+        assert!(!out.to_lowercase().replace(char::is_whitespace, "").contains("javascript:"));
+    }
+
+    #[test]
+    fn removes_iframe_object_embed_meta() {
+        let html = r#"<iframe src="http://evil"></iframe><object data="x"></object><embed src="y"><meta http-equiv="refresh" content="0;url=http://evil"><p>正文</p>"#;
+        let out = sanitize_security(html);
+        for bad in ["<iframe", "<object", "<embed", "<meta"] {
+            assert!(!out.to_lowercase().contains(bad), "{} 应移除", bad);
+        }
+        assert!(out.contains("正文"));
+    }
+
+    #[test]
+    fn preserves_plain_text_with_angle_brackets() {
+        // 正文里的裸 `<`（非标签）不应被当作标签吞掉
+        let html = "若 a < b 且 b > c 则成立";
+        let out = sanitize_security(html);
+        assert!(out.contains("a < b"), "数学比较文本应保留: {}", out);
+    }
+
+    #[test]
+    fn keeps_cjk_and_attributes_intact() {
+        let html = r#"<p style="color:red" data-k="值">中文内容</p>"#;
+        let out = sanitize_security(html);
+        assert!(out.contains("中文内容"));
+        assert!(out.contains(r#"style="color:red""#));
+        assert!(out.contains(r#"data-k="值""#));
+    }
+
+    #[test]
+    fn neutralizes_entity_encoded_js_url() {
+        // 浏览器会在属性值里解码实体，故必须先解码再判 scheme。
+        let cases = [
+            r#"<a href="javascript&#58;alert(1)">x</a>"#,      // &#58; = ':'
+            r#"<a href="javascript&#x3a;alert(1)">x</a>"#,     // &#x3a; = ':'
+            r#"<a href="java&#115;cript:alert(1)">x</a>"#,     // &#115; = 's'，拆字
+            r#"<a href="javascript&colon;alert(1)">x</a>"#,    // 命名实体
+            r#"<a href="&#106;avascript:alert(1)">x</a>"#,     // &#106; = 'j'
+        ];
+        for c in cases {
+            let out = sanitize_security(c);
+            assert!(!out.contains("alert(1)") || !out.to_lowercase().contains("href"),
+                "实体编码的 js: 应被去除: {} -> {}", c, out);
+            assert!(!out.contains(r#"href="javascript"#) && !out.contains("&#58"),
+                "不应残留可解码为 javascript: 的 href: {}", out);
+        }
+    }
+
+    #[test]
+    fn keeps_entity_in_normal_text() {
+        // 正文里的实体（非 URL 属性）不受影响
+        let html = "<p>版权所有 &copy; 2026，A &amp; B</p>";
+        let out = sanitize_security(html);
+        assert!(out.contains("&copy;") && out.contains("&amp;"), "正文实体保留: {}", out);
+    }
+
+    #[test]
+    fn full_pipeline_strips_script_and_handlers() {
+        let raw = r#"<html><head><script>head_evil()</script></head><body><p onclick="evil()">正文</p><script>body_evil()</script></body></html>"#;
+        let out = clean_chapter(raw, "", &HashMap::new()).unwrap();
+        assert!(!out.contains("head_evil"), "head script 由 extract_body 去除");
+        assert!(!out.contains("body_evil"), "body script 必须由安全清洗去除");
+        assert!(!out.to_lowercase().contains("onclick"), "事件处理属性去除");
+        assert!(out.contains("正文"));
+        assert!(out.contains("reader-typography"), "排版仍注入");
     }
 }
