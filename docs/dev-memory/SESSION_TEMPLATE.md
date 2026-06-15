@@ -8,9 +8,10 @@
 当前分支：
 当前状态：
 必读文档：
+- docs/README.md（文档地图）
 - docs/dev-memory/PROJECT_MEMORY.md
-- docs/current-project/AI协作指南.md
 - docs/dev-memory/NEXT_ACTIONS.md
+- docs/dev-memory/工程约定与陷阱.md
 
 本轮不做：
 风险：

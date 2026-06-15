@@ -29,16 +29,26 @@
 - 标注与 Markdown 导出。
 - 本地书库 SQLite。
 - SHA-256 对象仓库去重。
-- Calibre 作为导入来源。
+- Calibre 作为兼容迁移来源。
 - 插件契约文档与 SDK 骨架。
 
 近期状态：
 
 - 单本/多本 EPUB 直接导入到书库已完成。
+- 本地文件夹 EPUB 批量导入入口已完成。
 - 封面提取与 `books.cover_path` 回填已完成。
 - `language`、`description`、`series`、`series_index` 元数据提取已完成。
 - 书架 UI 已展示封面、系列、语言，并支持批量导入失败详情。
-- 仍需 `npm.cmd run tauri dev` 做桌面实机冒烟测试。
+- 书库导入主路径已调整为“EPUB / 文件夹优先，Calibre 仅作为更多导入来源里的迁移入口”。
+- 已安装 `tauri-driver` 与匹配 Microsoft Edge WebDriver，`npm.cmd run smoke:tauri` 可做真实 Tauri 壳自动冒烟。
+- 已新增 `npm.cmd run smoke:p0`，用隔离 app data 目录在真实 Tauri 壳内验证路径版 EPUB 导入、重复导入、封面/元数据、书库开书、章节读取、进度/标注保存与重启恢复。
+- 前端已完成一轮克制的轻小说/二次元书架视觉：品牌标识、漫画线稿底纹、书脊式卡片、书库空状态和默认 light 主题。
+- 前端已引入原创动漫角色与雨后书街风景插图，做成低透明动态背景/空状态插图；阅读正文时动态图层会淡出。
+- 已新增 `npm.cmd run package:beta`，可生成 Windows 便携测试包与 `LightNovel Reader Launcher.cmd` 启动器。
+- 已新增 `npm.cmd run installer:web`，可生成 `LightNovelReaderSetup.exe` Web 下载安装器；公网发布时必须嵌入 HTTPS zip URL 与 SHA-256。
+- 已新增持久化解析缓存、SQLite 迁移框架、章节 HTML 安全清洗（防 XSS）；reading-core 测试 47 个全过。
+- v0.3.1 三套自动冒烟全绿（`smoke:tauri`/`smoke:p0`/`smoke:p1`，覆盖开书/翻页/划词高亮/进度+标注重启恢复/真实 Calibre 读取）+ 真实 NSIS 安装器/卸载器装卸验证通过（≈7.4MB）。
+- 仅剩原生文件/文件夹选择对话框为人工验证项；之后即可 `package:beta` 发版。发布与测试统一见 `docs/current-project/发布与测试.md`。
 
 ## 不可变约束
 
