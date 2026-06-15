@@ -530,6 +530,20 @@ $('#btn-export')?.addEventListener('click', () => {
   URL.revokeObjectURL(url)
 })
 
+// —— 导出标注 JSON（完整结构化数据，可还原）——
+$('#btn-export-json')?.addEventListener('click', () => {
+  if (!reader.bookInfo) return
+  const json = reader.exportJson()
+  const title = reader.bookInfo.metadata.title || '标注导出'
+  const blob = new Blob([json], { type: 'application/json;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${title}_标注.json`
+  a.click()
+  URL.revokeObjectURL(url)
+})
+
 // —— 本地书库 + Calibre 导入来源 ——
 const LIBRARY_PATH_KEY = 'reader.calibreImportPath'
 const DEFAULT_CALIBRE_LIBRARY = 'F:\\Calibre书库'

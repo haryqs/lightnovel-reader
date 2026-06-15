@@ -1,6 +1,6 @@
 import { bridge, type BookInfo, type TocItem } from './platform'
 import { readerThemes, baseTypography, type ThemeName } from './themes'
-import { type Annotation, type HighlightColor, computeAnchor, applyHighlight, renderAnnotations, saveAnnotation, loadAnnotations, deleteAnnotation, computeBookId, exportAnnotations, type ExportContext } from './annotations'
+import { type Annotation, type HighlightColor, computeAnchor, applyHighlight, renderAnnotations, saveAnnotation, loadAnnotations, deleteAnnotation, computeBookId, exportAnnotations, exportAnnotationsJson, type ExportContext } from './annotations'
 
 // 书籍结构类型定义在桥接协议里,这里转发给既有调用方
 export type { BookInfo, TocItem, SpineItem } from './platform'
@@ -672,6 +672,23 @@ export class ReaderCore {
       chapterTitles: titles,
     }
     return exportAnnotations(this.annotations, ctx)
+  }
+
+  // 与 exportMarkdown 同源的章标题上下文，输出完整结构化 JSON。
+  exportJson(): string {
+    const titles = new Map<string, string>()
+    const flattenToc = (items: TocItem[]) => {
+      for (const item of items) {
+        if (item.href) titles.set(item.href, item.label)
+        if (item.subitems) flattenToc(item.subitems)
+      }
+    }
+    if (this.bookInfo) flattenToc(this.bookInfo.toc)
+    const ctx: ExportContext = {
+      bookTitle: this.bookInfo?.metadata.title || '未命名',
+      chapterTitles: titles,
+    }
+    return exportAnnotationsJson(this.annotations, ctx)
   }
 
   // ---- 滚动/翻页

@@ -113,11 +113,34 @@ async function main() {
     n => n >= 1, 12000)
   assert(restored >= 1, 'highlight mark not restored after reopen')
 
+  // —— 3.5) 标注 JSON 导出（拦截下载 blob 验证结构）——
+  const exportCheck = await execA(`
+    const done = arguments[arguments.length-1]
+    ;(async()=>{
+      const btn = document.querySelector('#btn-export-json')
+      if (!btn) return done({ ok:false, message:'no #btn-export-json button' })
+      let captured = null
+      const origCreate = URL.createObjectURL
+      URL.createObjectURL = (blob) => { captured = blob; return 'blob:smoke' }
+      btn.click()
+      await new Promise(r=>setTimeout(r, 150))
+      URL.createObjectURL = origCreate
+      if (!captured) return done({ ok:false, message:'no blob captured from export' })
+      const text = await captured.text()
+      let parsed = null
+      try { parsed = JSON.parse(text) } catch(e) { return done({ ok:false, message:'invalid json: '+e.message, sample: text.slice(0,120) }) }
+      const a0 = parsed.annotations && parsed.annotations[0]
+      done({ ok:true, schema: parsed.schema, count: parsed.count, firstKind: a0 && a0.kind, hasAnchor: !!(a0 && a0.anchor && typeof a0.anchor.start === 'number') })
+    })().catch(e=>done({ ok:false, message:e?.message||String(e) }))
+  `)
+  assert(exportCheck.ok && exportCheck.schema === 'lightnovel-reader/annotations' && exportCheck.count >= 1 && exportCheck.hasAnchor,
+    'JSON 导出校验失败', exportCheck)
+
   // —— 4) 真实 Calibre 库读取 ——
   const calibre = await invoke('list_calibre_books', { library: calibreLib })
   assert(Array.isArray(calibre) && calibre.length >= 1, 'Calibre library returned no EPUBs', { count: calibre?.length })
 
-  console.log(JSON.stringify({ ok:true, opened, marks: hl.marks, annotations: anns.length, restoredMarks: restored, calibreBooks: calibre.length, sampleCalibre: calibre.slice(0,3).map(b=>b.title) }, null, 2))
+  console.log(JSON.stringify({ ok:true, opened, marks: hl.marks, annotations: anns.length, restoredMarks: restored, jsonExport: exportCheck, calibreBooks: calibre.length, sampleCalibre: calibre.slice(0,3).map(b=>b.title) }, null, 2))
   console.log('tauri-p1-smoke: OK')
 }
 
