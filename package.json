@@ -9,6 +9,12 @@
     "check:memory": "node scripts/check-dev-memory.mjs",
     "check:project": "node scripts/check-arch.mjs && node scripts/check-dev-memory.mjs",
     "dev:note": "node scripts/dev-note.mjs",
+    "smoke:fixtures": "powershell -ExecutionPolicy Bypass -File scripts/new-smoke-epubs.ps1",
+    "smoke:tauri": "node scripts/tauri-webdriver-smoke.mjs",
+    "smoke:p0": "node scripts/tauri-p0-smoke.mjs",
+    "smoke:p1": "node scripts/tauri-p1-smoke.mjs",
+    "package:beta": "powershell -ExecutionPolicy Bypass -File scripts/package-beta.ps1",
+    "installer:web": "powershell -ExecutionPolicy Bypass -File scripts/build-web-installer.ps1",
     "build": "node scripts/check-arch.mjs && tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri"

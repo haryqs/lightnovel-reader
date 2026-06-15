@@ -66,6 +66,8 @@ function showError(msg: string) {
 }
 
 $('#btn-open').addEventListener('click', () => fileInput.click())
+$('#btn-empty-open')?.addEventListener('click', () => fileInput.click())
+$('#btn-empty-library')?.addEventListener('click', openLibrary)
 
 fileInput.addEventListener('change', async () => {
   const file = fileInput.files?.[0]
@@ -86,6 +88,7 @@ async function openBook(file: File) {
     statusbar.hidden = false
     $('#prev-zone').hidden = false
     $('#next-zone').hidden = false
+    document.body.classList.add('reading-active')
   } catch (err: any) {
     showError(`解析 EPUB 失败: ${err.message || err}`)
   }
@@ -360,7 +363,7 @@ function applyTheme(name: ThemeName) {
 document.querySelectorAll<HTMLElement>('.theme-btn').forEach(btn => {
   btn.addEventListener('click', () => applyTheme(btn.dataset.theme as ThemeName))
 })
-applyTheme((localStorage.getItem(THEME_KEY) as ThemeName) || 'sepia')
+applyTheme((localStorage.getItem(THEME_KEY) as ThemeName) || 'light')
 
 // —— 标注系统 ——
 import { HIGHLIGHT_COLORS, type HighlightColor } from './annotations'
@@ -534,7 +537,9 @@ const libraryView = $('#library-view')
 const libraryGrid = $('#library-grid')
 const libraryPathInput = $<HTMLInputElement>('#library-path-input')
 const libraryImportInput = $<HTMLInputElement>('#library-import-input')
+const libraryFolderInput = $<HTMLInputElement>('#library-folder-input')
 const librarySearchInput = $<HTMLInputElement>('#library-search-input')
+const librarySourcePanel = $<HTMLDetailsElement>('#library-source-panel')
 let libraryBooks: LibraryBook[] = []
 let librarySearchTimer: number | null = null
 libraryPathInput.value = localStorage.getItem(LIBRARY_PATH_KEY) || DEFAULT_CALIBRE_LIBRARY
@@ -543,11 +548,17 @@ $('#btn-library')?.addEventListener('click', openLibrary)
 $('#btn-library-close')?.addEventListener('click', () => { libraryView.hidden = true })
 $('#btn-library-refresh')?.addEventListener('click', refreshLibraryBooks)
 $('#btn-library-import-epub')?.addEventListener('click', () => libraryImportInput.click())
+$('#btn-library-import-folder')?.addEventListener('click', () => libraryFolderInput.click())
 $('#btn-library-import-calibre')?.addEventListener('click', importCalibreLibrary)
 libraryImportInput.addEventListener('change', async () => {
-  const files = Array.from(libraryImportInput.files || [])
+  const files = collectEpubFiles(Array.from(libraryImportInput.files || []))
   libraryImportInput.value = ''
-  await importEpubFiles(files)
+  await importEpubFiles(files, 'EPUB')
+})
+libraryFolderInput.addEventListener('change', async () => {
+  const files = collectEpubFiles(Array.from(libraryFolderInput.files || []))
+  libraryFolderInput.value = ''
+  await importEpubFiles(files, '文件夹')
 })
 libraryPathInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') importCalibreLibrary()
@@ -567,9 +578,9 @@ async function openLibrary() {
 
 async function refreshLibraryBooks() {
   libraryView.hidden = false
-  libraryGrid.innerHTML = '<div style="color:var(--muted);padding:20px">加载书库中…</div>'
+  libraryGrid.innerHTML = '<div class="library-state">加载书库中…</div>'
   if (!isTauriRuntime()) {
-    libraryGrid.innerHTML = '<div style="color:var(--muted);padding:20px;line-height:1.7">书库读取需要 Tauri 桌面窗口。<br>请在终端运行：<code>npm run tauri dev</code></div>'
+    libraryGrid.innerHTML = '<div class="library-state">书库读取需要 Tauri 桌面窗口。<br>请在终端运行：<code>npm run tauri dev</code></div>'
     return
   }
   try {
@@ -579,7 +590,7 @@ async function refreshLibraryBooks() {
       : await bridge.listLibraryBooks()
     renderLibraryBooks()
   } catch (e: any) {
-    libraryGrid.innerHTML = `<div style="color:#c5221f;padding:20px">读取书库失败：${e?.message || e}</div>`
+    libraryGrid.innerHTML = `<div class="library-state library-state-error">读取书库失败：${e?.message || e}</div>`
   }
 }
 
@@ -588,15 +599,15 @@ async function importCalibreLibrary() {
   libraryPathInput.value = library
   localStorage.setItem(LIBRARY_PATH_KEY, library)
   libraryView.hidden = false
-  libraryGrid.innerHTML = '<div style="color:var(--muted);padding:20px">扫描 Calibre 来源中…</div>'
+  libraryGrid.innerHTML = '<div class="library-state">扫描 Calibre 迁移来源中…</div>'
   if (!isTauriRuntime()) {
-    libraryGrid.innerHTML = '<div style="color:var(--muted);padding:20px;line-height:1.7">书库导入需要 Tauri 桌面窗口。<br>请在终端运行：<code>npm run tauri dev</code></div>'
+    libraryGrid.innerHTML = '<div class="library-state">书库导入需要 Tauri 桌面窗口。<br>请在终端运行：<code>npm run tauri dev</code></div>'
     return
   }
   try {
     const calibreBooks = await bridge.listCalibreBooks(library)
     if (calibreBooks.length === 0) {
-      libraryGrid.innerHTML = '<div style="color:var(--muted);padding:20px">Calibre 来源里没有 EPUB</div>'
+      libraryGrid.innerHTML = '<div class="library-state">Calibre 迁移来源里没有 EPUB</div>'
       return
     }
     let imported = 0
@@ -604,7 +615,7 @@ async function importCalibreLibrary() {
     const failedItems: string[] = []
     for (let i = 0; i < calibreBooks.length; i++) {
       const b = calibreBooks[i]
-      libraryGrid.innerHTML = `<div style="color:var(--muted);padding:20px">导入中 ${i + 1}/${calibreBooks.length}：${b.title || b.path}</div>`
+      libraryGrid.innerHTML = `<div class="library-state">迁移中 ${i + 1}/${calibreBooks.length}：${b.title || b.path}</div>`
       try {
         const result = await bridge.importLibraryBook(b.path)
         if (result.duplicate) duplicate += 1
@@ -617,15 +628,28 @@ async function importCalibreLibrary() {
     await refreshLibraryBooks()
     prependLibraryImportSummary(imported, duplicate, failedItems)
   } catch (e: any) {
-    libraryGrid.innerHTML = `<div style="color:#c5221f;padding:20px">导入失败：${e?.message || e}</div>`
+    libraryGrid.innerHTML = `<div class="library-state library-state-error">导入失败：${e?.message || e}</div>`
   }
 }
 
-async function importEpubFiles(files: File[]) {
-  if (files.length === 0) return
+function collectEpubFiles(files: File[]): File[] {
+  return files
+    .filter((file) => file.name.toLowerCase().endsWith('.epub'))
+    .sort((a, b) => {
+      const aPath = (a as File & { webkitRelativePath?: string }).webkitRelativePath || a.name
+      const bPath = (b as File & { webkitRelativePath?: string }).webkitRelativePath || b.name
+      return aPath.localeCompare(bPath, 'zh-CN')
+    })
+}
+
+async function importEpubFiles(files: File[], sourceLabel: string) {
   libraryView.hidden = false
+  if (files.length === 0) {
+    libraryGrid.innerHTML = `<div class="library-state">${sourceLabel} 中没有可导入的 EPUB</div>`
+    return
+  }
   if (!isTauriRuntime()) {
-    libraryGrid.innerHTML = '<div style="color:var(--muted);padding:20px;line-height:1.7">书库导入需要 Tauri 桌面窗口。<br>请在终端运行：<code>npm run tauri dev</code></div>'
+    libraryGrid.innerHTML = '<div class="library-state">书库导入需要 Tauri 桌面窗口。<br>请在终端运行：<code>npm run tauri dev</code></div>'
     return
   }
 
@@ -634,15 +658,16 @@ async function importEpubFiles(files: File[]) {
   const failedItems: string[] = []
   for (let i = 0; i < files.length; i++) {
     const file = files[i]
-    libraryGrid.innerHTML = `<div style="color:var(--muted);padding:20px">导入中 ${i + 1}/${files.length}：${file.name}</div>`
+    const path = (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name
+    libraryGrid.innerHTML = `<div class="library-state">导入中 ${i + 1}/${files.length}：${path}</div>`
     try {
       const data = new Uint8Array(await file.arrayBuffer())
       const result = await bridge.importLibraryBookFromBytes(data, file.name)
       if (result.duplicate) duplicate += 1
       else imported += 1
     } catch (err) {
-      failedItems.push(`${file.name}: ${formatError(err)}`)
-      console.warn('导入失败', file.name, err)
+      failedItems.push(`${path}: ${formatError(err)}`)
+      console.warn('导入失败', path, err)
     }
   }
 
@@ -710,10 +735,11 @@ function renderLibraryBooks() {
   const books = libraryBooks
 
   if (books.length === 0) {
-    const empty = librarySearchInput.value.trim()
-      ? '没有匹配的书'
-      : '本地书库还是空的，可从 Calibre 来源导入 EPUB'
-    libraryGrid.innerHTML = `<div style="color:var(--muted);padding:20px">${empty}</div>`
+    if (librarySearchInput.value.trim()) {
+      libraryGrid.innerHTML = '<div class="library-state">没有匹配的书</div>'
+    } else {
+      renderLibraryEmptyState()
+    }
     return
   }
 
@@ -758,6 +784,49 @@ function renderLibraryBooks() {
   }
 }
 
+function renderLibraryEmptyState() {
+  const empty = document.createElement('div')
+  empty.className = 'library-empty'
+
+  const icon = document.createElement('img')
+  icon.className = 'library-empty-icon'
+  icon.src = '/app-icon.png'
+  icon.alt = ''
+
+  const title = document.createElement('div')
+  title.className = 'library-empty-title'
+  title.textContent = '书架等待第一卷'
+
+  const subtitle = document.createElement('div')
+  subtitle.className = 'library-empty-subtitle'
+  subtitle.textContent = '还没有本地作品'
+
+  const actions = document.createElement('div')
+  actions.className = 'library-empty-actions'
+
+  const importFile = document.createElement('button')
+  importFile.className = 'btn btn-primary'
+  importFile.textContent = '导入 EPUB'
+  importFile.addEventListener('click', () => libraryImportInput.click())
+
+  const importFolder = document.createElement('button')
+  importFolder.className = 'btn'
+  importFolder.textContent = '导入文件夹'
+  importFolder.addEventListener('click', () => libraryFolderInput.click())
+
+  const moreSources = document.createElement('button')
+  moreSources.className = 'btn btn-subtle'
+  moreSources.textContent = '更多来源'
+  moreSources.addEventListener('click', () => {
+    librarySourcePanel.open = true
+    libraryPathInput.focus()
+  })
+
+  actions.append(importFile, importFolder, moreSources)
+  empty.append(icon, title, subtitle, actions)
+  libraryGrid.replaceChildren(empty)
+}
+
 async function openLibraryBook(book: LibraryBook) {
   try {
     await reader.openFromLibraryId(book.id, viewer)
@@ -767,6 +836,7 @@ async function openLibraryBook(book: LibraryBook) {
     statusbar.hidden = false
     $('#prev-zone').hidden = false
     $('#next-zone').hidden = false
+    document.body.classList.add('reading-active')
   } catch (e: any) {
     showError(`打开失败：${e?.message || e}`)
   }

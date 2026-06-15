@@ -9,12 +9,16 @@
     <script type="module" src="/src/main.ts" defer></script>
   </head>
 
-  <body data-theme="sepia">
+  <body data-theme="light">
     <!-- 顶部工具栏 -->
     <header class="toolbar">
       <div class="toolbar-left">
+        <div class="app-brand" aria-label="LightNovel Reader">
+          <img src="/app-icon.png" alt="" />
+          <span>LN Reader</span>
+        </div>
         <button id="btn-open" class="btn" title="打开 epub 文件">打开</button>
-        <button id="btn-library" class="btn" title="Calibre 书库">书库</button>
+        <button id="btn-library" class="btn" title="本地轻小说书库">书库</button>
         <button id="btn-toc" class="btn" title="目录">目录</button>
         <button id="btn-annotations" class="btn" title="标注">标注</button>
         <!-- 隐藏的文件选择框，由「打开」按钮触发 -->
@@ -73,12 +77,33 @@
       </aside>
 
       <section class="viewer-wrap">
+        <div class="ambient-scene" aria-hidden="true">
+          <img class="ambient-landscape" src="/illustrations/book-town-evening.png" alt="" />
+          <div class="ambient-light"></div>
+          <div class="ambient-particles">
+            <span></span><span></span><span></span><span></span>
+            <span></span><span></span><span></span><span></span>
+          </div>
+        </div>
+
         <!-- epub 渲染到这里 -->
         <div id="viewer" class="viewer"></div>
 
         <!-- 初始空状态提示 -->
         <div id="empty-state" class="empty-state">
-          <p>点击左上角「打开」选择一本 epub 开始阅读</p>
+          <div class="empty-panel">
+            <div class="empty-art-frame" aria-hidden="true">
+              <img src="/illustrations/window-reader-mascot.png" alt="" />
+            </div>
+            <div class="empty-copy">
+              <strong>Light Novel Reader</strong>
+              <p>书页尚未展开</p>
+            </div>
+            <div class="empty-actions">
+              <button id="btn-empty-open" class="btn btn-primary" type="button">打开 EPUB</button>
+              <button id="btn-empty-library" class="btn" type="button">进入书库</button>
+            </div>
+          </div>
         </div>
 
         <!-- 左右翻页热区 -->
@@ -88,18 +113,32 @@
         <!-- 本地书库书架（覆盖在阅读区上） -->
         <div id="library-view" class="library-view" hidden>
           <div class="library-header">
-            <span>本地书库</span>
-            <button id="btn-library-close" class="btn">关闭</button>
+            <div class="library-title">
+              <div class="library-kicker">Local Light Novel Shelf</div>
+              <span>本地轻小说书库</span>
+              <small>离线优先的轻小说收藏</small>
+            </div>
+            <div class="library-header-right">
+              <div class="library-badge">v0.3 Library</div>
+              <button id="btn-library-close" class="btn">关闭</button>
+            </div>
           </div>
-          <div class="library-path">
-            <input id="library-path-input" type="text" spellcheck="false" placeholder="Calibre 书库路径（导入来源）" />
-            <button id="btn-library-import-epub" class="btn">导入 EPUB</button>
-            <button id="btn-library-import-calibre" class="btn">导入 Calibre</button>
+          <div class="library-actions">
+            <button id="btn-library-import-epub" class="btn btn-primary">导入 EPUB</button>
+            <button id="btn-library-import-folder" class="btn">导入文件夹</button>
             <button id="btn-library-refresh" class="btn">刷新书架</button>
             <input id="library-import-input" type="file" accept=".epub" multiple hidden />
+            <input id="library-folder-input" type="file" accept=".epub" webkitdirectory multiple hidden />
           </div>
+          <details id="library-source-panel" class="library-source-panel">
+            <summary>更多导入来源</summary>
+            <div class="library-path">
+              <input id="library-path-input" type="text" spellcheck="false" placeholder="Calibre 书库路径" />
+              <button id="btn-library-import-calibre" class="btn">从 Calibre 迁移</button>
+            </div>
+          </details>
           <div class="library-search">
-            <input id="library-search-input" type="search" placeholder="搜索书名或作者" spellcheck="false" />
+            <input id="library-search-input" type="search" placeholder="搜索书名、作者或系列" spellcheck="false" />
           </div>
           <div id="library-grid" class="library-grid"></div>
         </div>

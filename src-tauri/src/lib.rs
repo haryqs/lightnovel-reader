@@ -1,14 +1,15 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use reading_core::epub_parser::{self, BookInfo};
-use reading_core::{compute_book_id, library, rusqlite, storage};
+use reading_core::{compute_book_id, library, parse_cache, rusqlite, storage};
 use tauri::Manager;
 
 struct LoadedBook {
+    book_id: String,     // 内容哈希；持久化解析缓存的 key
     bytes: Arc<Vec<u8>>, // 解码后的 EPUB 原始字节，供按需解析与图片协议复用
     book_info: BookInfo,
     chapters: Mutex<HashMap<String, String>>,
@@ -38,6 +39,7 @@ struct AppState {
     db: Mutex<rusqlite::Connection>,
     library_db: Mutex<rusqlite::Connection>,
     library_dir: std::path::PathBuf,
+    cache_dir: std::path::PathBuf, // 持久化解析缓存根目录
 }
 
 fn now_ms() -> i64 {
@@ -47,17 +49,54 @@ fn now_ms() -> i64 {
         .as_millis() as i64
 }
 
+fn resolve_app_data_dir(app: &tauri::App) -> PathBuf {
+    const OVERRIDE_ENV: &str = "LIGHTNOVEL_READER_APP_DATA_DIR";
+
+    if let Ok(path) = std::env::var(OVERRIDE_ENV) {
+        let path = path.trim();
+        if !path.is_empty() {
+            return PathBuf::from(path);
+        }
+    }
+
+    app.path().app_data_dir().expect("无法解析 app data 目录")
+}
+
 fn load_book_from_data(state: &AppState, data: Vec<u8>) -> Result<OpenedBook, String> {
     let book_id = compute_book_id(&data);
-    let book_info = epub_parser::parse_book_info(&data)?;
+    let cache_root = &state.cache_dir;
+
+    // 解析缓存命中则跳过 OPF/NCX 解析；未命中解析一次并落盘。
+    let book_info = match parse_cache::load_book_info(cache_root, &book_id) {
+        Some(info) => info,
+        None => {
+            let info = epub_parser::parse_book_info(&data)?;
+            parse_cache::store_book_info(cache_root, &book_id, &info);
+            info
+        }
+    };
+
+    // 预热首章：优先读盘缓存，未命中清洗一次并落盘。
     let mut chapters = HashMap::new();
     if let Some(first) = book_info.spine.first() {
         let href = first.href.clone();
-        if let Ok(html) = epub_parser::parse_single_chapter(&data, &href, &book_info) {
+        let html = match parse_cache::load_chapter(cache_root, &book_id, &href) {
+            Some(html) => Some(html),
+            None => match epub_parser::parse_single_chapter(&data, &href, &book_info) {
+                Ok(html) => {
+                    parse_cache::store_chapter(cache_root, &book_id, &href, &html);
+                    Some(html)
+                }
+                Err(_) => None,
+            },
+        };
+        if let Some(html) = html {
             chapters.insert(href, html);
         }
     }
+
     let loaded = LoadedBook {
+        book_id: book_id.clone(),
         bytes: Arc::new(data),
         book_info: book_info.clone(),
         chapters: Mutex::new(chapters),
@@ -104,9 +143,19 @@ fn get_chapter(state: tauri::State<AppState>, href: String) -> Result<String, St
         }
     }
 
-    // 缓存未命中——按需解析
+    // 内存未命中——先查磁盘解析缓存（已读过的章/二次开书在此命中，跳过清洗）
+    if let Some(html) = parse_cache::load_chapter(&state.cache_dir, &book.book_id, &href) {
+        book.chapters
+            .lock()
+            .map_err(|e| e.to_string())?
+            .insert(href.clone(), html.clone());
+        return Ok(html);
+    }
+
+    // 全部未命中——按需解析 + 清洗，写回内存与磁盘缓存
     eprintln!("  缓存未命中，按需解析");
     let html = epub_parser::parse_single_chapter(&book.bytes[..], &href, &book.book_info)?;
+    parse_cache::store_chapter(&state.cache_dir, &book.book_id, &href, &html);
 
     let mut chapters = book.chapters.lock().map_err(|e| e.to_string())?;
     chapters.insert(href.clone(), html.clone());
@@ -313,6 +362,7 @@ pub fn run() {
         .register_uri_scheme_protocol("reader-img", |ctx, request| {
             let app = ctx.app_handle();
             let path = percent_decode(request.uri().path().trim_start_matches('/'));
+            eprintln!("reader-img request: {}", path);
             let bytes_opt = {
                 let state = app.state::<AppState>();
                 let guard = state.book.lock().ok();
@@ -323,6 +373,7 @@ pub fn run() {
             };
             if let Some(bytes) = bytes_opt {
                 if let Some((mime, data)) = epub_parser::read_image_from_zip(&bytes[..], &path) {
+                    eprintln!("reader-img hit: {} ({} bytes)", path, data.len());
                     return tauri::http::Response::builder()
                         .status(200)
                         .header("Content-Type", mime)
@@ -336,18 +387,21 @@ pub fn run() {
                 .unwrap()
         })
         .setup(|app| {
-            let dir = app.path().app_data_dir().expect("无法解析 app data 目录");
+            let dir = resolve_app_data_dir(app);
             std::fs::create_dir_all(&dir).ok();
             let conn = storage::init(&dir.join("reader.db")).expect("SQLite 初始化失败");
             let library_dir = dir.join("library");
             std::fs::create_dir_all(&library_dir).expect("书库目录初始化失败");
             let library_conn = library::open_library(&library_dir.join("library.sqlite"))
                 .expect("书库 SQLite 初始化失败");
+            let cache_dir = dir.join("cache");
+            std::fs::create_dir_all(&cache_dir).ok();
             app.manage(AppState {
                 book: Mutex::new(None),
                 db: Mutex::new(conn),
                 library_db: Mutex::new(library_conn),
                 library_dir,
+                cache_dir,
             });
             Ok(())
         })
