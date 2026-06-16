@@ -220,3 +220,30 @@
 - `books` 新增 `thumb_path` 列，经迁移框架 **version 2**（`ALTER TABLE`）落地——这是迁移框架上线后的第一个真实增量迁移，验证了「绝不改 v1、只追加新版本」的纪律。
 - `LibraryBook` DTO + 协议新增可选 `thumbPath`（符合「只增可选字段」演进规则）。
 - v0.5 实体模型迁移顺延为更高版本号（不再是 v2）。
+
+## 2026-06-16：读路径锚定 edition，books 退为只读镜像
+
+决策：v0.5-c 把书库查询（list/search/get）从「锚定 books 表 + LEFT JOIN 实体表」翻为
+**锚定 `edition`**（`FROM edition JOIN volume JOIN series LEFT JOIN asset`），不再读 `books`。
+「书架的一个条目 = 一个 edition（版本）」：本地条目有 asset（availability=local），
+远程 `metadata_only` 条目只有 source_record/无 asset（availability=remote）。
+配套：迁移 v4 把 `thumb_path` 从 books 迁到 asset；`LibraryBook.filePath/fileSize` 转可选。
+
+理由：
+
+- 远程元数据条目无本地文件，`books`（`file_path/file_size NOT NULL`）**结构上装不下**它们；
+  只要读路径锚在 books，连接器拉来的索引就永远上不了书架。锚定 edition 是元数据连接器能
+  显示任何东西的唯一前置。
+- 选 edition 作条目单位：文库版/Web 版/译本天然是不同 edition，契合「同一作品多来源」。
+- 核心展示字段全部从实体表取（v3 回填 + 导入双写保证与 books 等价），本地书结果不变。
+- `filePath/fileSize` 可选符合协议「只增可选字段 / 预留演进」——`library.open` 对无文件条目
+  报错，前端据 `availability` 改走外链。
+
+后果：
+
+- `books` 自此为**只读镜像**（仅导入双写 + touch_last_read 写入，读路径不再触碰），v0.6 可 DROP。
+- `touch_last_read` 改为同更 asset（读路径读 `asset.last_read_at`）与 books。
+- FTS ≥3 字仍经 books_fts（仅本地可搜）；远程条目可搜需将来填 catalog_fts（草案 §8）。
+- 条目 `id`：本地 = 内容哈希（asset.id，open/标注/进度同键），远程回退 edition.id。
+- 元数据连接器（AniList/Open Library）现在**无前置阻塞**，可直接写 series/edition/source_record
+  并即时出现在书架（availability=remote，只展示 + 外链）。

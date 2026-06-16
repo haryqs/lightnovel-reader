@@ -788,9 +788,11 @@ function renderLibraryBooks() {
     }
     const meta = document.createElement('div')
     meta.className = 'meta'
-    const sizeMb = Math.max(0.1, b.fileSize / 1024 / 1024).toFixed(1)
     const lastRead = b.lastReadAt ? `上次阅读 ${new Date(b.lastReadAt).toLocaleDateString('zh-CN')}` : '未读'
-    meta.textContent = `${sizeMb} MB · ${lastRead}`
+    // 远程条目无文件大小：只显示阅读状态；本地条目照常显示体积。
+    meta.textContent = b.fileSize
+      ? `${Math.max(0.1, b.fileSize / 1024 / 1024).toFixed(1)} MB · ${lastRead}`
+      : lastRead
     card.title = [b.title, b.author, series, language, b.description]
       .filter(Boolean)
       .join('\n')

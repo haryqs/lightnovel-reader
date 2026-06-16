@@ -993,3 +993,25 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
 下一步：
 
 - v0.5-c：书架系列聚合视图（消费 seriesId 折叠同系列卷）；远期 v0.6 DROP books
+
+## 2026-06-16：v0.5-c：读路径锚定 edition（FROM edition JOIN volume/series LEFT JOIN asset），books 退为只读镜像；迁移 v4 thumb_path 迁到 asset；LibraryBook.filePath/fileSize 转可选；library_open 对无文件条目报错；touch_last_read 同更 asset；main.ts/protocol.ts/协议文档/DECISIONS 同步
+
+变更：
+
+- v0.5-c：读路径锚定 edition（FROM edition JOIN volume/series LEFT JOIN asset），books 退为只读镜像；迁移 v4 thumb_path 迁到 asset；LibraryBook.filePath/fileSize 转可选；library_open 对无文件条目报错；touch_last_read 同更 asset；main.ts/protocol.ts/协议文档/DECISIONS 同步
+
+修改文件：
+
+- 待补充
+
+验证：
+
+- cargo test -p reading-core 54 全过（+1：远程 metadata_only 条目可上书架）；cargo check --workspace 退出0；npm run build 通过
+
+未验证/阻塞：
+
+- 无
+
+下一步：
+
+- 元数据连接器（AniList/Open Library）：写 series/edition/source_record，远程条目即时上书架（availability=remote，只展示+外链）；v0.5-c UI 系列聚合可并行
