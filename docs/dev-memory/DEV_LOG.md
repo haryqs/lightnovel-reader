@@ -1086,7 +1086,7 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
 - `src-tauri/src/lib.rs`：新增 `library_search_remote_source(source, query)` 与 `library_acquire_remote(id)`。AniList 旧 `library_search_remote(query)` 保留为兼容入口；青空搜索按需下载 `list_person_all_extended_utf8.zip`，在壳侧解压 CSV、缓存到 `cache/connectors/aozora/`，7 天内复用；HTTP/ZIP/缓存留在壳。
 - `crates/reading-core/src/connectors.rs`：复用 PR-A parser，补 `CatalogWork` / `find_catalog_work_by_id` 以便 acquire 按作品 ID 取官方 HTML URL；`source.kind` 用 `catalog`；重复 ingest 时保留已 cached 的 `source_record.availability`。
 - `crates/reading-core/src/library.rs`：`LibraryBook` 新增 `rights_status`/TS `rightsStatus`；新增 `remote_acquisition` 和 `attach_remote_html_asset`。公共版权 HTML 合成为单章 EPUB asset 写入对象仓库，挂到既有 edition，`availability=cached`，复用现有阅读/进度/标注链路。
-- `src/platform/*` + `src/main.ts` + `index.html` + `src/styles.css`：在线找书加来源选择（AniList / 青空文库）；远程卡片按 `rightsStatus` 展示「公共版权 · 可站内读」或官方外链；公共版权点击后先 acquire 再打开阅读，非公共版权仍跳官方外链。
+- `src/platform/*` + `src/main.ts` + `index.html` + `src/styles.css`：在线找书加来源选择（AniList / 青空文库）；远程卡片按 `rightsStatus` 展示「公共版权经典 · 可站内读」或官方外链；公共版权点击后先 acquire 再打开阅读，非公共版权仍跳官方外链。
 - `docs/resource-library-plan/8_桥接协议_v0.1.md`、`DECISIONS.md`、`NEXT_ACTIONS.md` 同步 `library.searchRemoteSource` / `library.acquireRemote` / `rightsStatus` 与青空获取策略。
 
 验证：
@@ -1104,3 +1104,26 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
 
 - 真窗口验证 AniList/青空来源切换、青空首次下载缓存、公共版权 acquire 后打开阅读、非公共版权只外链。
 - 通过后推分支开 PR；若实机发现青空 HTML 图片路径/编码问题，再补 shell/core 处理。
+
+## 2026-06-16：青空定位修正为“公共版权经典文学”，不再表述为轻小说来源
+
+背景：用户指出青空文库不是轻小说主库，而是日本经典文学/公共版权库。确认后保留 PR-B 管线，但修正产品语义，避免把“合法站内阅览试金石”误写成“轻小说内容来源”。
+
+变更：
+
+- 前端来源选择从“青空文库”改为“青空文库（公共版权经典）”；公共版权远程卡片标签从“公共版权 · 可站内读”改为“公共版权经典 · 可站内读”。
+- 协议文档明确 `anilist` 是轻小说/ACG 元数据入口，`aozora` 是公共版权经典文学来源；`library.acquireRemote` 当前用于公共版权经典与站内阅览管线验证。
+- DECISIONS 新增定位决策：青空不作为轻小说主来源；真正 LN 主线是用户自有 EPUB、元数据/官方入口，免费全文由公共版权/开放授权/用户显式安装插件承接。
+- NEXT_ACTIONS 调整后续连接器优先级：Bangumi / なろう metadata 优先；カクヨム/Royal Road/正文抓取类来源需 ToS 审核，倾向 v0.7 插件。
+
+验证：
+
+- `node scripts/check-arch.mjs` 通过。
+- `node scripts/check-dev-memory.mjs` 通过。
+- `npm.cmd run build` 通过。
+- `cargo test --workspace` 通过（65 passed）。
+- `git diff --check` 通过（仅 Windows 换行提示）。
+
+未验证 / 阻塞：
+
+- 尚未跑真窗口联网冒烟；本次只是语义/UI/文档修正。

@@ -559,7 +559,7 @@ let libraryBooks: LibraryBook[] = []
 let librarySearchTimer: number | null = null
 const REMOTE_SOURCE_LABEL: Record<RemoteLibrarySource, string> = {
   anilist: 'AniList',
-  aozora: '青空文库',
+  aozora: '青空文库（公共版权经典）',
 }
 libraryPathInput.value = localStorage.getItem(LIBRARY_PATH_KEY) || DEFAULT_CALIBRE_LIBRARY
 
@@ -785,7 +785,7 @@ function formatLanguageLabel(language?: string): string {
 function remoteStatusLabel(book: LibraryBook): string {
   switch (book.rightsStatus) {
     case 'public_domain':
-      return '公共版权 · 可站内读'
+      return '公共版权经典 · 可站内读'
     case 'official_free':
       return '官方免费 · 外链'
     case 'official_purchase':
