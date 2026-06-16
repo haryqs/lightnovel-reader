@@ -17,3 +17,5 @@ sha2 = "0.10"
 # 封面缩略图（导入时生成小图，书架懒加载）。仅启用 png/jpeg 解码以控体积；
 # 其它格式解码失败时缩略图 fail-open 跳过，书架回退用原图。
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+# 青空文库连接器：解析官方扩展目录 CSV（带引号字段）。纯解析、按表头名取列。
+csv = "1"

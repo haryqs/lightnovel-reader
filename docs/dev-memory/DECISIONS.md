@@ -273,3 +273,26 @@
 - 远程条目暂不可全文搜（books_fts 不含它们）；catalog_fts 触发器留待后续（草案 §8）。
 - `reqwest`（rustls-tls）进 src-tauri 依赖；core 仍零网络。
 - 下一步可加更多连接器（Open Library / 青空文库 OPDS）：复用 `connectors::ingest`，各写一个 parser。
+
+## 2026-06-16：第二个连接器（青空文库）选官方 catalog CSV，不用第三方 API
+
+决策：青空文库连接器的数据源用**官方「全作品扩展目录」CSV**（`list_person_all_extended_utf8.zip`，
+`www.aozora.gr.jp`），不用社区 REST API（`api.aozorahack.net`）。新增 `connectors::aozora` 子模块
+（`parse_catalog_csv`，纯函数可测）+ `csv` 依赖。PR-A 只做 parser；站内阅览（PR-B）另做。
+
+理由：
+
+- 社区 REST API 是非官方、且实测**连不上**（不可靠）。官方 CSV 是权威、稳定、ToS 干净
+  （青空《取り扱い規準》明确允许公共版权作品自由再分发）的唯一可靠源。
+- **按表头名取列**（作品ID/作品名/作品著作権フラグ/図書カードURL/姓/名），抗列序变化；
+  `著作権フラグ=なし` → `public_domain`。这是首个 rights 非 official_purchase 的源 → 未来可站内阅览。
+- 加 `csv` crate：扩展目录是带引号 CSV，标准库解析胜过手搓（手搓 CSV 是已知 bug 重灾区）。
+- parser 纯函数（&str → Vec<RemoteEntry>，无 I/O，可 wasm/可测），与 anilist 同分层。
+
+后果：
+
+- core 测试 +5（过滤/去重/rights 映射/limit/缺列报错/ingest 上架）。
+- **传输层是待决项**：官方 CSV ≈ 13MB（zip 更小）。壳须「下载一次 + 缓存复用 + 解压」，
+  不能每次在线找书都拉全量。这步（含缓存策略与首拉 UX）单独评估后再做，故 PR-A 只含 parser。
+- PR-B（站内自由阅览）：拉公共版权正文（官方 text URL）→ 导入为本地 asset（availability 转 local/cached）
+  → 走现有读路径。需新增 acquire 类协议消息 + 前端「阅读/获取」按钮。

@@ -219,6 +219,97 @@ pub mod anilist {
     }
 }
 
+/// 青空文库连接器：日本公共版权文学。来源 = 官方「全作品扩展目录」CSV（UTF-8，打包为 zip）。
+/// 只对接官方权威数据（不依赖第三方服务），ToS 干净；正文亦在官方站，留待 PR-B 做站内阅览。
+///
+/// 与 AniList 不同：青空作品多为 `著作権フラグ=なし`（公共版权）→ rights 给 `public_domain`，
+/// 是首个未来可"站内自由阅览"的真实来源。本模块只做 CSV 解析（纯函数，可测/可 wasm）；
+/// CSV 的下载 + 解压是壳的职责（目录较大，壳侧应缓存复用）。
+pub mod aozora {
+    use super::RemoteEntry;
+    use std::collections::HashSet;
+
+    pub const SOURCE_ID: &str = "src:aozora";
+    pub const SOURCE_NAME: &str = "青空文庫";
+    /// 官方全作品扩展目录（UTF-8 CSV，zip 打包）。壳下载并解压后把 CSV 文本交给 [`parse_catalog_csv`]。
+    pub const CATALOG_ZIP_URL: &str =
+        "https://www.aozora.gr.jp/index_pages/list_person_all_extended_utf8.zip";
+
+    /// 解析官方扩展目录 CSV，按「作品名包含 query」过滤，映射为 [`RemoteEntry`]。
+    ///
+    /// - **按表头名取列**（作品ID/作品名/作品著作権フラグ/図書カードURL/姓/名），抗列序变化；
+    ///   缺必需列（作品ID/作品名）即报错（目录格式变了，早失败）。
+    /// - 一个作品在扩展目录里可能多行（著者/翻译者各一行）→ 按作品ID去重，保留首行。
+    /// - `著作権フラグ=なし` → `public_domain`；否则 `unknown`。青空作品无封面图、目录无简介。
+    /// - `limit` 截断（目录上万行）。
+    pub fn parse_catalog_csv(csv_text: &str, query: &str, limit: usize) -> Result<Vec<RemoteEntry>, String> {
+        let mut rdr = csv::ReaderBuilder::new()
+            .has_headers(true)
+            .flexible(true)
+            .from_reader(csv_text.as_bytes());
+        let headers = rdr
+            .headers()
+            .map_err(|e| format!("青空目录表头解析失败: {e}"))?
+            .clone();
+        let col = |name: &str| headers.iter().position(|h| h == name);
+        let c_id = col("作品ID").ok_or("青空目录缺『作品ID』列")?;
+        let c_title = col("作品名").ok_or("青空目录缺『作品名』列")?;
+        let c_copyright = col("作品著作権フラグ");
+        let c_card = col("図書カードURL");
+        let c_last = col("姓");
+        let c_first = col("名");
+
+        let q = query.trim().to_lowercase();
+        let mut seen: HashSet<String> = HashSet::new();
+        let mut out = Vec::new();
+
+        for rec in rdr.records() {
+            let rec = rec.map_err(|e| format!("青空目录行解析失败: {e}"))?;
+            let get = |i: Option<usize>| {
+                i.and_then(|i| rec.get(i))
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+            };
+
+            let Some(title) = get(Some(c_title)) else { continue };
+            if !q.is_empty() && !title.to_lowercase().contains(&q) {
+                continue;
+            }
+            let Some(remote_id) = get(Some(c_id)) else { continue };
+            if !seen.insert(remote_id.to_string()) {
+                continue; // 同作品多行去重
+            }
+
+            let rights_status = match get(c_copyright) {
+                Some("なし") => "public_domain",
+                _ => "unknown",
+            }
+            .to_string();
+            let author = match (get(c_last), get(c_first)) {
+                (Some(l), Some(f)) => Some(format!("{}{}", l, f)), // 姓名相连（日文无空格）
+                (Some(l), None) => Some(l.to_string()),
+                (None, Some(f)) => Some(f.to_string()),
+                _ => None,
+            };
+
+            out.push(RemoteEntry {
+                remote_id: remote_id.to_string(),
+                title: title.to_string(),
+                author,
+                description: None,
+                cover_url: None,
+                language: Some("ja".into()),
+                site_url: get(c_card).map(str::to_string),
+                rights_status,
+            });
+            if out.len() >= limit {
+                break;
+            }
+        }
+        Ok(out)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -324,6 +415,63 @@ mod tests {
         ingest(&conn, anilist::SOURCE_ID, &entries, 2000).unwrap();
         assert_eq!(library::list_books(&conn).unwrap().len(), 2);
 
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // 表头故意打散列序 + 含多余列（人物ID/テキストファイルURL）→ 证明按表头名取列。
+    // 作品 127 两行（著者芥川 + 译者森）→ 应去重；2000 是 著作権あり。
+    const AOZORA_CSV: &str = "人物ID,作品ID,姓,名,作品名,作品著作権フラグ,図書カードURL,テキストファイルURL\n\
+1234,127,芥川,龍之介,羅生門,なし,https://www.aozora.gr.jp/cards/000879/card127.html,https://www.aozora.gr.jp/cards/000879/files/127_ruby.zip\n\
+5678,127,森,鴎外,羅生門,なし,https://www.aozora.gr.jp/cards/000879/card127.html,https://www.aozora.gr.jp/cards/000879/files/127_ruby.zip\n\
+9999,1000,夏目,漱石,吾輩は猫である,なし,https://www.aozora.gr.jp/cards/000148/card1000.html,x\n\
+8888,2000,現代,作家,版権あり作品,あり,https://www.aozora.gr.jp/cards/999/card2000.html,y\n";
+
+    #[test]
+    fn aozora_parse_filters_dedupes_and_maps_rights() {
+        let hit = aozora::parse_catalog_csv(AOZORA_CSV, "羅生門", 50).unwrap();
+        assert_eq!(hit.len(), 1, "同作品多行应去重为一条");
+        let e = &hit[0];
+        assert_eq!(e.remote_id, "127");
+        assert_eq!(e.title, "羅生門");
+        assert_eq!(e.author.as_deref(), Some("芥川龍之介")); // 姓名相连
+        assert_eq!(e.rights_status, "public_domain"); // 著作権フラグ=なし
+        assert_eq!(e.language.as_deref(), Some("ja"));
+        assert_eq!(e.site_url.as_deref(), Some("https://www.aozora.gr.jp/cards/000879/card127.html"));
+        assert!(e.cover_url.is_none() && e.description.is_none());
+    }
+
+    #[test]
+    fn aozora_parse_empty_query_returns_unique_works_and_flags_copyright() {
+        let all = aozora::parse_catalog_csv(AOZORA_CSV, "", 50).unwrap();
+        assert_eq!(all.len(), 3, "127/1000/2000 三个作品（127 去重）");
+        let copyrighted = all.iter().find(|e| e.remote_id == "2000").unwrap();
+        assert_eq!(copyrighted.rights_status, "unknown"); // 著作権あり → 非公共版权
+    }
+
+    #[test]
+    fn aozora_parse_respects_limit_and_substring() {
+        assert_eq!(aozora::parse_catalog_csv(AOZORA_CSV, "", 1).unwrap().len(), 1);
+        assert_eq!(aozora::parse_catalog_csv(AOZORA_CSV, "猫", 50).unwrap().len(), 1);
+        assert!(aozora::parse_catalog_csv(AOZORA_CSV, "不存在", 50).unwrap().is_empty());
+    }
+
+    #[test]
+    fn aozora_parse_missing_required_column_errors() {
+        let bad = "作品名,図書カードURL\n羅生門,https://x\n"; // 缺作品ID
+        assert!(aozora::parse_catalog_csv(bad, "", 50).is_err());
+    }
+
+    #[test]
+    fn aozora_public_domain_entry_lands_on_shelf() {
+        let (dir, conn) = open_db();
+        let entries = aozora::parse_catalog_csv(AOZORA_CSV, "羅生門", 50).unwrap();
+        ensure_source(&conn, aozora::SOURCE_ID, aozora::SOURCE_NAME, "opds", None, 1000).unwrap();
+        let ids = ingest(&conn, aozora::SOURCE_ID, &entries, 1000).unwrap();
+        assert_eq!(ids.len(), 1);
+        let books = library::list_books(&conn).unwrap();
+        let r = books.iter().find(|b| b.title == "羅生門").unwrap();
+        assert_eq!(r.availability.as_deref(), Some("remote"));
+        assert_eq!(r.remote_url.as_deref(), Some("https://www.aozora.gr.jp/cards/000879/card127.html"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
