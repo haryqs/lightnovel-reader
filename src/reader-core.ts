@@ -1,6 +1,6 @@
 import { bridge, type BookInfo, type TocItem } from './platform'
 import { readerThemes, baseTypography, type ThemeName } from './themes'
-import { type Annotation, type HighlightColor, computeAnchor, applyHighlight, renderAnnotations, saveAnnotation, loadAnnotations, deleteAnnotation, computeBookId, exportAnnotations, exportAnnotationsJson, type ExportContext } from './annotations'
+import { type Annotation, type HighlightColor, computeAnchor, applyAnnotationHighlight, renderAnnotations, saveAnnotation, loadAnnotations, deleteAnnotation, computeBookId, exportAnnotations, exportAnnotationsJson, type ExportContext } from './annotations'
 
 // 书籍结构类型定义在桥接协议里,这里转发给既有调用方
 export type { BookInfo, TocItem, SpineItem } from './platform'
@@ -598,14 +598,10 @@ export class ReaderCore {
     this.annotations.push(ann)
     this.onAnnotationsChanged?.(this.annotations)
 
-    // 视觉高亮（选区还在时直接应用）
-    const sel = window.getSelection()
-    if (sel && !sel.isCollapsed && sel.rangeCount) {
-      applyHighlight(sel.getRangeAt(0), color, ann.id)
-      sel.removeAllRanges()
-    } else {
-      renderAnnotations(this.annotations, this.currentChapter)
-    }
+    // 视觉高亮：按偏移逐文本节点包裹，跨元素选择也能正确高亮
+    // （旧实现对跨元素 Range 用 surroundContents 会抛错而降级跳过，重开才显示）。
+    window.getSelection()?.removeAllRanges()
+    applyAnnotationHighlight(ann)
 
     return ann
   }

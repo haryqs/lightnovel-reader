@@ -113,6 +113,41 @@ async function main() {
     n => n >= 1, 12000)
   assert(restored >= 1, 'highlight mark not restored after reopen')
 
+  // —— 3.2) 跨元素标注渲染（确定性：构造跨段落 anchor → 存库 → 重开 → 应渲染为多段 mark）——
+  // 不走色盘手势（合成跨元素选区在 WebView 里会被 10ms 后的 handler 读到时塌缩，无法稳定模拟）；
+  // 这里验证渲染侧 locate+wrap 对跨元素的处理，并隐含校验 exact 与 textContent 同口径。
+  const anchor = await exec(`
+    const content = document.querySelector('.reader-content')
+    const walker = document.createTreeWalker(content, NodeFilter.SHOW_TEXT)
+    let off = 0; const nodes = []
+    while (walker.nextNode()) { const n = walker.currentNode; nodes.push({ len:(n.textContent||'').length, start: off, parent: n.parentElement }); off += (n.textContent||'').length }
+    let a=null,b=null
+    for (let i=0;i<nodes.length-1 && !a;i++) for (let j=i+1;j<nodes.length;j++) {
+      if (nodes[i].parent!==nodes[j].parent && nodes[i].len>=3 && nodes[j].len>=3) { a=nodes[i]; b=nodes[j]; break }
+    }
+    if (!a||!b) return { ok:false }
+    const fullText = content.textContent || ''
+    const start = a.start + (a.len - 3)
+    const end = b.start + 3
+    return { ok:true, start, end, exact: fullText.slice(start, end), prefix: fullText.slice(Math.max(0,start-20), start), suffix: fullText.slice(end, end+20) }
+  `)
+  assert(anchor.ok, '找不到可构造跨元素 anchor 的文本节点', anchor)
+  const crossId = 'smoke-cross-' + Date.now()
+  await invoke('save_annotation', { annotation: {
+    id: crossId, bookId, kind: 'highlight', color: 'blue', note: '',
+    locator: { chapterHref: anns[0].locator.chapterHref, anchor: { start: anchor.start, end: anchor.end, exact: anchor.exact, prefix: anchor.prefix, suffix: anchor.suffix } },
+    createdAt: Date.now(), updatedAt: Date.now(),
+  } })
+  await exec(`document.querySelector('#btn-library')?.click(); return true`)
+  await waitFor('shelf reopened (cross)', () => exec(`return document.querySelector('#library-view')?.hidden===false`), v=>v===true)
+  await exec(`document.querySelector('#library-grid .book-card')?.click(); return true`)
+  // 先等正文就绪（标注渲染走 requestAnimationFrame，重开后需等章节加载完）
+  await waitFor('reader content after cross reopen', () => exec(`return (document.querySelector('.reader-content')?.textContent||'').length`), n=>n>20)
+  const crossMarks = await waitFor('cross-element marks rendered',
+    () => exec(`return document.querySelectorAll('mark[data-annotation-id="${crossId}"]').length`),
+    n => n >= 2, 12000)
+  assert(crossMarks >= 2, '跨元素标注未渲染为多段 mark', { crossId, crossMarks })
+
   // —— 3.5) 标注 JSON 导出（拦截下载 blob 验证结构）——
   const exportCheck = await execA(`
     const done = arguments[arguments.length-1]
@@ -140,7 +175,7 @@ async function main() {
   const calibre = await invoke('list_calibre_books', { library: calibreLib })
   assert(Array.isArray(calibre) && calibre.length >= 1, 'Calibre library returned no EPUBs', { count: calibre?.length })
 
-  console.log(JSON.stringify({ ok:true, opened, marks: hl.marks, annotations: anns.length, restoredMarks: restored, jsonExport: exportCheck, calibreBooks: calibre.length, sampleCalibre: calibre.slice(0,3).map(b=>b.title) }, null, 2))
+  console.log(JSON.stringify({ ok:true, opened, marks: hl.marks, annotations: anns.length, restoredMarks: restored, crossElementMarks: crossMarks, jsonExport: exportCheck, calibreBooks: calibre.length, sampleCalibre: calibre.slice(0,3).map(b=>b.title) }, null, 2))
   console.log('tauri-p1-smoke: OK')
 }
 
