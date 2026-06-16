@@ -1037,3 +1037,42 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
 下一步：
 
 - 更多连接器（Open Library / 青空文库 OPDS）复用 connectors::ingest；catalog_fts 让远程条目可全文搜；远程条目去重/与本地书手动关联
+
+## 2026-06-16：v0.5-e PR-A — 第二个连接器（青空文库）parser
+
+背景：寝室电脑会话续做第二个连接器（青空文库，公共版权 → 首个未来可站内自由阅览的源）。
+先把数据源查实再写 parser（用户「按推荐前进」）。
+
+数据源调研结论（WebSearch/WebFetch）：
+
+- 社区 REST API（api.aozorahack.net）非官方且实测连不上 → 弃用。
+- 选**官方「全作品扩展目录」CSV**（`list_person_all_extended_utf8.zip`，aozora.gr.jp）：权威、稳定、
+  ToS 干净。列含 作品ID/作品名/作品著作権フラグ(なし=公共版权)/図書カードURL/姓/名/テキストファイルURL。
+
+变更：
+
+- `crates/reading-core/src/connectors.rs` 新增 `aozora` 子模块：`parse_catalog_csv(csv, query, limit)`
+  纯函数——**按表头名取列**（抗列序变化）、按作品名子串过滤、按作品ID去重（同作品多行/著者+译者）、
+  `著作権フラグ=なし`→`public_domain`、姓+名相连为作者、site_url=図書カードURL、language=ja。
+- `Cargo.toml` 加 `csv = "1"`（解析带引号 CSV，胜过手搓）。
+- 决策见 DECISIONS.md 同日条目（含 PR-A/PR-B 分层与传输层待决）。
+
+修改文件：
+
+- `crates/reading-core/src/connectors.rs`、`crates/reading-core/Cargo.toml`、
+  `docs/dev-memory/DECISIONS.md`、`docs/dev-memory/DEV_LOG.md`、`docs/dev-memory/NEXT_ACTIONS.md`
+
+验证：
+
+- `cargo test -p reading-core` **63 全过**（+5 青空：过滤去重rights映射 / 空查询+著作権あり / limit+子串 /
+  缺列报错 / 公共版权条目上架）。check-arch / check-dev-memory OK。
+
+未验证/阻塞：
+
+- PR-A 只含 parser，**尚未接壳**——青空还不会出现在「在线找书」。需先定传输层：
+  官方 CSV ≈13MB，壳须下载一次 + 缓存复用 + 解压（首拉 UX 需确认）。
+
+下一步：
+
+- 与用户确认传输/缓存策略 → 接壳（下载缓存 CSV + 并入 library_search_remote）→ 青空进「在线找书」；
+- 之后 PR-B：拉公共版权正文导入为本地 asset → 站内自由阅览。
