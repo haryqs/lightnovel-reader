@@ -10,7 +10,9 @@
 
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
+use std::io::Write;
 use std::path::Path;
+use zip::write::SimpleFileOptions;
 
 use crate::migrations::{self, Migration};
 use crate::{compute_book_id, epub_parser};
@@ -45,8 +47,22 @@ pub struct LibraryBook {
     pub edition_id: Option<String>,
     /// 资产可得性（local|remote|missing|cached）。远程元数据条目据此决定能否站内读。
     pub availability: Option<String>,
+    /// 授权状态（user_owned/public_domain/official_purchase/unknown...）。
+    pub rights_status: Option<String>,
     /// 来源外链（受版权/远程条目点击后跳官方页）。本地条目为 None。
     pub remote_url: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct RemoteAcquisition {
+    pub edition_id: String,
+    pub source_id: String,
+    pub remote_id: String,
+    pub rights_status: String,
+    pub title: String,
+    pub author: Option<String>,
+    pub language: Option<String>,
+    pub existing_asset_id: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -222,13 +238,25 @@ const ASSET_THUMB_V4: &str = "\
       WHERE thumb_path IS NULL;";
 
 const MIGRATIONS: &[Migration] = &[
-    Migration { version: 1, sql: SCHEMA_V1 },
+    Migration {
+        version: 1,
+        sql: SCHEMA_V1,
+    },
     // v2：封面缩略图列。已在 v1 的旧库经 ALTER 补列；新库 v1 建表后 v2 补列。
-    Migration { version: 2, sql: "ALTER TABLE books ADD COLUMN thumb_path TEXT;" },
+    Migration {
+        version: 2,
+        sql: "ALTER TABLE books ADD COLUMN thumb_path TEXT;",
+    },
     // v3：v0.5 实体模型（系列/卷/版本/资产 + 来源层）+ 从 books 回填。
-    Migration { version: 3, sql: ENTITY_SCHEMA_V3 },
+    Migration {
+        version: 3,
+        sql: ENTITY_SCHEMA_V3,
+    },
     // v4：缩略图迁到 asset（读路径实体锚定的前置）。
-    Migration { version: 4, sql: ASSET_THUMB_V4 },
+    Migration {
+        version: 4,
+        sql: ASSET_THUMB_V4,
+    },
 ];
 
 pub fn open_library(db_path: &Path) -> rusqlite::Result<Connection> {
@@ -306,6 +334,7 @@ pub fn import_epub_bytes(
         volume_id: None,
         edition_id: None,
         availability: None,
+        rights_status: Some("user_owned".to_string()),
         remote_url: None,
     };
     // 与 v3 回填/双写同口径填充实体字段，使 ImportOutcome.book 即刻带上它们。
@@ -438,7 +467,9 @@ fn generate_thumbnail(covers_dir: &Path, book_id: &str, cover_bytes: &[u8]) -> O
     let img = image::load_from_memory(cover_bytes).ok()?;
     let thumb = img.thumbnail(240, 360);
     let dest = covers_dir.join(format!("{}_thumb.png", book_id));
-    thumb.save_with_format(&dest, image::ImageFormat::Png).ok()?;
+    thumb
+        .save_with_format(&dest, image::ImageFormat::Png)
+        .ok()?;
     Some(dest.to_string_lossy().into_owned())
 }
 
@@ -466,6 +497,7 @@ const SELECT_ENTRY: &str = "\
     v.id AS volume_id, \
     s.id AS series_id, \
     COALESCE(a.availability, 'remote') AS availability, \
+    e.rights_status, \
     (SELECT remote_url FROM source_record \
        WHERE entity_type = 'edition' AND entity_id = e.id LIMIT 1) AS remote_url";
 
@@ -475,8 +507,7 @@ const FROM_ENTRY: &str = "\
     JOIN series s ON s.id = v.series_id \
     LEFT JOIN asset a ON a.edition_id = e.id";
 
-const ORDER_ENTRY: &str =
-    "ORDER BY a.last_read_at IS NULL, a.last_read_at DESC, a.added_at DESC";
+const ORDER_ENTRY: &str = "ORDER BY a.last_read_at IS NULL, a.last_read_at DESC, a.added_at DESC";
 
 fn row_to_book(row: &rusqlite::Row<'_>) -> rusqlite::Result<LibraryBook> {
     Ok(LibraryBook {
@@ -497,7 +528,8 @@ fn row_to_book(row: &rusqlite::Row<'_>) -> rusqlite::Result<LibraryBook> {
         volume_id: row.get(14)?,
         series_id: row.get(15)?,
         availability: row.get(16)?,
-        remote_url: row.get(17)?,
+        rights_status: row.get(17)?,
+        remote_url: row.get(18)?,
     })
 }
 
@@ -517,6 +549,197 @@ pub fn list_books(conn: &Connection) -> rusqlite::Result<Vec<LibraryBook>> {
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt.query_map([], row_to_book)?;
     rows.collect()
+}
+
+pub fn remote_acquisition(
+    conn: &Connection,
+    id: &str,
+) -> rusqlite::Result<Option<RemoteAcquisition>> {
+    let mut stmt = conn.prepare(
+        "SELECT e.id, sr.source_id, sr.remote_id, e.rights_status,
+                v.title, s.author, e.language, a.id
+           FROM edition e
+           JOIN volume v ON v.id = e.volume_id
+           JOIN series s ON s.id = v.series_id
+           JOIN source_record sr ON sr.entity_type = 'edition' AND sr.entity_id = e.id
+           LEFT JOIN asset a ON a.edition_id = e.id
+          WHERE e.id = ?1 OR a.id = ?1
+          LIMIT 1",
+    )?;
+    let mut rows = stmt.query_map([id], |row| {
+        Ok(RemoteAcquisition {
+            edition_id: row.get(0)?,
+            source_id: row.get(1)?,
+            remote_id: row.get(2)?,
+            rights_status: row.get(3)?,
+            title: row.get(4)?,
+            author: row.get(5)?,
+            language: row.get(6)?,
+            existing_asset_id: row.get(7)?,
+        })
+    })?;
+    rows.next().transpose()
+}
+
+pub fn attach_remote_html_asset(
+    conn: &Connection,
+    library_dir: &Path,
+    edition_id: &str,
+    title: &str,
+    author: Option<&str>,
+    language: Option<&str>,
+    source_url: &str,
+    html: &str,
+    now_ms: i64,
+) -> Result<LibraryBook, String> {
+    if let Some(existing) =
+        existing_asset_for_edition(conn, edition_id).map_err(|e| e.to_string())?
+    {
+        return get_book(conn, &existing)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| "已获取的资产记录丢失".to_string());
+    }
+
+    let data = build_single_chapter_epub(title, author, language, source_url, html)?;
+    let id = compute_book_id(&data);
+
+    let objects_dir = library_dir.join("objects");
+    std::fs::create_dir_all(&objects_dir).map_err(|e| format!("创建对象仓库失败: {e}"))?;
+    let dest = objects_dir.join(format!("{}.epub", id));
+    std::fs::write(&dest, &data).map_err(|e| format!("写入对象仓库失败: {e}"))?;
+
+    conn.execute(
+        "INSERT INTO asset(id, edition_id, kind, availability, file_path, file_size, cover_path, thumb_path, added_at, last_read_at)
+         VALUES (?1, ?2, 'epub', 'cached', ?3, ?4, NULL, NULL, ?5, NULL)
+         ON CONFLICT(id) DO UPDATE SET
+           edition_id = excluded.edition_id,
+           availability = excluded.availability,
+           file_path = excluded.file_path,
+           file_size = excluded.file_size",
+        params![
+            id,
+            edition_id,
+            dest.to_string_lossy().into_owned(),
+            data.len() as i64,
+            now_ms
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+    conn.execute(
+        "UPDATE source_record
+            SET availability = 'cached', last_checked_at = ?2
+          WHERE entity_type = 'edition' AND entity_id = ?1",
+        params![edition_id, now_ms],
+    )
+    .map_err(|e| e.to_string())?;
+
+    get_book(conn, &id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "获取后未能回读书库条目".to_string())
+}
+
+fn existing_asset_for_edition(
+    conn: &Connection,
+    edition_id: &str,
+) -> rusqlite::Result<Option<String>> {
+    let mut stmt = conn.prepare("SELECT id FROM asset WHERE edition_id = ?1 LIMIT 1")?;
+    let mut rows = stmt.query_map([edition_id], |row| row.get(0))?;
+    rows.next().transpose()
+}
+
+fn build_single_chapter_epub(
+    title: &str,
+    author: Option<&str>,
+    language: Option<&str>,
+    source_url: &str,
+    html: &str,
+) -> Result<Vec<u8>, String> {
+    let mut writer = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    let stored = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+    let deflated =
+        SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+    writer
+        .start_file("mimetype", stored)
+        .map_err(|e| e.to_string())?;
+    writer
+        .write_all(b"application/epub+zip")
+        .map_err(|e| e.to_string())?;
+
+    writer
+        .start_file("META-INF/container.xml", deflated)
+        .map_err(|e| e.to_string())?;
+    writer
+        .write_all(
+            br#"<?xml version="1.0" encoding="UTF-8"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles>
+    <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
+  </rootfiles>
+</container>"#,
+        )
+        .map_err(|e| e.to_string())?;
+
+    let title_xml = escape_xml(title);
+    let language_xml = escape_xml(language.unwrap_or("ja"));
+    let author_xml = author.map(escape_xml);
+    let creator = author_xml
+        .as_ref()
+        .map(|a| format!("\n    <dc:creator>{}</dc:creator>", a))
+        .unwrap_or_default();
+    let source_xml = escape_xml(source_url);
+    let opf = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="bookid">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:identifier id="bookid">{}</dc:identifier>
+    <dc:title>{}</dc:title>{}
+    <dc:language>{}</dc:language>
+    <dc:source>{}</dc:source>
+  </metadata>
+  <manifest>
+    <item id="chap1" href="Text/chapter1.xhtml" media-type="application/xhtml+xml"/>
+  </manifest>
+  <spine>
+    <itemref idref="chap1"/>
+  </spine>
+</package>"#,
+        stable_generated_id(source_url, title),
+        title_xml,
+        creator,
+        language_xml,
+        source_xml,
+    );
+    writer
+        .start_file("OEBPS/content.opf", deflated)
+        .map_err(|e| e.to_string())?;
+    writer
+        .write_all(opf.as_bytes())
+        .map_err(|e| e.to_string())?;
+
+    writer
+        .start_file("OEBPS/Text/chapter1.xhtml", deflated)
+        .map_err(|e| e.to_string())?;
+    writer
+        .write_all(html.as_bytes())
+        .map_err(|e| e.to_string())?;
+
+    writer
+        .finish()
+        .map(|c| c.into_inner())
+        .map_err(|e| e.to_string())
+}
+
+fn stable_generated_id(source_url: &str, title: &str) -> String {
+    let seed = format!("aozora-html\0{}\0{}", source_url, title);
+    format!("generated:{}", compute_book_id(seed.as_bytes()))
+}
+
+fn escape_xml(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&apos;")
 }
 
 /// 标题/作者/系列搜索。≥3 字走 FTS5 trigram(子串命中),否则 LIKE 兜底。
@@ -930,7 +1153,11 @@ mod tests {
         .unwrap();
         assert_ne!(a.book.id, b.book.id);
 
-        assert_eq!(count_rows(&conn, "series"), 1, "同系列两卷应共用一个 series");
+        assert_eq!(
+            count_rows(&conn, "series"),
+            1,
+            "同系列两卷应共用一个 series"
+        );
         assert_eq!(count_rows(&conn, "volume"), 2);
         assert_eq!(count_rows(&conn, "asset"), 2);
 
@@ -962,14 +1189,18 @@ mod tests {
         assert_eq!(migrations::current_version(&conn).unwrap(), 4);
 
         let asset_id: String = conn
-            .query_row("SELECT id FROM asset WHERE id = 'hash123'", [], |r| r.get(0))
+            .query_row("SELECT id FROM asset WHERE id = 'hash123'", [], |r| {
+                r.get(0)
+            })
             .unwrap();
         assert_eq!(asset_id, "hash123");
 
         let series_id: String = conn
-            .query_row("SELECT series_id FROM volume WHERE id = 'vol:hash123'", [], |r| {
-                r.get(0)
-            })
+            .query_row(
+                "SELECT series_id FROM volume WHERE id = 'vol:hash123'",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(series_id, "series:旧系列");
 
@@ -996,7 +1227,10 @@ mod tests {
 
         // import 返回值即刻带实体字段。
         assert_eq!(r.book.availability.as_deref(), Some("local"));
-        assert_eq!(r.book.series_id.as_deref(), Some("series:Skyline Chronicle"));
+        assert_eq!(
+            r.book.series_id.as_deref(),
+            Some("series:Skyline Chronicle")
+        );
         assert_eq!(r.book.volume_id, Some(format!("vol:{}", r.book.id)));
         assert_eq!(r.book.edition_id, Some(format!("ed:{}", r.book.id)));
 
@@ -1049,6 +1283,7 @@ mod tests {
             .find(|b| b.id == "ed:remote1")
             .expect("远程条目应出现在书架");
         assert_eq!(remote.availability.as_deref(), Some("remote"));
+        assert_eq!(remote.rights_status.as_deref(), Some("official_purchase"));
         assert!(remote.file_path.is_none(), "远程条目无本地文件");
         assert!(remote.file_size.is_none());
         assert_eq!(remote.series.as_deref(), Some("远程系列"));
@@ -1056,12 +1291,97 @@ mod tests {
         assert_eq!(remote.edition_id.as_deref(), Some("ed:remote1"));
 
         // get_book 按 edition id 也能取到远程条目。
-        let got = get_book(&conn, "ed:remote1").unwrap().expect("应能按 edition id 取远程条目");
+        let got = get_book(&conn, "ed:remote1")
+            .unwrap()
+            .expect("应能按 edition id 取远程条目");
         assert_eq!(got.id, "ed:remote1");
 
         // 本地书仍按内容哈希取到、且有文件。
         let got_local = get_book(&conn, &local.book.id).unwrap().unwrap();
         assert!(got_local.file_path.is_some());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn public_domain_remote_html_attaches_cached_asset_to_existing_edition() {
+        let dir = temp_library("acquire-html");
+        let conn = open_library(&dir.join("library.sqlite")).unwrap();
+
+        conn.execute_batch(
+            "INSERT INTO series(id,title,author,description,created_at,updated_at)
+               VALUES('series:aozora:127','羅生門','芥川龍之介',NULL,0,0);
+             INSERT INTO volume(id,series_id,kind,volume_number,title,created_at,updated_at)
+               VALUES('vol:aozora:127','series:aozora:127','main',NULL,'羅生門',0,0);
+             INSERT INTO edition(id,volume_id,language,rights_status,created_at,updated_at)
+               VALUES('ed:aozora:127','vol:aozora:127','ja','public_domain',0,0);
+             INSERT INTO source(id,name,kind,created_at)
+               VALUES('src:aozora','青空文庫','catalog',0);
+             INSERT INTO source_record(id,source_id,entity_type,entity_id,remote_url,remote_id,rights_status,availability)
+               VALUES('sr:aozora:127','src:aozora','edition','ed:aozora:127',
+                      'https://www.aozora.gr.jp/cards/000879/card127.html','127','public_domain','remote');",
+        )
+        .unwrap();
+
+        let info = remote_acquisition(&conn, "ed:aozora:127")
+            .unwrap()
+            .expect("应可获取远程来源信息");
+        assert_eq!(info.source_id, "src:aozora");
+        assert_eq!(info.rights_status, "public_domain");
+        assert!(info.existing_asset_id.is_none());
+
+        let html = r#"<!doctype html><html><body><h1>羅生門</h1><p>ある日の暮方の事である。</p></body></html>"#;
+        let book = attach_remote_html_asset(
+            &conn,
+            &dir,
+            "ed:aozora:127",
+            "羅生門",
+            Some("芥川龍之介"),
+            Some("ja"),
+            "https://www.aozora.gr.jp/cards/000879/files/127_15260.html",
+            html,
+            2000,
+        )
+        .unwrap();
+
+        assert_eq!(book.availability.as_deref(), Some("cached"));
+        assert_eq!(book.rights_status.as_deref(), Some("public_domain"));
+        assert_eq!(book.edition_id.as_deref(), Some("ed:aozora:127"));
+        assert!(book
+            .file_path
+            .as_ref()
+            .is_some_and(|p| Path::new(p).exists()));
+
+        let availability: String = conn
+            .query_row(
+                "SELECT availability FROM source_record WHERE id='sr:aozora:127'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(availability, "cached");
+
+        let bytes = std::fs::read(book.file_path.as_ref().unwrap()).unwrap();
+        let info = epub_parser::parse_book_info(&bytes).unwrap();
+        assert_eq!(info.metadata.title, "羅生門");
+        let chapter =
+            epub_parser::parse_single_chapter(&bytes, &info.spine[0].href, &info).unwrap();
+        assert!(chapter.contains("ある日の暮方"));
+
+        // 再次 attach 不重复生成 asset，直接回读既有条目。
+        let again = attach_remote_html_asset(
+            &conn,
+            &dir,
+            "ed:aozora:127",
+            "羅生門",
+            Some("芥川龍之介"),
+            Some("ja"),
+            "https://www.aozora.gr.jp/cards/000879/files/127_15260.html",
+            html,
+            3000,
+        )
+        .unwrap();
+        assert_eq!(again.id, book.id);
 
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -1099,7 +1419,8 @@ mod tests {
         w.start_file("OEBPS/Images/cover.png", opts).unwrap();
         w.write_all(cover).unwrap();
         w.start_file("OEBPS/Text/ch1.xhtml", opts).unwrap();
-        w.write_all(b"<html><body><p>text</p></body></html>").unwrap();
+        w.write_all(b"<html><body><p>text</p></body></html>")
+            .unwrap();
         w.finish().unwrap().into_inner()
     }
 
@@ -1109,9 +1430,13 @@ mod tests {
         let conn = open_library(&dir.join("library.sqlite")).unwrap();
         // 用 image 生成一张真实 300×450 PNG 作封面
         let mut buf = std::io::Cursor::new(Vec::new());
-        image::DynamicImage::ImageRgb8(image::RgbImage::from_pixel(300, 450, image::Rgb([120, 90, 160])))
-            .write_to(&mut buf, image::ImageFormat::Png)
-            .unwrap();
+        image::DynamicImage::ImageRgb8(image::RgbImage::from_pixel(
+            300,
+            450,
+            image::Rgb([120, 90, 160]),
+        ))
+        .write_to(&mut buf, image::ImageFormat::Png)
+        .unwrap();
         let data = make_epub_with_cover_bytes("有真封面", &buf.into_inner());
 
         let result = import_epub_bytes(&conn, &dir, &data, Some("c.epub"), 1000).unwrap();

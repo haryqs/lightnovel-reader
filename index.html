@@ -142,7 +142,11 @@
           </details>
           <div class="library-search">
             <input id="library-search-input" type="search" placeholder="搜索书名、作者或系列" spellcheck="false" />
-            <button id="btn-library-search-remote" class="btn" title="用 AniList 在线搜索元数据（只展示封面/简介，正文跳官方）">🌐 在线找书</button>
+            <select id="library-remote-source" title="在线来源">
+              <option value="anilist">AniList</option>
+              <option value="aozora">青空文库</option>
+            </select>
+            <button id="btn-library-search-remote" class="btn" title="按所选来源在线搜索元数据；公共版权条目可获取正文，受版权条目跳官方">🌐 在线找书</button>
           </div>
           <div id="library-grid" class="library-grid"></div>
         </div>

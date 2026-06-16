@@ -15,13 +15,13 @@
 
 **建议你接着做（任选，按价值排序）**：
 
-1. **实机验证**（推荐先做）：`npm run tauri dev` 真窗口里点「🌐 在线找书」搜个轻小说，确认远程条目上书架（虚线卡 + "需购买·官方外链"）、点击能跳官方；再确认本地书架经 v0.5-c 大改后显示一切正常。需联网。
-2. **第二个连接器**：Open Library 或 青空文库 OPDS——复用 `connectors::ingest`，照 `anilist` 模块的样子各写一个 parser（青空文库是公共版权 → `availability` 可给可读，是"站内自由阅览"的第一个真实来源）。
-   → 青空 **PR-A（parser）已完成**（2026-06-16 寝室会话）：`connectors::aozora::parse_catalog_csv`，官方扩展目录 CSV、按表头名取列、`なし`→public_domain，63 测试全过。**待决**：传输层（官方 CSV ≈13MB，壳需下载+缓存+解压）确认后接壳，青空才进「在线找书」；之后 PR-B 做站内阅览。详见 DECISIONS / DEV_LOG 同日。
+1. **实机验证**（推荐先做）：`npm run tauri dev` 真窗口里验证「🌐 在线找书」的 AniList/青空文库来源切换。AniList 条目应仍是“需购买/官方外链”；青空首次搜索应按需下载目录并缓存，公共版权条目应显示“公共版权 · 可站内读”，点击后获取官方 XHTML/HTML、合成为 cached asset 并能直接打开阅读。需联网。
+2. **青空 acquire 实机补验**：找一条 `rightsStatus=public_domain` 且带 ruby/插图的青空条目，确认正文 ruby 保留、图片/HTML 安全清洗不破坏阅读；再找非公共版权/无 HTML URL 条目确认命令层拒绝下载并只走外链。
 3. `catalog_fts`：让远程条目可全文搜（现在 books_fts 不含它们，远程条目只能 LIKE 短词命中）。
+4. 后续连接器：Open Library / OPDS / 私有书库连接器继续复用 `connectors::ingest`，按“壳传输、core parser/落库”的分层添加。
 4. 仍挂着的人工项：原生文件/文件夹选择对话框点一次，然后 `npm run package:beta` 发版。
 
-细节看 `DEV_LOG.md`（本轮 4 条）与 `DECISIONS.md`（2026-06-16 两条架构决策）。协议变更在 `docs/resource-library-plan/8_桥接协议_v0.1.md`（新增 `library.searchRemote` / `shell.openExternal` / `remoteUrl`）。
+细节看 `DEV_LOG.md` 与 `DECISIONS.md`（2026-06-16 青空连接器与 acquire 决策）。协议变更在 `docs/resource-library-plan/8_桥接协议_v0.1.md`（新增/保留 `library.searchRemote`、`library.searchRemoteSource`、`library.acquireRemote`、`shell.openExternal`、`remoteUrl`、`rightsStatus`）。
 
 ---
 

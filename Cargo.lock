@@ -3067,6 +3067,7 @@ dependencies = [
  "tauri",
  "tauri-build",
  "tauri-plugin-opener",
+ "zip",
 ]
 
 [[package]]

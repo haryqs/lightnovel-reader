@@ -1,5 +1,5 @@
 import { ReaderCore, type PageMode, type ReaderLayoutSettings, type TocItem } from './reader-core'
-import { bridge, hasNativeBridge, type LibraryBook } from './platform'
+import { bridge, hasNativeBridge, type LibraryBook, type RemoteLibrarySource } from './platform'
 import type { ThemeName } from './themes'
 
 const reader = new ReaderCore()
@@ -553,9 +553,14 @@ const libraryPathInput = $<HTMLInputElement>('#library-path-input')
 const libraryImportInput = $<HTMLInputElement>('#library-import-input')
 const libraryFolderInput = $<HTMLInputElement>('#library-folder-input')
 const librarySearchInput = $<HTMLInputElement>('#library-search-input')
+const libraryRemoteSourceSelect = $<HTMLSelectElement>('#library-remote-source')
 const librarySourcePanel = $<HTMLDetailsElement>('#library-source-panel')
 let libraryBooks: LibraryBook[] = []
 let librarySearchTimer: number | null = null
+const REMOTE_SOURCE_LABEL: Record<RemoteLibrarySource, string> = {
+  anilist: 'AniList',
+  aozora: '青空文库',
+}
 libraryPathInput.value = localStorage.getItem(LIBRARY_PATH_KEY) || DEFAULT_CALIBRE_LIBRARY
 
 $('#btn-library')?.addEventListener('click', openLibrary)
@@ -592,6 +597,8 @@ librarySearchRemoteBtn.addEventListener('click', () => searchRemoteBooks())
 // 只取索引/封面/简介，正文一律跳官方外链（版权红线）。
 async function searchRemoteBooks() {
   const query = librarySearchInput.value.trim()
+  const source = (libraryRemoteSourceSelect.value || 'anilist') as RemoteLibrarySource
+  const sourceLabel = REMOTE_SOURCE_LABEL[source] || source
   if (!query) {
     showError('先在搜索框输入要在线查找的关键词')
     return
@@ -603,9 +610,9 @@ async function searchRemoteBooks() {
   const original = librarySearchRemoteBtn.textContent
   librarySearchRemoteBtn.disabled = true
   librarySearchRemoteBtn.textContent = '搜索中…'
-  libraryGrid.innerHTML = '<div class="library-state">正在 AniList 搜索元数据…</div>'
+  libraryGrid.innerHTML = `<div class="library-state">正在 ${sourceLabel} 搜索元数据…</div>`
   try {
-    libraryBooks = await bridge.searchRemoteLibraryBooks(query)
+    libraryBooks = await bridge.searchRemoteLibraryBooksFromSource(source, query)
     renderLibraryBooks()
   } catch (e: any) {
     libraryGrid.innerHTML = `<div class="library-state library-state-error">在线搜索失败：${e?.message || e}</div>`
@@ -775,6 +782,19 @@ function formatLanguageLabel(language?: string): string {
   return normalized.length <= 3 ? normalized.toUpperCase() : normalized
 }
 
+function remoteStatusLabel(book: LibraryBook): string {
+  switch (book.rightsStatus) {
+    case 'public_domain':
+      return '公共版权 · 可站内读'
+    case 'official_free':
+      return '官方免费 · 外链'
+    case 'official_purchase':
+      return '需购买 · 官方外链'
+    default:
+      return '远程条目 · 官方外链'
+  }
+}
+
 function renderLibraryBooks() {
   const books = libraryBooks
 
@@ -814,7 +834,7 @@ function renderLibraryBooks() {
     const language = formatLanguageLabel(b.language)
     const tags = document.createElement('div')
     tags.className = 'book-tags'
-    const labels = isRemote ? ['需购买 · 官方外链', language] : [series, language]
+    const labels = isRemote ? [remoteStatusLabel(b), language] : [series, language]
     for (const value of labels.filter(Boolean)) {
       const tag = document.createElement('span')
       tag.textContent = value as string
@@ -883,6 +903,22 @@ function renderLibraryEmptyState() {
 
 // 远程条目无本地正文：按版权红线只跳官方/来源外链，不在站内呈现正文。
 async function openRemoteEntry(book: LibraryBook) {
+  if (book.rightsStatus === 'public_domain') {
+    libraryGrid.innerHTML = `<div class="library-state">正在获取《${book.title || '未命名'}》正文…</div>`
+    try {
+      const acquired = await bridge.acquireRemoteLibraryBook(book.id)
+      libraryBooks = libraryBooks.map((item) =>
+        item.id === book.id || item.editionId === book.editionId ? acquired : item,
+      )
+      renderLibraryBooks()
+      await openLibraryBook(acquired)
+    } catch (e: any) {
+      renderLibraryBooks()
+      showError(`获取公共版权正文失败：${e?.message || e}`)
+    }
+    return
+  }
+
   if (!book.remoteUrl) {
     showError('该条目没有可跳转的官方链接')
     return
