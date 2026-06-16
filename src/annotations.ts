@@ -14,6 +14,9 @@ export const HIGHLIGHT_COLORS: Record<HighlightColor, { bg: string; border: stri
 }
 
 // ---- 计算选中文本在章节中的锚点 ----
+// 偏移一律用 cloneContents().textContent 计算，与定位用的 contentEl.textContent 同口径。
+// 不用 range.toString()/preRange.toString()——它们在块级边界插入 \n，跨段落选择时
+// 会让 exact 带上 textContent 里没有的换行，导致后续 indexOf 定位失败、跨元素高亮丢失。
 export function computeAnchor(): TextAnchor | null {
   const sel = window.getSelection()
   if (!sel || sel.isCollapsed || !sel.rangeCount) return null
@@ -22,23 +25,21 @@ export function computeAnchor(): TextAnchor | null {
   const contentEl = document.querySelector('.reader-content')
   if (!contentEl) return null
 
-  // 获取 contentEl 的完整文本
   const fullText = contentEl.textContent || ''
-  const selectedText = range.toString().trim()
-  if (selectedText.length === 0) return null
 
-  // 计算选中文本在全文中的起始偏移
   const preRange = document.createRange()
   preRange.setStart(contentEl, 0)
   preRange.setEnd(range.startContainer, range.startOffset)
-  const start = preRange.toString().length
-  const end = start + selectedText.length
+  const start = (preRange.cloneContents().textContent || '').length
+  const end = start + (range.cloneContents().textContent || '').length
+  const exact = fullText.slice(start, end)
+  if (exact.trim().length === 0) return null
 
-  // 前 20 / 后 20 上下文
+  // 前 20 / 后 20 上下文（用于定位消歧）
   const prefix = fullText.substring(Math.max(0, start - 20), start)
   const suffix = fullText.substring(end, Math.min(fullText.length, end + 20))
 
-  return { start, end, exact: selectedText, prefix, suffix }
+  return { start, end, exact, prefix, suffix }
 }
 
 // ---- 在 DOM 中应用高亮 ----
@@ -60,33 +61,67 @@ export function applyHighlight(range: Range, color: HighlightColor, id: string):
   }
 }
 
+// ---- 在清洗后的全文里稳健定位标注 ----
+// 字号/重排不改变 textContent，但 exact 文本可能在章内重复出现（人名、常用短语）。
+// 取所有出现位置，用 prefix/suffix 上下文消歧，再以保存时的 start 就近兜底，
+// 避免"永远高亮第一个匹配"的错位。返回起始偏移，找不到返回 -1。
+export function locateAnnotationOffset(fullText: string, anchor: TextAnchor): number {
+  const { exact, prefix, suffix, start } = anchor
+  if (!exact) return -1
+
+  const occ: number[] = []
+  for (let i = fullText.indexOf(exact); i !== -1; i = fullText.indexOf(exact, i + 1)) {
+    occ.push(i)
+    if (occ.length > 64) break // 防极端重复文本下的退化
+  }
+  if (occ.length === 0) {
+    // exact 已变（清洗规则变更等）：退一步用 prefix+exact 上下文找
+    if (prefix) {
+      const ctx = fullText.indexOf(prefix + exact)
+      if (ctx >= 0) return ctx + prefix.length
+    }
+    return -1
+  }
+  if (occ.length === 1) return occ[0]
+
+  // 多个匹配：prefix/suffix 命中各 +2 分，再用与 start 的距离做次级打分（越近越好）
+  let best = occ[0]
+  let bestScore = -Infinity
+  for (const off of occ) {
+    let score = 0
+    if (prefix && fullText.slice(Math.max(0, off - prefix.length), off).endsWith(prefix)) score += 2
+    const after = off + exact.length
+    if (suffix && fullText.slice(after, after + suffix.length).startsWith(suffix)) score += 2
+    score -= Math.abs(off - start) / Math.max(1, fullText.length) // 0..1 惩罚
+    if (score > bestScore) { bestScore = score; best = off }
+  }
+  return best
+}
+
 // ---- 渲染已保存的标注到页面 ----
 export function renderAnnotations(annotations: Annotation[], currentHref: string) {
   const contentEl = document.querySelector('.reader-content')
   if (!contentEl) return
-
-  const chapterAnns = annotations.filter(
-    a => a.locator.chapterHref === currentHref
-  )
-
-  const fullText = contentEl.textContent || ''
-
-  for (const ann of chapterAnns) {
-    const { exact, prefix } = ann.locator.anchor
-    if (!exact) continue
-
-    // 在全文里定位（先用 exact 精确匹配，再用 prefix+exact 兜底）
-    let offset = fullText.indexOf(exact)
-    if (offset === -1 && prefix) {
-      const ctx = prefix + exact
-      offset = fullText.indexOf(ctx)
-      if (offset >= 0) offset += prefix.length
-    }
-    if (offset === -1) continue
-
-    // 在 DOM 中找到对应文本节点并包裹 <mark>
-    wrapTextAtOffset(contentEl, offset, offset + exact.length, ann.id, (ann.color || 'yellow') as HighlightColor)
+  for (const ann of annotations) {
+    if (ann.locator.chapterHref === currentHref) applyAnnotationHighlight(ann, contentEl)
   }
+}
+
+// ---- 渲染单条标注（跨元素：按偏移逐文本节点包裹，不依赖 surroundContents 整段成功）----
+export function applyAnnotationHighlight(ann: Annotation, root?: Element): boolean {
+  const contentEl = root || document.querySelector('.reader-content')
+  if (!contentEl) return false
+  // 已渲染则跳过，避免重复包裹成嵌套 mark
+  if (contentEl.querySelector(`mark[data-annotation-id="${ann.id}"]`)) return true
+
+  const { exact } = ann.locator.anchor
+  if (!exact) return false
+  const fullText = contentEl.textContent || ''
+  const offset = locateAnnotationOffset(fullText, ann.locator.anchor)
+  if (offset === -1) return false
+
+  wrapTextAtOffset(contentEl, offset, offset + exact.length, ann.id, (ann.color || 'yellow') as HighlightColor)
+  return true
 }
 
 // ---- 在指定偏移处包裹高亮 ----
