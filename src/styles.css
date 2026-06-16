@@ -616,9 +616,17 @@ body.statusbar-visible .statusbar,
 .library-search {
   padding: 12px 20px 0 24px;
   flex-shrink: 0;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.library-search #btn-library-search-remote {
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 .library-search input {
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   padding: 10px 12px;
   border: 1px solid var(--border);
   border-radius: 7px;
@@ -791,6 +799,14 @@ body.statusbar-visible .statusbar,
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* 远程元数据条目：虚线边 + 首个标签高亮，提示"只展示·点击跳官方"。 */
+.book-card-remote {
+  border-style: dashed;
+}
+.book-card-remote .book-tags span:first-child {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+  background: color-mix(in srgb, var(--accent) 16%, var(--surface));
 }
 .book-card .meta {
   margin-top: auto;

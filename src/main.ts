@@ -585,6 +585,36 @@ librarySearchInput.addEventListener('input', () => {
   }, 180)
 })
 
+const librarySearchRemoteBtn = $<HTMLButtonElement>('#btn-library-search-remote')
+librarySearchRemoteBtn.addEventListener('click', () => searchRemoteBooks())
+
+// 在线找书：用 AniList 拉元数据 → 落库为远程条目（availability=remote）→ 直接展示结果。
+// 只取索引/封面/简介，正文一律跳官方外链（版权红线）。
+async function searchRemoteBooks() {
+  const query = librarySearchInput.value.trim()
+  if (!query) {
+    showError('先在搜索框输入要在线查找的关键词')
+    return
+  }
+  if (!isTauriRuntime()) {
+    libraryGrid.innerHTML = '<div class="library-state">在线找书需要 Tauri 桌面窗口。<br>请在终端运行：<code>npm run tauri dev</code></div>'
+    return
+  }
+  const original = librarySearchRemoteBtn.textContent
+  librarySearchRemoteBtn.disabled = true
+  librarySearchRemoteBtn.textContent = '搜索中…'
+  libraryGrid.innerHTML = '<div class="library-state">正在 AniList 搜索元数据…</div>'
+  try {
+    libraryBooks = await bridge.searchRemoteLibraryBooks(query)
+    renderLibraryBooks()
+  } catch (e: any) {
+    libraryGrid.innerHTML = `<div class="library-state library-state-error">在线搜索失败：${e?.message || e}</div>`
+  } finally {
+    librarySearchRemoteBtn.disabled = false
+    librarySearchRemoteBtn.textContent = original
+  }
+}
+
 async function openLibrary() {
   libraryView.hidden = false
   await refreshLibraryBooks()
@@ -759,8 +789,10 @@ function renderLibraryBooks() {
 
   libraryGrid.innerHTML = ''
   for (const b of books) {
+    // 远程元数据条目（无本地文件）：封面是 http URL，点击跳官方外链而非站内打开。
+    const isRemote = b.availability === 'remote' || (!b.filePath && !!b.remoteUrl)
     const card = document.createElement('div')
-    card.className = 'book-card'
+    card.className = isRemote ? 'book-card book-card-remote' : 'book-card'
     const cover = document.createElement('div')
     cover.className = 'cover'
     // 书架优先加载缩略图（小图省内存、滚动更流畅），无则回退原封面
@@ -769,7 +801,8 @@ function renderLibraryBooks() {
       const img = document.createElement('img')
       img.loading = 'lazy'         // 视口外延迟加载，大书架不一次性拉全部封面
       img.decoding = 'async'
-      img.src = bridge.resolveFileUrl(coverSrc)
+      // 远程封面是来源给的 http(s) URL，直接用；本地封面才经 resource.url 转协议。
+      img.src = isRemote ? coverSrc : bridge.resolveFileUrl(coverSrc)
       img.alt = ''
       cover.appendChild(img)
     } else {
@@ -781,9 +814,10 @@ function renderLibraryBooks() {
     const language = formatLanguageLabel(b.language)
     const tags = document.createElement('div')
     tags.className = 'book-tags'
-    for (const value of [series, language].filter(Boolean)) {
+    const labels = isRemote ? ['需购买 · 官方外链', language] : [series, language]
+    for (const value of labels.filter(Boolean)) {
       const tag = document.createElement('span')
-      tag.textContent = value
+      tag.textContent = value as string
       tags.appendChild(tag)
     }
     const meta = document.createElement('div')
@@ -799,7 +833,7 @@ function renderLibraryBooks() {
     card.append(cover, t, a)
     if (tags.childElementCount > 0) card.appendChild(tags)
     card.appendChild(meta)
-    card.addEventListener('click', () => openLibraryBook(b))
+    card.addEventListener('click', () => (isRemote ? openRemoteEntry(b) : openLibraryBook(b)))
     libraryGrid.appendChild(card)
   }
 }
@@ -845,6 +879,19 @@ function renderLibraryEmptyState() {
   actions.append(importFile, importFolder, moreSources)
   empty.append(icon, title, subtitle, actions)
   libraryGrid.replaceChildren(empty)
+}
+
+// 远程条目无本地正文：按版权红线只跳官方/来源外链，不在站内呈现正文。
+async function openRemoteEntry(book: LibraryBook) {
+  if (!book.remoteUrl) {
+    showError('该条目没有可跳转的官方链接')
+    return
+  }
+  try {
+    await bridge.openExternal(book.remoteUrl)
+  } catch (e: any) {
+    showError(`打开官方链接失败：${e?.message || e}`)
+  }
 }
 
 async function openLibraryBook(book: LibraryBook) {

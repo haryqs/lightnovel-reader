@@ -70,6 +70,8 @@ export interface LibraryBook {
   editionId?: string
   /** 资产可得性（local|remote|missing|cached）：远程条目据此决定能否站内读。 */
   availability?: string
+  /** 来源外链：受版权/远程条目点击后跳官方页。本地条目缺省。 */
+  remoteUrl?: string
 }
 
 export interface ImportOutcome {
@@ -133,6 +135,8 @@ export interface ReaderBridge {
   listLibraryBooks(): Promise<LibraryBook[]>
   /** library.search — 搜索自有书库 */
   searchLibraryBooks(query: string): Promise<LibraryBook[]>
+  /** library.searchRemote — 在线元数据搜索（AniList），落库为远程条目并返回 */
+  searchRemoteLibraryBooks(query: string): Promise<LibraryBook[]>
   /** library.open — 按自有书库 id 打开书籍 */
   openLibraryBook(id: string): Promise<OpenedBook>
   /** library.touchLastRead — 更新最近阅读时间 */
@@ -149,4 +153,6 @@ export interface ReaderBridge {
   getProgress(bookId: string): Promise<ReadingProgress | null>
   /** resource.url — 把本地文件路径转成当前 WebView 可加载的 URL(同步) */
   resolveFileUrl(path: string): string
+  /** shell.openExternal — 用系统默认浏览器打开外链(远程条目跳官方页) */
+  openExternal(url: string): Promise<void>
 }

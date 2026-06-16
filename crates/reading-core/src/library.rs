@@ -45,6 +45,8 @@ pub struct LibraryBook {
     pub edition_id: Option<String>,
     /// 资产可得性（local|remote|missing|cached）。远程元数据条目据此决定能否站内读。
     pub availability: Option<String>,
+    /// 来源外链（受版权/远程条目点击后跳官方页）。本地条目为 None。
+    pub remote_url: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -304,6 +306,7 @@ pub fn import_epub_bytes(
         volume_id: None,
         edition_id: None,
         availability: None,
+        remote_url: None,
     };
     // 与 v3 回填/双写同口径填充实体字段，使 ImportOutcome.book 即刻带上它们。
     book.series_id = Some(series_id_of(&book));
@@ -462,7 +465,9 @@ const SELECT_ENTRY: &str = "\
     e.id AS edition_id, \
     v.id AS volume_id, \
     s.id AS series_id, \
-    COALESCE(a.availability, 'remote') AS availability";
+    COALESCE(a.availability, 'remote') AS availability, \
+    (SELECT remote_url FROM source_record \
+       WHERE entity_type = 'edition' AND entity_id = e.id LIMIT 1) AS remote_url";
 
 const FROM_ENTRY: &str = "\
     FROM edition e \
@@ -492,6 +497,7 @@ fn row_to_book(row: &rusqlite::Row<'_>) -> rusqlite::Result<LibraryBook> {
         volume_id: row.get(14)?,
         series_id: row.get(15)?,
         availability: row.get(16)?,
+        remote_url: row.get(17)?,
     })
 }
 

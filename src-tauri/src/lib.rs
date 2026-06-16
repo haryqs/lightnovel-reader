@@ -281,6 +281,62 @@ fn library_search(
     library::search_books(&db, &query).map_err(|e| e.to_string())
 }
 
+/// 在线元数据搜索（AniList）：拉索引/封面/简介 → 落库为远程条目（availability=remote）→
+/// 返回新出现在书架上的条目。**只取元数据**，正文须经官方外链；HTTP 传输是壳的职责，
+/// 解析/落库在 core。
+#[tauri::command]
+async fn library_search_remote(
+    state: tauri::State<'_, AppState>,
+    query: String,
+) -> Result<Vec<library::LibraryBook>, String> {
+    use reading_core::connectors::{self, anilist};
+
+    let q = query.trim();
+    if q.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // 1) HTTP 传输（壳）。
+    let body = anilist::search_request_body(q);
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(anilist::ENDPOINT)
+        .header("content-type", "application/json")
+        .header("accept", "application/json")
+        .body(body)
+        .send()
+        .await
+        .map_err(|e| format!("AniList 请求失败: {e}"))?;
+    let json = resp
+        .text()
+        .await
+        .map_err(|e| format!("读取 AniList 响应失败: {e}"))?;
+
+    // 2) 解析 + 落库（core）。
+    let entries = anilist::parse_search(&json)?;
+    let now = now_ms();
+    let db = state.library_db.lock().map_err(|e| e.to_string())?;
+    connectors::ensure_source(
+        &db,
+        anilist::SOURCE_ID,
+        anilist::SOURCE_NAME,
+        "metadata",
+        Some(anilist::ENDPOINT),
+        now,
+    )
+    .map_err(|e| e.to_string())?;
+    let ids = connectors::ingest(&db, anilist::SOURCE_ID, &entries, now).map_err(|e| e.to_string())?;
+
+    // 3) 回读落库后的条目返回前端。
+    let mut out = Vec::with_capacity(ids.len());
+    for id in ids {
+        if let Some(b) = library::get_book(&db, &id).map_err(|e| e.to_string())? {
+            out.push(b);
+        }
+    }
+    Ok(out)
+}
+
 #[tauri::command]
 async fn library_open(state: tauri::State<'_, AppState>, id: String) -> Result<OpenedBook, String> {
     let file_path = {
@@ -415,6 +471,7 @@ pub fn run() {
             library_import_bytes,
             library_list,
             library_search,
+            library_search_remote,
             library_open,
             library_touch_last_read,
             get_chapter,
