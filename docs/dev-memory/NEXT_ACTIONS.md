@@ -15,10 +15,10 @@
 
 **建议你接着做（任选，按价值排序）**：
 
-1. **实机验证**（推荐先做）：`npm run tauri dev` 真窗口里验证「🌐 在线找书」的 AniList/青空文库来源切换。AniList 条目应仍是“需购买/官方外链”；青空首次搜索应按需下载目录并缓存，公共版权条目应显示“公共版权 · 可站内读”，点击后获取官方 XHTML/HTML、合成为 cached asset 并能直接打开阅读。需联网。
-2. **青空 acquire 实机补验**：找一条 `rightsStatus=public_domain` 且带 ruby/插图的青空条目，确认正文 ruby 保留、图片/HTML 安全清洗不破坏阅读；再找非公共版权/无 HTML URL 条目确认命令层拒绝下载并只走外链。
+1. **实机验证**（推荐先做）：`npm run tauri dev` 真窗口里验证「🌐 在线找书」的 AniList/青空文库来源切换。AniList 是轻小说/ACG 元数据入口，条目应仍是“需购买/官方外链”；青空文库是公共版权经典文学入口，首次搜索应按需下载目录并缓存，公共版权条目应显示“公共版权经典 · 可站内读”，点击后获取官方 XHTML/HTML、合成为 cached asset 并能直接打开阅读。需联网。
+2. **青空 acquire 实机补验**：找一条 `rightsStatus=public_domain` 且带 ruby/插图的青空经典文学条目，确认正文 ruby 保留、图片/HTML 安全清洗不破坏阅读；再找非公共版权/无 HTML URL 条目确认命令层拒绝下载并只走外链。
 3. `catalog_fts`：让远程条目可全文搜（现在 books_fts 不含它们，远程条目只能 LIKE 短词命中）。
-4. 后续连接器：Open Library / OPDS / 私有书库连接器继续复用 `connectors::ingest`，按“壳传输、core parser/落库”的分层添加。
+4. 真正贴近轻小说的后续连接器：优先评估 Bangumi（中文/ACG 元数据）与 なろう（官方小说 API，可先做 metadata/官方入口）。カクヨム/Royal Road/正文抓取类来源必须先过 ToS 审核，倾向 v0.7 插件运行时而非内核连接器。
 4. 仍挂着的人工项：原生文件/文件夹选择对话框点一次，然后 `npm run package:beta` 发版。
 
 细节看 `DEV_LOG.md` 与 `DECISIONS.md`（2026-06-16 青空连接器与 acquire 决策）。协议变更在 `docs/resource-library-plan/8_桥接协议_v0.1.md`（新增/保留 `library.searchRemote`、`library.searchRemoteSource`、`library.acquireRemote`、`shell.openExternal`、`remoteUrl`、`rightsStatus`）。
