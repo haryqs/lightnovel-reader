@@ -25,6 +25,7 @@ const noBridge: ReaderBridge = {
   importLibraryBookFromBytes: async () => unavailable('library.importBytes'),
   listLibraryBooks: async () => unavailable('library.list'),
   searchLibraryBooks: async () => unavailable('library.search'),
+  searchRemoteLibraryBooks: async () => unavailable('library.searchRemote'),
   openLibraryBook: async () => unavailable('library.open'),
   touchLibraryLastRead: async () => unavailable('library.touchLastRead'),
   saveAnnotation: async () => unavailable('annotation.save'),
@@ -33,6 +34,9 @@ const noBridge: ReaderBridge = {
   saveProgress: async () => {},
   getProgress: async () => null,
   resolveFileUrl: (path) => path,
+  openExternal: async (url) => {
+    window.open(url, '_blank', 'noopener')
+  },
 }
 
 export const bridge: ReaderBridge = isTauriRuntime() ? tauriBridge : noBridge

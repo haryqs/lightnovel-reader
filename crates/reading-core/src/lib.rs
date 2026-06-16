@@ -4,6 +4,7 @@
 //! Android/iOS/鸿蒙壳）通过各自的胶水层调用这里的能力；胶水层只做
 //! 消息搬运，业务逻辑一律写在本 crate 内。
 
+pub mod connectors;
 pub mod epub_parser;
 pub mod html_sanitizer;
 pub mod library;

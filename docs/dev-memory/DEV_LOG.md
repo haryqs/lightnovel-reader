@@ -1015,3 +1015,25 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
 下一步：
 
 - 元数据连接器（AniList/Open Library）：写 series/edition/source_record，远程条目即时上书架（availability=remote，只展示+外链）；v0.5-c UI 系列聚合可并行
+
+## 2026-06-16：首个元数据连接器 AniList：core 新增 connectors.rs（查询构造+JSON解析+落库，纯函数可测）；壳加 reqwest + library_search_remote 命令（HTTP 传输）；桥接加 library.searchRemote + shell.openExternal；LibraryBook 加可选 remoteUrl；前端书库加'在线找书'按钮、远程卡片（虚线+需购买外链标）、点击跳官方；封面按来源 URL 直载
+
+变更：
+
+- 首个元数据连接器 AniList：core 新增 connectors.rs（查询构造+JSON解析+落库，纯函数可测）；壳加 reqwest + library_search_remote 命令（HTTP 传输）；桥接加 library.searchRemote + shell.openExternal；LibraryBook 加可选 remoteUrl；前端书库加'在线找书'按钮、远程卡片（虚线+需购买外链标）、点击跳官方；封面按来源 URL 直载
+
+修改文件：
+
+- 待补充
+
+验证：
+
+- cargo test -p reading-core 58 全过（+4 连接器：解析/空与异常容错/请求体/落库端到端含 remoteUrl）；cargo check --workspace 退出0；npm run build 通过；check-arch/check-dev-memory OK
+
+未验证/阻塞：
+
+- 无
+
+下一步：
+
+- 更多连接器（Open Library / 青空文库 OPDS）复用 connectors::ingest；catalog_fts 让远程条目可全文搜；远程条目去重/与本地书手动关联

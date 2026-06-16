@@ -247,3 +247,29 @@
 - 条目 `id`：本地 = 内容哈希（asset.id，open/标注/进度同键），远程回退 edition.id。
 - 元数据连接器（AniList/Open Library）现在**无前置阻塞**，可直接写 series/edition/source_record
   并即时出现在书架（availability=remote，只展示 + 外链）。
+
+## 2026-06-16：首个元数据连接器（AniList），分层 = 壳传输 / core 解析落库
+
+决策：新增 `crates/reading-core/src/connectors.rs`（含 `anilist` 子模块）实现首个在线元数据
+连接器。分层严格拆开：**core 做查询构造 + JSON 解析 + 落库**（纯函数，可单测/可 wasm，无网络），
+**壳做 HTTP 传输**（`src-tauri` 加 `reqwest`，命令 `library_search_remote`）。新增桥接消息
+`library.searchRemote` 与 `shell.openExternal`；`LibraryBook` 加可选 `remoteUrl`（读路径子查询回填）。
+
+理由：
+
+- 版权红线：连接器**只取元数据**（索引/封面/简介），正文一律跳官方外链。AniList 收录商业
+  出版物 → `rights_status=official_purchase`、`availability=remote`，前端只展示 + `openExternal`。
+- 选 AniList：轻小说/ACG 元数据全、公开 GraphQL 无需鉴权、有正规条款；不爬商业站正文。
+- core 不引网络依赖（保 wasm/可测）；HTTP 属平台 I/O，归壳。解析/落库是业务逻辑，归 core。
+  实测：core 用 fixture JSON 全单测，无需联网。
+- 落库走 v0.5-c 的实体读路径：连接器写 series/edition/source_record（`ON CONFLICT` upsert，
+  `source_id+remote_id` 派生确定性 id → 重复搜索幂等），edition 锚定的读路径自动把它们列上书架。
+- 封面以来源 URL 引用、不再托管（封面版权 + 体积），存 `series.cover_path`；前端按 `availability`
+  决定是否经 `resource.url` 转换。
+
+后果：
+
+- 用户最初诉求"全网索引 + 三分闸门"端到端打通：在线找书 → 落库 → 书架显示（虚线卡 + "需购买·官方外链"）→ 点击跳官方。
+- 远程条目暂不可全文搜（books_fts 不含它们）；catalog_fts 触发器留待后续（草案 §8）。
+- `reqwest`（rustls-tls）进 src-tauri 依赖；core 仍零网络。
+- 下一步可加更多连接器（Open Library / 青空文库 OPDS）：复用 `connectors::ingest`，各写一个 parser。
