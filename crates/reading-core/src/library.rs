@@ -34,6 +34,16 @@ pub struct LibraryBook {
     pub thumb_path: Option<String>,
     pub added_at: i64,
     pub last_read_at: Option<i64>,
+    // ── v0.5 实体模型可选字段（JOIN asset/edition/volume 回填；本地库恒有值）。──
+    // wire 层只「新增可选字段」，旧前端忽略即可，符合协议冻结规则。
+    /// 系列 id（'series:'名 / 'solo:'bookId）。供书架系列聚合视图。
+    pub series_id: Option<String>,
+    /// 卷 id（'vol:'bookId）。
+    pub volume_id: Option<String>,
+    /// 版本 id（'ed:'bookId）。
+    pub edition_id: Option<String>,
+    /// 资产可得性（local|remote|missing|cached）。远程元数据条目据此决定能否站内读。
+    pub availability: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -256,7 +266,7 @@ pub fn import_epub_bytes(
     std::fs::write(&dest, data).map_err(|e| format!("写入对象仓库失败: {}", e))?;
     let (cover_path, thumb_path) = save_cover_and_thumb(library_dir, &id, data)?;
 
-    let book = LibraryBook {
+    let mut book = LibraryBook {
         id: id.clone(),
         title: if info.metadata.title.trim().is_empty() {
             file_name
@@ -280,7 +290,16 @@ pub fn import_epub_bytes(
         thumb_path,
         added_at: now_ms,
         last_read_at: None,
+        series_id: None,
+        volume_id: None,
+        edition_id: None,
+        availability: None,
     };
+    // 与 v3 回填/双写同口径填充实体字段，使 ImportOutcome.book 即刻带上它们。
+    book.series_id = Some(series_id_of(&book));
+    book.volume_id = Some(format!("vol:{}", book.id));
+    book.edition_id = Some(format!("ed:{}", book.id));
+    book.availability = Some("local".to_string());
 
     conn.execute(
         "INSERT INTO books
@@ -409,8 +428,20 @@ fn generate_thumbnail(covers_dir: &Path, book_id: &str, cover_bytes: &[u8]) -> O
     Some(dest.to_string_lossy().into_owned())
 }
 
-const BOOK_COLS: &str = "id, title, author, language, series, series_index, description,
-                         file_path, file_size, cover_path, added_at, last_read_at, thumb_path";
+// v0.5-b：读路径 LEFT JOIN 实体表回填扁平 DTO。核心字段仍以 books 为准
+// （thumb_path 等只在 books，books 暂作权威读源），实体表只补 seriesId/volumeId/
+// editionId/availability。本地导入双写保证 JOIN 恒命中；远程 metadata_only 条目
+// 将来 asset 缺失时这些字段自然为 NULL。
+const SELECT_BOOK: &str = "\
+    b.id, b.title, b.author, b.language, b.series, b.series_index, b.description, \
+    b.file_path, b.file_size, b.cover_path, b.added_at, b.last_read_at, b.thumb_path, \
+    a.edition_id, e.volume_id, v.series_id, a.availability";
+
+const FROM_BOOK_JOINED: &str = "\
+    FROM books b \
+    LEFT JOIN asset a ON a.id = b.id \
+    LEFT JOIN edition e ON e.id = a.edition_id \
+    LEFT JOIN volume v ON v.id = e.volume_id";
 
 fn row_to_book(row: &rusqlite::Row<'_>) -> rusqlite::Result<LibraryBook> {
     Ok(LibraryBook {
@@ -427,11 +458,15 @@ fn row_to_book(row: &rusqlite::Row<'_>) -> rusqlite::Result<LibraryBook> {
         added_at: row.get(10)?,
         last_read_at: row.get(11)?,
         thumb_path: row.get(12)?,
+        edition_id: row.get(13)?,
+        volume_id: row.get(14)?,
+        series_id: row.get(15)?,
+        availability: row.get(16)?,
     })
 }
 
 pub fn get_book(conn: &Connection, id: &str) -> rusqlite::Result<Option<LibraryBook>> {
-    let sql = format!("SELECT {} FROM books WHERE id = ?1", BOOK_COLS);
+    let sql = format!("SELECT {} {} WHERE b.id = ?1", SELECT_BOOK, FROM_BOOK_JOINED);
     let mut stmt = conn.prepare(&sql)?;
     let mut rows = stmt.query_map([id], row_to_book)?;
     rows.next().transpose()
@@ -440,9 +475,9 @@ pub fn get_book(conn: &Connection, id: &str) -> rusqlite::Result<Option<LibraryB
 /// 全部书目，最近阅读优先、其次最近加入。
 pub fn list_books(conn: &Connection) -> rusqlite::Result<Vec<LibraryBook>> {
     let sql = format!(
-        "SELECT {} FROM books
-          ORDER BY last_read_at IS NULL, last_read_at DESC, added_at DESC",
-        BOOK_COLS
+        "SELECT {} {}
+          ORDER BY b.last_read_at IS NULL, b.last_read_at DESC, b.added_at DESC",
+        SELECT_BOOK, FROM_BOOK_JOINED
     );
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt.query_map([], row_to_book)?;
@@ -459,17 +494,12 @@ pub fn search_books(conn: &Connection, query: &str) -> rusqlite::Result<Vec<Libr
     if q.chars().count() >= 3 {
         // 引号包裹成短语字面量,内部引号按 FTS 规则翻倍转义
         let phrase = format!("\"{}\"", q.replace('"', "\"\""));
-        // books_fts 同名列会造成歧义,全部列加表前缀
-        let cols: Vec<String> = BOOK_COLS
-            .split(',')
-            .map(|c| format!("b.{}", c.trim()))
-            .collect();
         let sql = format!(
-            "SELECT {} FROM books b
+            "SELECT {} {}
               JOIN books_fts f ON f.rowid = b.rowid
              WHERE books_fts MATCH ?1
              ORDER BY rank",
-            cols.join(", ")
+            SELECT_BOOK, FROM_BOOK_JOINED
         );
         let mut stmt = conn.prepare(&sql)?;
         let rows = stmt.query_map([phrase], row_to_book)?;
@@ -483,12 +513,12 @@ pub fn search_books(conn: &Connection, query: &str) -> rusqlite::Result<Vec<Libr
         .replace('_', "\\_");
     let pattern = format!("%{}%", escaped);
     let sql = format!(
-        "SELECT {} FROM books
-          WHERE title LIKE ?1 ESCAPE '\\'
-             OR author LIKE ?1 ESCAPE '\\'
-             OR series LIKE ?1 ESCAPE '\\'
-          ORDER BY last_read_at IS NULL, last_read_at DESC, added_at DESC",
-        BOOK_COLS
+        "SELECT {} {}
+          WHERE b.title LIKE ?1 ESCAPE '\\'
+             OR b.author LIKE ?1 ESCAPE '\\'
+             OR b.series LIKE ?1 ESCAPE '\\'
+          ORDER BY b.last_read_at IS NULL, b.last_read_at DESC, b.added_at DESC",
+        SELECT_BOOK, FROM_BOOK_JOINED
     );
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt.query_map([pattern], row_to_book)?;
@@ -904,6 +934,44 @@ mod tests {
         drop(conn);
         let conn = open_library(&path).unwrap();
         assert_eq!(count_rows(&conn, "asset"), 1);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn queries_join_backfill_entity_fields() {
+        let dir = temp_library("entity-read");
+        let conn = open_library(&dir.join("library.sqlite")).unwrap();
+        let r = import_epub_bytes(
+            &conn,
+            &dir,
+            &make_epub_with_rich_metadata("卷一", "作者"),
+            Some("v1.epub"),
+            1000,
+        )
+        .unwrap();
+
+        // import 返回值即刻带实体字段。
+        assert_eq!(r.book.availability.as_deref(), Some("local"));
+        assert_eq!(r.book.series_id.as_deref(), Some("series:Skyline Chronicle"));
+        assert_eq!(r.book.volume_id, Some(format!("vol:{}", r.book.id)));
+        assert_eq!(r.book.edition_id, Some(format!("ed:{}", r.book.id)));
+
+        // get_book 经 JOIN 回填同样字段。
+        let got = get_book(&conn, &r.book.id).unwrap().unwrap();
+        assert_eq!(got.series_id.as_deref(), Some("series:Skyline Chronicle"));
+        assert_eq!(got.volume_id, Some(format!("vol:{}", r.book.id)));
+        assert_eq!(got.edition_id, Some(format!("ed:{}", r.book.id)));
+        assert_eq!(got.availability.as_deref(), Some("local"));
+        // 核心字段不受 JOIN 影响。
+        assert_eq!(got.series.as_deref(), Some("Skyline Chronicle"));
+        assert_eq!(got.series_index, Some(2.5));
+
+        // list / search 路径同样回填。
+        let listed = list_books(&conn).unwrap();
+        assert_eq!(listed[0].edition_id, Some(format!("ed:{}", r.book.id)));
+        let hit = search_books(&conn, "Skyline").unwrap();
+        assert_eq!(hit[0].availability.as_deref(), Some("local"));
 
         let _ = std::fs::remove_dir_all(&dir);
     }
