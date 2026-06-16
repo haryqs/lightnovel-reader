@@ -58,6 +58,16 @@ export interface LibraryBook {
   thumbPath?: string
   addedAt: number
   lastReadAt?: number
+  // ── v0.5 实体模型可选字段（JOIN asset/edition/volume 回填）。──
+  // 本地书库恒有值；旧前端可忽略。供书架系列聚合与远程条目区分。
+  /** 系列 id（'series:'名 / 'solo:'bookId）。 */
+  seriesId?: string
+  /** 卷 id（'vol:'bookId）。 */
+  volumeId?: string
+  /** 版本 id（'ed:'bookId）。 */
+  editionId?: string
+  /** 资产可得性（local|remote|missing|cached）：远程条目据此决定能否站内读。 */
+  availability?: string
 }
 
 export interface ImportOutcome {

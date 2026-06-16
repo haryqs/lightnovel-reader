@@ -971,3 +971,25 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
 下一步：
 
 - v0.5-b：list/search/get 改读实体表 JOIN 回填扁平 DTO，books 转只读；LibraryBook DTO 加可选 seriesId/volumeId/editionId/availability
+
+## 2026-06-16：v0.5-b：list/search/get 读路径 LEFT JOIN 实体表，LibraryBook 新增可选 seriesId/volumeId/editionId/availability（Rust+TS 同步）；books 仍作核心字段权威读源（保 thumbPath），实体表只补新字段；兑现协议冻结清单第1条
+
+变更：
+
+- v0.5-b：list/search/get 读路径 LEFT JOIN 实体表，LibraryBook 新增可选 seriesId/volumeId/editionId/availability（Rust+TS 同步）；books 仍作核心字段权威读源（保 thumbPath），实体表只补新字段；兑现协议冻结清单第1条
+
+修改文件：
+
+- 待补充
+
+验证：
+
+- cargo test -p reading-core 53 全过（+1：JOIN 回填校验）；npm run build（check-arch+tsc+vite）通过
+
+未验证/阻塞：
+
+- 无
+
+下一步：
+
+- v0.5-c：书架系列聚合视图（消费 seriesId 折叠同系列卷）；远期 v0.6 DROP books
