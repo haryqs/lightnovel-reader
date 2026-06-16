@@ -192,3 +192,30 @@ export function exportAnnotations(anns: Annotation[], ctx: ExportContext): strin
 
   return md
 }
+
+/// 完整结构化导出：保留每条标注的全部字段，可被外部工具或回导完整还原。
+export function exportAnnotationsJson(anns: Annotation[], ctx: ExportContext): string {
+  const sorted = [...anns].sort((a, b) => {
+    const h = a.locator.chapterHref.localeCompare(b.locator.chapterHref)
+    return h !== 0 ? h : a.locator.anchor.start - b.locator.anchor.start
+  })
+  const doc = {
+    schema: 'lightnovel-reader/annotations',
+    version: 1,
+    bookTitle: ctx.bookTitle,
+    exportedAt: new Date().toISOString(),
+    count: anns.length,
+    annotations: sorted.map(a => ({
+      id: a.id,
+      kind: a.kind,
+      color: a.color ?? null,
+      chapterHref: a.locator.chapterHref,
+      chapterTitle: ctx.chapterTitles.get(a.locator.chapterHref) ?? null,
+      anchor: a.locator.anchor,            // exact / start / end / prefix / suffix 全保留
+      note: a.note ?? null,
+      createdAt: a.createdAt,
+      updatedAt: a.updatedAt,
+    })),
+  }
+  return JSON.stringify(doc, null, 2)
+}

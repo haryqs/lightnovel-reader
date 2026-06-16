@@ -45,7 +45,8 @@
 ## P2：v0.4 标注增强与性能打磨
 
 - 改进跨元素选区高亮。
-- 增加 JSON 导出。
+- ~~增加 JSON 导出。~~ 已完成（2026-06-13，Claude）：`exportAnnotationsJson`（完整结构化、
+  含 anchor/时间戳）+ 标注侧栏 MD/JSON 双导出按钮；smoke:p1 拦截 blob 端到端校验通过。
 - 增强 text hash fallback 定位。
 - 封面缩略图（导入时生成小尺寸封面）+ 书架懒加载。
 - 批量导入并行流水线（rayon）+ 进度 UI；桌面文件夹导入改走路径版 `library.import`。
