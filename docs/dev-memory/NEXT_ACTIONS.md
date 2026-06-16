@@ -52,7 +52,9 @@
 - ~~增强 text hash fallback 定位。~~ 已完成（2026-06-13，Claude）：`locateAnnotationOffset`
   收集所有 exact 出现位置，用 prefix/suffix 上下文消歧 + 保存时 start 就近兜底，
   修「正文重复文本永远高亮第一个」错位。
-- 封面缩略图（导入时生成小尺寸封面）+ 书架懒加载。
+- ~~封面缩略图（导入时生成小尺寸封面）+ 书架懒加载。~~ 已完成（2026-06-16，Claude）：
+  `image` 依赖（png/jpeg，fail-open）导入时生成 ≤240×360 缩略图；迁移框架 v2 加 `thumb_path` 列；
+  DTO/协议加 `thumbPath`；书架优先缩略图 + `loading="lazy"`。cargo 49 全过 + smoke:p0 真窗口断言缩略图。
 - 批量导入并行流水线（rayon）+ 进度 UI；桌面文件夹导入改走路径版 `library.import`。
 
 ## P2.5：安全加固（v0.4 内）

@@ -919,3 +919,33 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
 下一步：
 
 - P0 手工冒烟时补充确认动态插图不干扰阅读，必要时继续降低透明度或动画强度。
+
+## 2026-06-16：v0.4 标注增强（JSON 导出 / 跨元素高亮 / 稳健定位）+ 封面缩略图
+
+承接 v0.3.1 发版后，推进 v0.4。已分三个 PR 合入 main（#2/#3）+ 一个待合（封面缩略图）。
+
+标注增强（PR #2 JSON 导出、PR #3 跨元素+定位，均已合并）：
+
+- `exportAnnotationsJson`：完整结构化导出（id/kind/color/章节/anchor/note/时间戳），标注侧栏 MD/JSON 双导出。
+- `computeAnchor` 改用 `cloneContents().textContent` 计偏移，与定位用的 textContent 同口径，
+  修块级边界 `range.toString()` 插 `\n` 导致的跨段落锚点错位；创建走 `applyAnnotationHighlight`
+  按偏移逐文本节点包裹，跨段落选择即时高亮。
+- `locateAnnotationOffset`：收集所有 exact 出现位置，prefix/suffix 消歧 + start 就近，
+  修正文重复文本「永远高亮第一个」错位。
+- `smoke:p1` 新增端到端校验：JSON 导出拦截 blob 解析、跨元素渲染为多段 mark。
+
+封面缩略图（本分支 feature/v0.4-cover-thumbnails，待开 PR）：
+
+- 加 `image` 依赖（png/jpeg，fail-open）；导入时生成 ≤240×360 缩略图 `covers/<id>_thumb.png`。
+- 迁移框架 **version 2**（`ALTER TABLE books ADD COLUMN thumb_path`）—— 迁移框架上线后首个真实增量迁移。
+- `LibraryBook` DTO + 协议加可选 `thumbPath`；书架优先缩略图 + `loading="lazy"`/`decoding="async"`。
+- 见 DECISIONS.md 2026-06-16。
+
+验证：
+
+- `cargo test --workspace` 47 → **49 全过**（+2 缩略图：真 PNG 生成 / 不可解码 fail-open；版本契约改为 v2）。
+- 三套冒烟全绿；`smoke:p0` 新增真窗口缩略图断言；`npm build` / `check-arch` 通过。
+
+下一步：
+
+- 开封面缩略图 PR；v0.4 余下「并行导入（rayon）」待定（需新依赖，等用户点头）。

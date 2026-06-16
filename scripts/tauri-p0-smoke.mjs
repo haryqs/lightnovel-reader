@@ -342,6 +342,9 @@ function assertBookMeta(book, expected) {
   assertCheck(!!book.description, 'book description was not imported', book)
   assertCheck(!!book.filePath && existsSync(book.filePath), 'book file path is missing on disk', book)
   assertCheck(!!book.coverPath && existsSync(book.coverPath), 'book cover path is missing on disk', book)
+  // 样本封面是有效 PNG → 应生成缩略图（v0.4 封面缩略图）
+  assertCheck(!!book.thumbPath && existsSync(book.thumbPath), 'book thumbnail was not generated', book)
+  assertCheck(book.thumbPath.endsWith('_thumb.png'), 'unexpected thumbnail path', book)
 }
 
 function findBook(books, title) {

@@ -54,6 +54,8 @@ export interface LibraryBook {
   filePath: string
   fileSize: number
   coverPath?: string
+  /** 小尺寸缩略图路径（书架优先加载它，回退 coverPath）。 */
+  thumbPath?: string
   addedAt: number
   lastReadAt?: number
 }

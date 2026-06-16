@@ -14,3 +14,6 @@ encoding_rs = "0.8"
 rusqlite = { version = "0.32", features = ["bundled"] }
 # bookId = SHA-256(epub 字节) 前 32 hex，须与前端 computeBookId 一致
 sha2 = "0.10"
+# 封面缩略图（导入时生成小图，书架懒加载）。仅启用 png/jpeg 解码以控体积；
+# 其它格式解码失败时缩略图 fail-open 跳过，书架回退用原图。
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }

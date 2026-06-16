@@ -30,6 +30,8 @@ pub struct LibraryBook {
     pub file_path: String,
     pub file_size: i64,
     pub cover_path: Option<String>,
+    /// 小尺寸缩略图（covers/<id>_thumb.png），书架优先加载它而非原图。无则为 None。
+    pub thumb_path: Option<String>,
     pub added_at: i64,
     pub last_read_at: Option<i64>,
 }
@@ -82,8 +84,13 @@ CREATE TRIGGER IF NOT EXISTS books_au AFTER UPDATE ON books BEGIN
 END;
 "#;
 
-/// 书库数据库的迁移序列。v0.5 实体模型（series/volume/edition/asset）作为 v2 追加。
-const MIGRATIONS: &[Migration] = &[Migration { version: 1, sql: SCHEMA_V1 }];
+/// 书库数据库的迁移序列。新增列/表一律追加新版本，绝不改 SCHEMA_V1
+/// （旧库已盖戳 v1，不会再跑 v1）。v0.5 实体模型（series/volume/edition/asset）作为更高版本追加。
+const MIGRATIONS: &[Migration] = &[
+    Migration { version: 1, sql: SCHEMA_V1 },
+    // v2：封面缩略图列。已在 v1 的旧库经 ALTER 补列；新库 v1 建表后 v2 补列。
+    Migration { version: 2, sql: "ALTER TABLE books ADD COLUMN thumb_path TEXT;" },
+];
 
 pub fn open_library(db_path: &Path) -> rusqlite::Result<Connection> {
     let conn = Connection::open(db_path)?;
@@ -130,7 +137,7 @@ pub fn import_epub_bytes(
     std::fs::create_dir_all(&objects_dir).map_err(|e| format!("创建对象仓库失败: {}", e))?;
     let dest = objects_dir.join(format!("{}.epub", id));
     std::fs::write(&dest, data).map_err(|e| format!("写入对象仓库失败: {}", e))?;
-    let cover_path = save_cover_image(library_dir, &id, data)?;
+    let (cover_path, thumb_path) = save_cover_and_thumb(library_dir, &id, data)?;
 
     let book = LibraryBook {
         id: id.clone(),
@@ -153,6 +160,7 @@ pub fn import_epub_bytes(
         file_path: dest.to_string_lossy().into_owned(),
         file_size: data.len() as i64,
         cover_path,
+        thumb_path,
         added_at: now_ms,
         last_read_at: None,
     };
@@ -160,8 +168,8 @@ pub fn import_epub_bytes(
     conn.execute(
         "INSERT INTO books
            (id, title, author, language, series, series_index, description,
-            file_path, file_size, cover_path, added_at, last_read_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+            file_path, file_size, cover_path, added_at, last_read_at, thumb_path)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
         params![
             book.id,
             book.title,
@@ -174,7 +182,8 @@ pub fn import_epub_bytes(
             book.file_size,
             book.cover_path,
             book.added_at,
-            book.last_read_at
+            book.last_read_at,
+            book.thumb_path
         ],
     )
     .map_err(|e| e.to_string())?;
@@ -185,23 +194,36 @@ pub fn import_epub_bytes(
     })
 }
 
-fn save_cover_image(
+/// 提取封面原图并生成缩略图。返回 (原图路径, 缩略图路径)；无封面返回 (None, None)。
+fn save_cover_and_thumb(
     library_dir: &Path,
     book_id: &str,
     epub_data: &[u8],
-) -> Result<Option<String>, String> {
+) -> Result<(Option<String>, Option<String>), String> {
     let Some(cover) = epub_parser::extract_cover_image(epub_data)? else {
-        return Ok(None);
+        return Ok((None, None));
     };
     let covers_dir = library_dir.join("covers");
     std::fs::create_dir_all(&covers_dir).map_err(|e| format!("创建封面目录失败: {}", e))?;
     let dest = covers_dir.join(format!("{}.{}", book_id, cover.extension));
     std::fs::write(&dest, &cover.bytes).map_err(|e| format!("写入封面失败: {}", e))?;
-    Ok(Some(dest.to_string_lossy().into_owned()))
+    let cover_path = Some(dest.to_string_lossy().into_owned());
+    // 缩略图 fail-open：非可解码图片（SVG/webp/损坏）解码或编码失败则跳过，书架回退原图。
+    let thumb_path = generate_thumbnail(&covers_dir, book_id, &cover.bytes);
+    Ok((cover_path, thumb_path))
+}
+
+/// 生成不超过 240×360 的缩略图（保比缩放），统一 PNG 编码。任何失败返回 None。
+fn generate_thumbnail(covers_dir: &Path, book_id: &str, cover_bytes: &[u8]) -> Option<String> {
+    let img = image::load_from_memory(cover_bytes).ok()?;
+    let thumb = img.thumbnail(240, 360);
+    let dest = covers_dir.join(format!("{}_thumb.png", book_id));
+    thumb.save_with_format(&dest, image::ImageFormat::Png).ok()?;
+    Some(dest.to_string_lossy().into_owned())
 }
 
 const BOOK_COLS: &str = "id, title, author, language, series, series_index, description,
-                         file_path, file_size, cover_path, added_at, last_read_at";
+                         file_path, file_size, cover_path, added_at, last_read_at, thumb_path";
 
 fn row_to_book(row: &rusqlite::Row<'_>) -> rusqlite::Result<LibraryBook> {
     Ok(LibraryBook {
@@ -217,6 +239,7 @@ fn row_to_book(row: &rusqlite::Row<'_>) -> rusqlite::Result<LibraryBook> {
         cover_path: row.get(9)?,
         added_at: row.get(10)?,
         last_read_at: row.get(11)?,
+        thumb_path: row.get(12)?,
     })
 }
 
@@ -569,13 +592,90 @@ mod tests {
         let path = dir.join("library.sqlite");
 
         let conn = open_library(&path).unwrap();
-        assert_eq!(crate::migrations::current_version(&conn).unwrap(), 1);
+        assert_eq!(crate::migrations::current_version(&conn).unwrap(), 2);
         drop(conn);
 
         // 重开已有库：迁移幂等跳过，版本不变、数据仍在。
         let conn = open_library(&path).unwrap();
-        assert_eq!(crate::migrations::current_version(&conn).unwrap(), 1);
+        assert_eq!(crate::migrations::current_version(&conn).unwrap(), 2);
 
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn make_epub_with_cover_bytes(title: &str, cover: &[u8]) -> Vec<u8> {
+        let mut w = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        let opts = SimpleFileOptions::default();
+        w.start_file("mimetype", opts).unwrap();
+        w.write_all(b"application/epub+zip").unwrap();
+        w.start_file("META-INF/container.xml", opts).unwrap();
+        w.write_all(
+            br#"<?xml version="1.0"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles>
+</container>"#,
+        )
+        .unwrap();
+        w.start_file("OEBPS/content.opf", opts).unwrap();
+        w.write_all(
+            format!(
+                r#"<?xml version="1.0"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="uid">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="uid">u-{title}</dc:identifier><dc:title>{title}</dc:title></metadata>
+  <manifest>
+    <item id="cover-img" href="Images/cover.png" media-type="image/png" properties="cover-image"/>
+    <item id="ch1" href="Text/ch1.xhtml" media-type="application/xhtml+xml"/>
+  </manifest>
+  <spine><itemref idref="ch1"/></spine>
+</package>"#
+            )
+            .as_bytes(),
+        )
+        .unwrap();
+        w.start_file("OEBPS/Images/cover.png", opts).unwrap();
+        w.write_all(cover).unwrap();
+        w.start_file("OEBPS/Text/ch1.xhtml", opts).unwrap();
+        w.write_all(b"<html><body><p>text</p></body></html>").unwrap();
+        w.finish().unwrap().into_inner()
+    }
+
+    #[test]
+    fn import_generates_thumbnail_from_real_cover() {
+        let dir = temp_library("thumb");
+        let conn = open_library(&dir.join("library.sqlite")).unwrap();
+        // 用 image 生成一张真实 300×450 PNG 作封面
+        let mut buf = std::io::Cursor::new(Vec::new());
+        image::DynamicImage::ImageRgb8(image::RgbImage::from_pixel(300, 450, image::Rgb([120, 90, 160])))
+            .write_to(&mut buf, image::ImageFormat::Png)
+            .unwrap();
+        let data = make_epub_with_cover_bytes("有真封面", &buf.into_inner());
+
+        let result = import_epub_bytes(&conn, &dir, &data, Some("c.epub"), 1000).unwrap();
+
+        let thumb = result.book.thumb_path.clone().expect("应生成缩略图");
+        assert!(thumb.ends_with("_thumb.png"));
+        let decoded = image::open(&thumb).expect("缩略图应为有效 PNG");
+        assert!(
+            decoded.width() <= 240 && decoded.height() <= 360,
+            "缩略图应缩到 240×360 内: {}x{}",
+            decoded.width(),
+            decoded.height()
+        );
+        // 读取回来 thumb_path 仍在（迁移 v2 列 + row 映射正确）
+        let got = get_book(&conn, &result.book.id).unwrap().unwrap();
+        assert_eq!(got.thumb_path, result.book.thumb_path);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn import_with_undecodable_cover_skips_thumbnail() {
+        let dir = temp_library("thumb-none");
+        let conn = open_library(&dir.join("library.sqlite")).unwrap();
+        // 假 PNG（不可解码）：封面原图仍保存，缩略图 fail-open 跳过
+        let data = make_epub_with_cover("假封面", "作者");
+        let result = import_epub_bytes(&conn, &dir, &data, Some("f.epub"), 1000).unwrap();
+        assert!(result.book.cover_path.is_some(), "封面原图仍应保存");
+        assert!(result.book.thumb_path.is_none(), "不可解码封面应跳过缩略图");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

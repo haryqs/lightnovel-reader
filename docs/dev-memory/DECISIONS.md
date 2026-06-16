@@ -204,3 +204,19 @@
 后果：
 
 - v0.5 实施按草案 §7 四步走（双写 → 切读 → UI 系列视图 → DROP books），每步独立可 cargo test。
+
+## 2026-06-16：引入 image 依赖做封面缩略图
+
+决策：reading-core 加 `image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }`，
+导入时生成不超过 240×360 的缩略图，书架优先加载缩略图（`loading="lazy"`）。
+
+理由：
+
+- 书架是最先暴露的性能点；几百本一次性加载原图卡顿、占内存。缩略图 + 懒加载是直接收益（DECISIONS 2026-06-13 性能优先级第 1 项）。
+- 仅启用 png/jpeg 解码以控编译体积；其它格式（SVG/webp/损坏）解码失败时缩略图 fail-open 跳过，书架回退原图，导入不受影响。
+
+后果：
+
+- `books` 新增 `thumb_path` 列，经迁移框架 **version 2**（`ALTER TABLE`）落地——这是迁移框架上线后的第一个真实增量迁移，验证了「绝不改 v1、只追加新版本」的纪律。
+- `LibraryBook` DTO + 协议新增可选 `thumbPath`（符合「只增可选字段」演进规则）。
+- v0.5 实体模型迁移顺延为更高版本号（不再是 v2）。

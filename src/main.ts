@@ -763,9 +763,13 @@ function renderLibraryBooks() {
     card.className = 'book-card'
     const cover = document.createElement('div')
     cover.className = 'cover'
-    if (b.coverPath) {
+    // 书架优先加载缩略图（小图省内存、滚动更流畅），无则回退原封面
+    const coverSrc = b.thumbPath || b.coverPath
+    if (coverSrc) {
       const img = document.createElement('img')
-      img.src = bridge.resolveFileUrl(b.coverPath)
+      img.loading = 'lazy'         // 视口外延迟加载，大书架不一次性拉全部封面
+      img.decoding = 'async'
+      img.src = bridge.resolveFileUrl(coverSrc)
       img.alt = ''
       cover.appendChild(img)
     } else {
