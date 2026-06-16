@@ -51,8 +51,10 @@ export interface LibraryBook {
   series?: string
   seriesIndex?: number
   description?: string
-  filePath: string
-  fileSize: number
+  /** 库内对象路径。远程 metadata_only 条目无文件 → 缺省。 */
+  filePath?: string
+  /** 文件字节数。远程条目 → 缺省。 */
+  fileSize?: number
   coverPath?: string
   /** 小尺寸缩略图路径（书架优先加载它，回退 coverPath）。 */
   thumbPath?: string

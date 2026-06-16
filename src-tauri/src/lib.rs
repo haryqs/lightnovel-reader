@@ -288,7 +288,9 @@ async fn library_open(state: tauri::State<'_, AppState>, id: String) -> Result<O
         let book = library::get_book(&db, &id)
             .map_err(|e| e.to_string())?
             .ok_or_else(|| "书库中找不到这本书".to_string())?;
+        // 远程 metadata_only 条目无本地文件，不能站内打开（应由前端走外链）。
         book.file_path
+            .ok_or_else(|| "该条目没有本地文件，无法打开（远程条目请用外部链接）".to_string())?
     };
     let data = std::fs::read(&file_path).map_err(|e| format!("读取书库文件失败: {}", e))?;
     load_book_from_data(&state, data)

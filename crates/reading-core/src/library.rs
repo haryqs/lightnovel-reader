@@ -26,9 +26,10 @@ pub struct LibraryBook {
     pub series: Option<String>,
     pub series_index: Option<f64>,
     pub description: Option<String>,
-    /// 库内对象路径（objects/<id>.epub）。
-    pub file_path: String,
-    pub file_size: i64,
+    /// 库内对象路径（objects/<id>.epub）。远程 metadata_only 条目无文件 → None。
+    pub file_path: Option<String>,
+    /// 文件字节数。远程条目 → None。
+    pub file_size: Option<i64>,
     pub cover_path: Option<String>,
     /// 小尺寸缩略图（covers/<id>_thumb.png），书架优先加载它而非原图。无则为 None。
     pub thumb_path: Option<String>,
@@ -211,12 +212,21 @@ INSERT OR IGNORE INTO asset(id, edition_id, kind, availability, file_path, file_
 
 /// 书库数据库的迁移序列。新增列/表一律追加新版本，绝不改 SCHEMA_V1
 /// （旧库已盖戳 v1，不会再跑 v1）。
+/// v4：缩略图从 books 迁到 asset。读路径切实体锚定后不再读 books，封面/缩略图须从
+/// asset 取；故给 asset 补 thumb_path 列并从 books 回填。books 仍保留该列（只读镜像）。
+const ASSET_THUMB_V4: &str = "\
+    ALTER TABLE asset ADD COLUMN thumb_path TEXT; \
+    UPDATE asset SET thumb_path = (SELECT thumb_path FROM books WHERE books.id = asset.id) \
+      WHERE thumb_path IS NULL;";
+
 const MIGRATIONS: &[Migration] = &[
     Migration { version: 1, sql: SCHEMA_V1 },
     // v2：封面缩略图列。已在 v1 的旧库经 ALTER 补列；新库 v1 建表后 v2 补列。
     Migration { version: 2, sql: "ALTER TABLE books ADD COLUMN thumb_path TEXT;" },
     // v3：v0.5 实体模型（系列/卷/版本/资产 + 来源层）+ 从 books 回填。
     Migration { version: 3, sql: ENTITY_SCHEMA_V3 },
+    // v4：缩略图迁到 asset（读路径实体锚定的前置）。
+    Migration { version: 4, sql: ASSET_THUMB_V4 },
 ];
 
 pub fn open_library(db_path: &Path) -> rusqlite::Result<Connection> {
@@ -284,8 +294,8 @@ pub fn import_epub_bytes(
         series: info.metadata.series,
         series_index: info.metadata.series_index,
         description: info.metadata.description,
-        file_path: dest.to_string_lossy().into_owned(),
-        file_size: data.len() as i64,
+        file_path: Some(dest.to_string_lossy().into_owned()),
+        file_size: Some(data.len() as i64),
         cover_path,
         thumb_path,
         added_at: now_ms,
@@ -385,14 +395,15 @@ fn insert_entity_chain(conn: &Connection, book: &LibraryBook) -> rusqlite::Resul
         params![edition_id, volume_id, book.language, book.added_at],
     )?;
     conn.execute(
-        "INSERT OR IGNORE INTO asset(id, edition_id, kind, availability, file_path, file_size, cover_path, added_at, last_read_at)
-         VALUES (?1, ?2, 'epub', 'local', ?3, ?4, ?5, ?6, ?7)",
+        "INSERT OR IGNORE INTO asset(id, edition_id, kind, availability, file_path, file_size, cover_path, thumb_path, added_at, last_read_at)
+         VALUES (?1, ?2, 'epub', 'local', ?3, ?4, ?5, ?6, ?7, ?8)",
         params![
             book.id,
             edition_id,
             book.file_path,
             book.file_size,
             book.cover_path,
+            book.thumb_path,
             book.added_at,
             book.last_read_at
         ],
@@ -428,20 +439,39 @@ fn generate_thumbnail(covers_dir: &Path, book_id: &str, cover_bytes: &[u8]) -> O
     Some(dest.to_string_lossy().into_owned())
 }
 
-// v0.5-b：读路径 LEFT JOIN 实体表回填扁平 DTO。核心字段仍以 books 为准
-// （thumb_path 等只在 books，books 暂作权威读源），实体表只补 seriesId/volumeId/
-// editionId/availability。本地导入双写保证 JOIN 恒命中；远程 metadata_only 条目
-// 将来 asset 缺失时这些字段自然为 NULL。
-const SELECT_BOOK: &str = "\
-    b.id, b.title, b.author, b.language, b.series, b.series_index, b.description, \
-    b.file_path, b.file_size, b.cover_path, b.added_at, b.last_read_at, b.thumb_path, \
-    a.edition_id, e.volume_id, v.series_id, a.availability";
+// v0.5-c：读路径**锚定 edition**（一个版本 = 书架一个条目），不再读 books。
+// 本地条目有 asset（availability=local），远程 metadata_only 条目只有 source_record/无
+// asset（file_path/file_size 为 NULL、availability 默认 'remote'），两类都能列出。
+// 核心展示字段全部从实体表取，与 v3 回填/导入双写同口径——本地书结果与旧 books 读法等价。
+// id：本地 = asset.id（内容哈希，供 open/标注/进度同键）；无 asset 时回退 edition.id。
+// series：仅真实系列（id 形如 'series:…'）返回名字，'solo:…' 的孤本仍为 NULL（保旧语义）。
+const SELECT_ENTRY: &str = "\
+    COALESCE(a.id, e.id) AS id, \
+    v.title, \
+    s.author, \
+    e.language, \
+    CASE WHEN s.id LIKE 'series:%' THEN s.title END AS series, \
+    v.volume_number, \
+    COALESCE(v.description, s.description) AS description, \
+    a.file_path, \
+    a.file_size, \
+    COALESCE(a.cover_path, s.cover_path) AS cover_path, \
+    a.thumb_path, \
+    COALESCE(a.added_at, 0) AS added_at, \
+    a.last_read_at, \
+    e.id AS edition_id, \
+    v.id AS volume_id, \
+    s.id AS series_id, \
+    COALESCE(a.availability, 'remote') AS availability";
 
-const FROM_BOOK_JOINED: &str = "\
-    FROM books b \
-    LEFT JOIN asset a ON a.id = b.id \
-    LEFT JOIN edition e ON e.id = a.edition_id \
-    LEFT JOIN volume v ON v.id = e.volume_id";
+const FROM_ENTRY: &str = "\
+    FROM edition e \
+    JOIN volume v ON v.id = e.volume_id \
+    JOIN series s ON s.id = v.series_id \
+    LEFT JOIN asset a ON a.edition_id = e.id";
+
+const ORDER_ENTRY: &str =
+    "ORDER BY a.last_read_at IS NULL, a.last_read_at DESC, a.added_at DESC";
 
 fn row_to_book(row: &rusqlite::Row<'_>) -> rusqlite::Result<LibraryBook> {
     Ok(LibraryBook {
@@ -455,9 +485,9 @@ fn row_to_book(row: &rusqlite::Row<'_>) -> rusqlite::Result<LibraryBook> {
         file_path: row.get(7)?,
         file_size: row.get(8)?,
         cover_path: row.get(9)?,
-        added_at: row.get(10)?,
-        last_read_at: row.get(11)?,
-        thumb_path: row.get(12)?,
+        thumb_path: row.get(10)?,
+        added_at: row.get(11)?,
+        last_read_at: row.get(12)?,
         edition_id: row.get(13)?,
         volume_id: row.get(14)?,
         series_id: row.get(15)?,
@@ -466,7 +496,10 @@ fn row_to_book(row: &rusqlite::Row<'_>) -> rusqlite::Result<LibraryBook> {
 }
 
 pub fn get_book(conn: &Connection, id: &str) -> rusqlite::Result<Option<LibraryBook>> {
-    let sql = format!("SELECT {} {} WHERE b.id = ?1", SELECT_BOOK, FROM_BOOK_JOINED);
+    let sql = format!(
+        "SELECT {} {} WHERE COALESCE(a.id, e.id) = ?1",
+        SELECT_ENTRY, FROM_ENTRY
+    );
     let mut stmt = conn.prepare(&sql)?;
     let mut rows = stmt.query_map([id], row_to_book)?;
     rows.next().transpose()
@@ -474,11 +507,7 @@ pub fn get_book(conn: &Connection, id: &str) -> rusqlite::Result<Option<LibraryB
 
 /// 全部书目，最近阅读优先、其次最近加入。
 pub fn list_books(conn: &Connection) -> rusqlite::Result<Vec<LibraryBook>> {
-    let sql = format!(
-        "SELECT {} {}
-          ORDER BY b.last_read_at IS NULL, b.last_read_at DESC, b.added_at DESC",
-        SELECT_BOOK, FROM_BOOK_JOINED
-    );
+    let sql = format!("SELECT {} {} {}", SELECT_ENTRY, FROM_ENTRY, ORDER_ENTRY);
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt.query_map([], row_to_book)?;
     rows.collect()
@@ -492,21 +521,23 @@ pub fn search_books(conn: &Connection, query: &str) -> rusqlite::Result<Vec<Libr
     }
 
     if q.chars().count() >= 3 {
-        // 引号包裹成短语字面量,内部引号按 FTS 规则翻倍转义
+        // ≥3 字走 books_fts（trigram 子串命中）。books_fts 仅含本地书，故经 asset→books
+        // 内连接桥接——远程条目要可搜需将来填 catalog_fts（草案 §8，触发器留待后续）。
         let phrase = format!("\"{}\"", q.replace('"', "\"\""));
         let sql = format!(
             "SELECT {} {}
+              JOIN books b ON b.id = a.id
               JOIN books_fts f ON f.rowid = b.rowid
              WHERE books_fts MATCH ?1
              ORDER BY rank",
-            SELECT_BOOK, FROM_BOOK_JOINED
+            SELECT_ENTRY, FROM_ENTRY
         );
         let mut stmt = conn.prepare(&sql)?;
         let rows = stmt.query_map([phrase], row_to_book)?;
         return rows.collect();
     }
 
-    // 短查询:LIKE 子串,通配符转义
+    // 短查询:LIKE 子串,通配符转义。直接打实体表 → 本地与远程条目都能命中。
     let escaped = q
         .replace('\\', "\\\\")
         .replace('%', "\\%")
@@ -514,18 +545,24 @@ pub fn search_books(conn: &Connection, query: &str) -> rusqlite::Result<Vec<Libr
     let pattern = format!("%{}%", escaped);
     let sql = format!(
         "SELECT {} {}
-          WHERE b.title LIKE ?1 ESCAPE '\\'
-             OR b.author LIKE ?1 ESCAPE '\\'
-             OR b.series LIKE ?1 ESCAPE '\\'
-          ORDER BY b.last_read_at IS NULL, b.last_read_at DESC, b.added_at DESC",
-        SELECT_BOOK, FROM_BOOK_JOINED
+          WHERE v.title LIKE ?1 ESCAPE '\\'
+             OR s.author LIKE ?1 ESCAPE '\\'
+             OR (s.id LIKE 'series:%' AND s.title LIKE ?1 ESCAPE '\\')
+          {}",
+        SELECT_ENTRY, FROM_ENTRY, ORDER_ENTRY
     );
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt.query_map([pattern], row_to_book)?;
     rows.collect()
 }
 
+/// 更新最近阅读时间。读路径读 `asset.last_read_at`，故必须更 asset；books 作为
+/// 只读镜像一并更新，保持两侧一致。`id` 为内容哈希（= 本地 asset.id）。
 pub fn touch_last_read(conn: &Connection, id: &str, ts_ms: i64) -> rusqlite::Result<()> {
+    conn.execute(
+        "UPDATE asset SET last_read_at = ?2 WHERE id = ?1",
+        params![id, ts_ms],
+    )?;
     conn.execute(
         "UPDATE books SET last_read_at = ?2 WHERE id = ?1",
         params![id, ts_ms],
@@ -708,7 +745,7 @@ mod tests {
         assert!(!r1.duplicate);
         assert_eq!(r1.book.title, "凉宫春日的忧郁");
         assert_eq!(r1.book.author.as_deref(), Some("谷川流"));
-        assert!(std::path::Path::new(&r1.book.file_path).exists());
+        assert!(std::path::Path::new(r1.book.file_path.as_deref().unwrap()).exists());
         assert_eq!(r1.book.id.len(), 32);
 
         // 同内容不同文件名 → 去重命中
@@ -733,7 +770,7 @@ mod tests {
 
         assert_eq!(result.book.title, "fallback-title");
         assert!(!result.duplicate);
-        assert!(std::path::Path::new(&result.book.file_path).exists());
+        assert!(std::path::Path::new(result.book.file_path.as_deref().unwrap()).exists());
 
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -812,12 +849,12 @@ mod tests {
         let path = dir.join("library.sqlite");
 
         let conn = open_library(&path).unwrap();
-        assert_eq!(crate::migrations::current_version(&conn).unwrap(), 3);
+        assert_eq!(crate::migrations::current_version(&conn).unwrap(), 4);
         drop(conn);
 
         // 重开已有库：迁移幂等跳过，版本不变、数据仍在。
         let conn = open_library(&path).unwrap();
-        assert_eq!(crate::migrations::current_version(&conn).unwrap(), 3);
+        assert_eq!(crate::migrations::current_version(&conn).unwrap(), 4);
 
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -916,7 +953,7 @@ mod tests {
 
         // 重开 → 仅跑 v3，回填实体链。
         let conn = open_library(&path).unwrap();
-        assert_eq!(migrations::current_version(&conn).unwrap(), 3);
+        assert_eq!(migrations::current_version(&conn).unwrap(), 4);
 
         let asset_id: String = conn
             .query_row("SELECT id FROM asset WHERE id = 'hash123'", [], |r| r.get(0))
@@ -972,6 +1009,53 @@ mod tests {
         assert_eq!(listed[0].edition_id, Some(format!("ed:{}", r.book.id)));
         let hit = search_books(&conn, "Skyline").unwrap();
         assert_eq!(hit[0].availability.as_deref(), Some("local"));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn remote_metadata_only_entry_is_listable() {
+        // 读路径锚定 edition 的核心收益：无 asset 的远程条目（连接器产出）也能上书架。
+        let dir = temp_library("entity-remote");
+        let conn = open_library(&dir.join("library.sqlite")).unwrap();
+        let local = import_fixture(&conn, &dir, "local.epub", "本地书", "作者");
+
+        // 手工塞一个只有 series/volume/edition + source_record、无 asset 的远程条目。
+        conn.execute_batch(
+            "INSERT INTO series(id,title,author,description,created_at,updated_at)
+               VALUES('series:远程系列','远程系列','远程作者','简介',0,0);
+             INSERT INTO volume(id,series_id,kind,volume_number,title,created_at,updated_at)
+               VALUES('vol:remote1','series:远程系列','main',1,'远程卷一',0,0);
+             INSERT INTO edition(id,volume_id,language,rights_status,created_at,updated_at)
+               VALUES('ed:remote1','vol:remote1','ja','official_purchase',0,0);
+             INSERT INTO source(id,name,kind,created_at)
+               VALUES('src:anilist','AniList','metadata',0);
+             INSERT INTO source_record(id,source_id,entity_type,entity_id,remote_url,rights_status)
+               VALUES('sr:1','src:anilist','edition','ed:remote1','https://example/x','official_purchase');",
+        )
+        .unwrap();
+
+        let books = list_books(&conn).unwrap();
+        assert_eq!(books.len(), 2, "本地 + 远程两个条目都应在书架");
+
+        let remote = books
+            .iter()
+            .find(|b| b.id == "ed:remote1")
+            .expect("远程条目应出现在书架");
+        assert_eq!(remote.availability.as_deref(), Some("remote"));
+        assert!(remote.file_path.is_none(), "远程条目无本地文件");
+        assert!(remote.file_size.is_none());
+        assert_eq!(remote.series.as_deref(), Some("远程系列"));
+        assert_eq!(remote.title, "远程卷一");
+        assert_eq!(remote.edition_id.as_deref(), Some("ed:remote1"));
+
+        // get_book 按 edition id 也能取到远程条目。
+        let got = get_book(&conn, "ed:remote1").unwrap().expect("应能按 edition id 取远程条目");
+        assert_eq!(got.id, "ed:remote1");
+
+        // 本地书仍按内容哈希取到、且有文件。
+        let got_local = get_book(&conn, &local.book.id).unwrap().unwrap();
+        assert!(got_local.file_path.is_some());
 
         let _ = std::fs::remove_dir_all(&dir);
     }
