@@ -11,6 +11,7 @@ import type {
   OpenedBook,
   ReaderBridge,
   ReadingProgress,
+  RemoteLibrarySource,
 } from './protocol'
 
 export const isTauriRuntime = () =>
@@ -32,6 +33,10 @@ export const tauriBridge: ReaderBridge = {
     invoke<LibraryBook[]>('library_search', { query }),
   searchRemoteLibraryBooks: (query) =>
     invoke<LibraryBook[]>('library_search_remote', { query }),
+  searchRemoteLibraryBooksFromSource: (source: RemoteLibrarySource, query) =>
+    invoke<LibraryBook[]>('library_search_remote_source', { source, query }),
+  acquireRemoteLibraryBook: (id) =>
+    invoke<LibraryBook>('library_acquire_remote', { id }),
   openLibraryBook: (id) => invoke<OpenedBook>('library_open', { id }),
   touchLibraryLastRead: (id) => invoke('library_touch_last_read', { id }),
   saveAnnotation: (annotation) => invoke('save_annotation', { annotation }),

@@ -1,8 +1,9 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use reading_core::epub_parser::{self, BookInfo};
 use reading_core::{compute_book_id, library, parse_cache, rusqlite, storage};
@@ -48,6 +49,9 @@ fn now_ms() -> i64 {
         .unwrap_or_default()
         .as_millis() as i64
 }
+
+const AOZORA_CATALOG_MAX_AGE: Duration = Duration::from_secs(7 * 24 * 60 * 60);
+const AOZORA_SEARCH_LIMIT: usize = 40;
 
 fn resolve_app_data_dir(app: &tauri::App) -> PathBuf {
     const OVERRIDE_ENV: &str = "LIGHTNOVEL_READER_APP_DATA_DIR";
@@ -289,6 +293,35 @@ async fn library_search_remote(
     state: tauri::State<'_, AppState>,
     query: String,
 ) -> Result<Vec<library::LibraryBook>, String> {
+    search_remote_source(&state, "anilist", &query).await
+}
+
+/// 在线来源搜索：source=anilist/aozora。新增来源不复用旧消息塞隐式状态。
+#[tauri::command]
+async fn library_search_remote_source(
+    state: tauri::State<'_, AppState>,
+    source: String,
+    query: String,
+) -> Result<Vec<library::LibraryBook>, String> {
+    search_remote_source(&state, &source, &query).await
+}
+
+async fn search_remote_source(
+    state: &AppState,
+    source: &str,
+    query: &str,
+) -> Result<Vec<library::LibraryBook>, String> {
+    match source.trim().to_ascii_lowercase().as_str() {
+        "anilist" => search_anilist(state, query).await,
+        "aozora" => search_aozora(state, query).await,
+        other => Err(format!("不支持的在线来源: {}", other)),
+    }
+}
+
+async fn search_anilist(
+    state: &AppState,
+    query: &str,
+) -> Result<Vec<library::LibraryBook>, String> {
     use reading_core::connectors::{self, anilist};
 
     let q = query.trim();
@@ -325,7 +358,8 @@ async fn library_search_remote(
         now,
     )
     .map_err(|e| e.to_string())?;
-    let ids = connectors::ingest(&db, anilist::SOURCE_ID, &entries, now).map_err(|e| e.to_string())?;
+    let ids =
+        connectors::ingest(&db, anilist::SOURCE_ID, &entries, now).map_err(|e| e.to_string())?;
 
     // 3) 回读落库后的条目返回前端。
     let mut out = Vec::with_capacity(ids.len());
@@ -335,6 +369,194 @@ async fn library_search_remote(
         }
     }
     Ok(out)
+}
+
+async fn search_aozora(state: &AppState, query: &str) -> Result<Vec<library::LibraryBook>, String> {
+    use reading_core::connectors::{self, aozora};
+
+    let q = query.trim();
+    if q.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let csv = load_aozora_catalog_csv(&state.cache_dir).await?;
+    let entries = aozora::parse_catalog_csv(&csv, q, AOZORA_SEARCH_LIMIT)?;
+    let now = now_ms();
+    let db = state.library_db.lock().map_err(|e| e.to_string())?;
+    connectors::ensure_source(
+        &db,
+        aozora::SOURCE_ID,
+        aozora::SOURCE_NAME,
+        "catalog",
+        Some(aozora::CATALOG_ZIP_URL),
+        now,
+    )
+    .map_err(|e| e.to_string())?;
+    let ids =
+        connectors::ingest(&db, aozora::SOURCE_ID, &entries, now).map_err(|e| e.to_string())?;
+
+    let mut out = Vec::with_capacity(ids.len());
+    for id in ids {
+        if let Some(b) = library::get_book(&db, &id).map_err(|e| e.to_string())? {
+            out.push(b);
+        }
+    }
+    Ok(out)
+}
+
+#[tauri::command]
+async fn library_acquire_remote(
+    state: tauri::State<'_, AppState>,
+    id: String,
+) -> Result<library::LibraryBook, String> {
+    use reading_core::connectors::aozora;
+
+    let acquisition = {
+        let db = state.library_db.lock().map_err(|e| e.to_string())?;
+        let Some(info) = library::remote_acquisition(&db, &id).map_err(|e| e.to_string())? else {
+            return Err("找不到可获取的远程条目".to_string());
+        };
+        info
+    };
+
+    if acquisition.source_id != aozora::SOURCE_ID {
+        return Err("当前只支持获取青空文库公共版权条目".to_string());
+    }
+    if acquisition.rights_status != "public_domain" {
+        return Err("该条目不是公共版权，不能下载正文；请跳转官方链接".to_string());
+    }
+    if let Some(existing) = acquisition.existing_asset_id.as_deref() {
+        let db = state.library_db.lock().map_err(|e| e.to_string())?;
+        if let Some(book) = library::get_book(&db, existing).map_err(|e| e.to_string())? {
+            return Ok(book);
+        }
+    }
+
+    let csv = load_aozora_catalog_csv(&state.cache_dir).await?;
+    let work = aozora::find_catalog_work_by_id(&csv, &acquisition.remote_id)?
+        .ok_or_else(|| "青空目录中找不到该作品".to_string())?;
+    if work.rights_status != "public_domain" {
+        return Err("青空目录显示该作品非公共版权，不能下载正文".to_string());
+    }
+    let html_url = work
+        .html_url
+        .as_deref()
+        .ok_or_else(|| "该青空条目没有 XHTML/HTML 正文 URL，暂不能站内阅读".to_string())?;
+    ensure_aozora_url(html_url)?;
+    let html = fetch_text(html_url, "青空正文").await?;
+
+    let db = state.library_db.lock().map_err(|e| e.to_string())?;
+    library::attach_remote_html_asset(
+        &db,
+        &state.library_dir,
+        &acquisition.edition_id,
+        &acquisition.title,
+        acquisition.author.as_deref(),
+        acquisition.language.as_deref(),
+        html_url,
+        &html,
+        now_ms(),
+    )
+}
+
+async fn load_aozora_catalog_csv(cache_dir: &Path) -> Result<String, String> {
+    use reading_core::connectors::aozora;
+
+    let dir = cache_dir.join("connectors").join("aozora");
+    let csv_path = dir.join("list_person_all_extended_utf8.csv");
+    if catalog_cache_is_fresh(&csv_path) {
+        return std::fs::read_to_string(&csv_path)
+            .map_err(|e| format!("读取青空目录缓存失败: {e}"));
+    }
+
+    let bytes = fetch_bytes(aozora::CATALOG_ZIP_URL, "青空目录").await?;
+    let csv = tauri::async_runtime::spawn_blocking(move || extract_csv_from_zip(&bytes))
+        .await
+        .map_err(|e| format!("解压青空目录任务失败: {e}"))??;
+    std::fs::create_dir_all(&dir).map_err(|e| format!("创建青空缓存目录失败: {e}"))?;
+    let tmp = csv_path.with_extension("csv.tmp");
+    std::fs::write(&tmp, csv.as_bytes()).map_err(|e| format!("写入青空目录缓存失败: {e}"))?;
+    std::fs::rename(&tmp, &csv_path).map_err(|e| format!("更新青空目录缓存失败: {e}"))?;
+    Ok(csv)
+}
+
+fn catalog_cache_is_fresh(path: &Path) -> bool {
+    let Ok(meta) = std::fs::metadata(path) else {
+        return false;
+    };
+    let Ok(modified) = meta.modified() else {
+        return false;
+    };
+    modified
+        .elapsed()
+        .is_ok_and(|age| age <= AOZORA_CATALOG_MAX_AGE)
+}
+
+fn extract_csv_from_zip(bytes: &[u8]) -> Result<String, String> {
+    let cursor = std::io::Cursor::new(bytes);
+    let mut archive =
+        zip::ZipArchive::new(cursor).map_err(|e| format!("打开青空目录 ZIP 失败: {e}"))?;
+    let mut csv_name = None;
+    for i in 0..archive.len() {
+        let entry = archive.by_index(i).map_err(|e| e.to_string())?;
+        if entry.name().to_ascii_lowercase().ends_with(".csv") {
+            csv_name = Some(entry.name().to_string());
+            break;
+        }
+    }
+    let name = csv_name.ok_or_else(|| "青空目录 ZIP 中未找到 CSV".to_string())?;
+    let mut entry = archive
+        .by_name(&name)
+        .map_err(|e| format!("读取青空目录 CSV 失败: {e}"))?;
+    let mut buf = Vec::new();
+    entry
+        .read_to_end(&mut buf)
+        .map_err(|e| format!("读取青空目录 CSV 字节失败: {e}"))?;
+    String::from_utf8(buf).map_err(|e| format!("青空目录不是 UTF-8: {e}"))
+}
+
+async fn fetch_bytes(url: &str, label: &str) -> Result<Vec<u8>, String> {
+    let resp = reqwest::Client::new()
+        .get(url)
+        .header("user-agent", "LightNovel Reader/0.3.1")
+        .send()
+        .await
+        .map_err(|e| format!("下载{label}失败: {e}"))?;
+    let status = resp.status();
+    if !status.is_success() {
+        return Err(format!("下载{label}失败: HTTP {status}"));
+    }
+    resp.bytes()
+        .await
+        .map(|b| b.to_vec())
+        .map_err(|e| format!("读取{label}响应失败: {e}"))
+}
+
+async fn fetch_text(url: &str, label: &str) -> Result<String, String> {
+    let resp = reqwest::Client::new()
+        .get(url)
+        .header("user-agent", "LightNovel Reader/0.3.1")
+        .send()
+        .await
+        .map_err(|e| format!("下载{label}失败: {e}"))?;
+    let status = resp.status();
+    if !status.is_success() {
+        return Err(format!("下载{label}失败: HTTP {status}"));
+    }
+    resp.text()
+        .await
+        .map_err(|e| format!("读取{label}响应失败: {e}"))
+}
+
+fn ensure_aozora_url(url: &str) -> Result<(), String> {
+    let lower = url.to_ascii_lowercase();
+    if lower.starts_with("https://www.aozora.gr.jp/")
+        || lower.starts_with("http://www.aozora.gr.jp/")
+    {
+        Ok(())
+    } else {
+        Err("青空正文 URL 不属于官方 aozora.gr.jp，已拒绝下载".to_string())
+    }
 }
 
 #[tauri::command]
@@ -472,6 +694,8 @@ pub fn run() {
             library_list,
             library_search,
             library_search_remote,
+            library_search_remote_source,
+            library_acquire_remote,
             library_open,
             library_touch_last_read,
             get_chapter,

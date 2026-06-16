@@ -71,7 +71,14 @@ pub fn ingest(
                title = excluded.title, author = excluded.author,
                description = excluded.description, cover_path = excluded.cover_path,
                updated_at = excluded.updated_at",
-            params![series_id, e.title, e.author, e.description, e.cover_url, now_ms],
+            params![
+                series_id,
+                e.title,
+                e.author,
+                e.description,
+                e.cover_url,
+                now_ms
+            ],
         )?;
         conn.execute(
             "INSERT INTO volume(id, series_id, kind, volume_number, title, description, created_at, updated_at)
@@ -93,7 +100,11 @@ pub fn ingest(
              VALUES (?1, ?2, 'edition', ?3, ?4, ?5, ?6, 'remote', ?7)
              ON CONFLICT(id) DO UPDATE SET
                remote_url = excluded.remote_url, rights_status = excluded.rights_status,
-               availability = excluded.availability, last_checked_at = excluded.last_checked_at",
+               availability = CASE
+                 WHEN source_record.availability = 'cached' THEN source_record.availability
+                 ELSE excluded.availability
+               END,
+               last_checked_at = excluded.last_checked_at",
             params![record_id, source_id, edition_id, e.site_url, e.remote_id, e.rights_status, now_ms],
         )?;
 
@@ -184,7 +195,8 @@ pub mod anilist {
 
     /// 解析搜索响应为 [`RemoteEntry`]。容忍缺字段；无标题的条目跳过。
     pub fn parse_search(json: &str) -> Result<Vec<RemoteEntry>, String> {
-        let resp: Resp = serde_json::from_str(json).map_err(|e| format!("解析 AniList 响应失败: {e}"))?;
+        let resp: Resp =
+            serde_json::from_str(json).map_err(|e| format!("解析 AniList 响应失败: {e}"))?;
         let media = resp
             .data
             .and_then(|d| d.page)
@@ -235,6 +247,86 @@ pub mod aozora {
     pub const CATALOG_ZIP_URL: &str =
         "https://www.aozora.gr.jp/index_pages/list_person_all_extended_utf8.zip";
 
+    #[derive(Debug, Clone, PartialEq)]
+    pub struct CatalogWork {
+        pub remote_id: String,
+        pub title: String,
+        pub author: Option<String>,
+        pub card_url: Option<String>,
+        pub text_url: Option<String>,
+        pub html_url: Option<String>,
+        pub rights_status: String,
+    }
+
+    struct CatalogColumns {
+        id: usize,
+        title: usize,
+        copyright: Option<usize>,
+        card: Option<usize>,
+        last: Option<usize>,
+        first: Option<usize>,
+        text_url: Option<usize>,
+        html_url: Option<usize>,
+    }
+
+    fn column(headers: &csv::StringRecord, name: &str) -> Option<usize> {
+        headers.iter().position(|h| h == name)
+    }
+
+    fn column_any(headers: &csv::StringRecord, names: &[&str]) -> Option<usize> {
+        names.iter().find_map(|name| column(headers, name))
+    }
+
+    fn columns(headers: &csv::StringRecord) -> Result<CatalogColumns, String> {
+        Ok(CatalogColumns {
+            id: column(headers, "作品ID").ok_or("青空目录缺『作品ID』列")?,
+            title: column(headers, "作品名").ok_or("青空目录缺『作品名』列")?,
+            copyright: column(headers, "作品著作権フラグ"),
+            card: column(headers, "図書カードURL"),
+            last: column(headers, "姓"),
+            first: column(headers, "名"),
+            text_url: column(headers, "テキストファイルURL"),
+            html_url: column_any(headers, &["XHTML/HTMLファイルURL", "HTMLファイルURL"]),
+        })
+    }
+
+    fn field<'a>(rec: &'a csv::StringRecord, i: Option<usize>) -> Option<&'a str> {
+        i.and_then(|i| rec.get(i))
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+    }
+
+    fn rights_status(flag: Option<&str>) -> String {
+        match flag {
+            Some("なし") => "public_domain",
+            _ => "unknown",
+        }
+        .to_string()
+    }
+
+    fn author(rec: &csv::StringRecord, cols: &CatalogColumns) -> Option<String> {
+        match (field(rec, cols.last), field(rec, cols.first)) {
+            (Some(l), Some(f)) => Some(format!("{}{}", l, f)),
+            (Some(l), None) => Some(l.to_string()),
+            (None, Some(f)) => Some(f.to_string()),
+            _ => None,
+        }
+    }
+
+    fn work_from_record(rec: &csv::StringRecord, cols: &CatalogColumns) -> Option<CatalogWork> {
+        let title = field(rec, Some(cols.title))?;
+        let remote_id = field(rec, Some(cols.id))?;
+        Some(CatalogWork {
+            remote_id: remote_id.to_string(),
+            title: title.to_string(),
+            author: author(rec, cols),
+            card_url: field(rec, cols.card).map(str::to_string),
+            text_url: field(rec, cols.text_url).map(str::to_string),
+            html_url: field(rec, cols.html_url).map(str::to_string),
+            rights_status: rights_status(field(rec, cols.copyright)),
+        })
+    }
+
     /// 解析官方扩展目录 CSV，按「作品名包含 query」过滤，映射为 [`RemoteEntry`]。
     ///
     /// - **按表头名取列**（作品ID/作品名/作品著作権フラグ/図書カードURL/姓/名），抗列序变化；
@@ -242,7 +334,11 @@ pub mod aozora {
     /// - 一个作品在扩展目录里可能多行（著者/翻译者各一行）→ 按作品ID去重，保留首行。
     /// - `著作権フラグ=なし` → `public_domain`；否则 `unknown`。青空作品无封面图、目录无简介。
     /// - `limit` 截断（目录上万行）。
-    pub fn parse_catalog_csv(csv_text: &str, query: &str, limit: usize) -> Result<Vec<RemoteEntry>, String> {
+    pub fn parse_catalog_csv(
+        csv_text: &str,
+        query: &str,
+        limit: usize,
+    ) -> Result<Vec<RemoteEntry>, String> {
         let mut rdr = csv::ReaderBuilder::new()
             .has_headers(true)
             .flexible(true)
@@ -251,13 +347,7 @@ pub mod aozora {
             .headers()
             .map_err(|e| format!("青空目录表头解析失败: {e}"))?
             .clone();
-        let col = |name: &str| headers.iter().position(|h| h == name);
-        let c_id = col("作品ID").ok_or("青空目录缺『作品ID』列")?;
-        let c_title = col("作品名").ok_or("青空目录缺『作品名』列")?;
-        let c_copyright = col("作品著作権フラグ");
-        let c_card = col("図書カードURL");
-        let c_last = col("姓");
-        let c_first = col("名");
+        let cols = columns(&headers)?;
 
         let q = query.trim().to_lowercase();
         let mut seen: HashSet<String> = HashSet::new();
@@ -265,42 +355,25 @@ pub mod aozora {
 
         for rec in rdr.records() {
             let rec = rec.map_err(|e| format!("青空目录行解析失败: {e}"))?;
-            let get = |i: Option<usize>| {
-                i.and_then(|i| rec.get(i))
-                    .map(str::trim)
-                    .filter(|s| !s.is_empty())
+            let Some(work) = work_from_record(&rec, &cols) else {
+                continue;
             };
-
-            let Some(title) = get(Some(c_title)) else { continue };
-            if !q.is_empty() && !title.to_lowercase().contains(&q) {
+            if !q.is_empty() && !work.title.to_lowercase().contains(&q) {
                 continue;
             }
-            let Some(remote_id) = get(Some(c_id)) else { continue };
-            if !seen.insert(remote_id.to_string()) {
+            if !seen.insert(work.remote_id.clone()) {
                 continue; // 同作品多行去重
             }
 
-            let rights_status = match get(c_copyright) {
-                Some("なし") => "public_domain",
-                _ => "unknown",
-            }
-            .to_string();
-            let author = match (get(c_last), get(c_first)) {
-                (Some(l), Some(f)) => Some(format!("{}{}", l, f)), // 姓名相连（日文无空格）
-                (Some(l), None) => Some(l.to_string()),
-                (None, Some(f)) => Some(f.to_string()),
-                _ => None,
-            };
-
             out.push(RemoteEntry {
-                remote_id: remote_id.to_string(),
-                title: title.to_string(),
-                author,
+                remote_id: work.remote_id,
+                title: work.title,
+                author: work.author,
                 description: None,
                 cover_url: None,
                 language: Some("ja".into()),
-                site_url: get(c_card).map(str::to_string),
-                rights_status,
+                site_url: work.card_url,
+                rights_status: work.rights_status,
             });
             if out.len() >= limit {
                 break;
@@ -308,15 +381,49 @@ pub mod aozora {
         }
         Ok(out)
     }
+
+    /// 按作品 ID 从官方扩展目录取完整字段，供 PR-B 获取公共版权正文时使用。
+    pub fn find_catalog_work_by_id(
+        csv_text: &str,
+        remote_id: &str,
+    ) -> Result<Option<CatalogWork>, String> {
+        let mut rdr = csv::ReaderBuilder::new()
+            .has_headers(true)
+            .flexible(true)
+            .from_reader(csv_text.as_bytes());
+        let headers = rdr
+            .headers()
+            .map_err(|e| format!("青空目录表头解析失败: {e}"))?
+            .clone();
+        let cols = columns(&headers)?;
+        for rec in rdr.records() {
+            let rec = rec.map_err(|e| format!("青空目录行解析失败: {e}"))?;
+            let Some(work) = work_from_record(&rec, &cols) else {
+                continue;
+            };
+            if work.remote_id == remote_id {
+                return Ok(Some(work));
+            }
+        }
+        Ok(None)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::library;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    static NEXT_TEMP_ID: AtomicUsize = AtomicUsize::new(0);
 
     fn open_db() -> (std::path::PathBuf, Connection) {
-        let dir = std::env::temp_dir().join(format!("reading-core-conntest-{}", std::process::id()));
+        let id = NEXT_TEMP_ID.fetch_add(1, Ordering::Relaxed);
+        let dir = std::env::temp_dir().join(format!(
+            "reading-core-conntest-{}-{}",
+            std::process::id(),
+            id
+        ));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let conn = library::open_library(&dir.join("library.sqlite")).unwrap();
@@ -356,7 +463,10 @@ mod tests {
         assert_eq!(a.title, "Youjo Senki"); // 优先 romaji
         assert_eq!(a.author.as_deref(), Some("Carlo Zen"));
         assert_eq!(a.language.as_deref(), Some("ja"));
-        assert_eq!(a.cover_url.as_deref(), Some("https://img.anili.st/98329.jpg"));
+        assert_eq!(
+            a.cover_url.as_deref(),
+            Some("https://img.anili.st/98329.jpg")
+        );
         assert_eq!(a.rights_status, "official_purchase");
 
         // 仅 native 也算有标题；缺作者/封面/简介 → None。
@@ -367,8 +477,12 @@ mod tests {
 
     #[test]
     fn parse_search_handles_empty_and_garbage() {
-        assert!(anilist::parse_search(r#"{"data":{"Page":{"media":[]}}}"#).unwrap().is_empty());
-        assert!(anilist::parse_search(r#"{"data":null}"#).unwrap().is_empty());
+        assert!(anilist::parse_search(r#"{"data":{"Page":{"media":[]}}}"#)
+            .unwrap()
+            .is_empty());
+        assert!(anilist::parse_search(r#"{"data":null}"#)
+            .unwrap()
+            .is_empty());
         assert!(anilist::parse_search("not json").is_err());
     }
 
@@ -384,7 +498,15 @@ mod tests {
     fn ingest_creates_remote_entries_visible_in_library() {
         let (dir, conn) = open_db();
         let entries = anilist::parse_search(FIXTURE).unwrap();
-        ensure_source(&conn, anilist::SOURCE_ID, anilist::SOURCE_NAME, "metadata", Some(anilist::ENDPOINT), 1000).unwrap();
+        ensure_source(
+            &conn,
+            anilist::SOURCE_ID,
+            anilist::SOURCE_NAME,
+            "metadata",
+            Some(anilist::ENDPOINT),
+            1000,
+        )
+        .unwrap();
         let ids = ingest(&conn, anilist::SOURCE_ID, &entries, 1000).unwrap();
         assert_eq!(ids.len(), 2);
 
@@ -396,10 +518,16 @@ mod tests {
         assert!(tanya.file_path.is_none());
         assert_eq!(tanya.author.as_deref(), Some("Carlo Zen"));
         // 封面 = AniList URL（read path 从 series.cover_path 取）。
-        assert_eq!(tanya.cover_path.as_deref(), Some("https://img.anili.st/98329.jpg"));
+        assert_eq!(
+            tanya.cover_path.as_deref(),
+            Some("https://img.anili.st/98329.jpg")
+        );
         assert_eq!(tanya.id, format!("ed:{}:98329", anilist::SOURCE_ID));
         // 外链经读路径子查询回填到 DTO，前端据此跳官方页。
-        assert_eq!(tanya.remote_url.as_deref(), Some("https://anilist.co/manga/98329"));
+        assert_eq!(
+            tanya.remote_url.as_deref(),
+            Some("https://anilist.co/manga/98329")
+        );
 
         // 外链落在 source_record。
         let url: String = conn
@@ -420,11 +548,11 @@ mod tests {
 
     // 表头故意打散列序 + 含多余列（人物ID/テキストファイルURL）→ 证明按表头名取列。
     // 作品 127 两行（著者芥川 + 译者森）→ 应去重；2000 是 著作権あり。
-    const AOZORA_CSV: &str = "人物ID,作品ID,姓,名,作品名,作品著作権フラグ,図書カードURL,テキストファイルURL\n\
-1234,127,芥川,龍之介,羅生門,なし,https://www.aozora.gr.jp/cards/000879/card127.html,https://www.aozora.gr.jp/cards/000879/files/127_ruby.zip\n\
-5678,127,森,鴎外,羅生門,なし,https://www.aozora.gr.jp/cards/000879/card127.html,https://www.aozora.gr.jp/cards/000879/files/127_ruby.zip\n\
-9999,1000,夏目,漱石,吾輩は猫である,なし,https://www.aozora.gr.jp/cards/000148/card1000.html,x\n\
-8888,2000,現代,作家,版権あり作品,あり,https://www.aozora.gr.jp/cards/999/card2000.html,y\n";
+    const AOZORA_CSV: &str = "人物ID,作品ID,姓,名,作品名,作品著作権フラグ,図書カードURL,テキストファイルURL,XHTML/HTMLファイルURL\n\
+1234,127,芥川,龍之介,羅生門,なし,https://www.aozora.gr.jp/cards/000879/card127.html,https://www.aozora.gr.jp/cards/000879/files/127_ruby.zip,https://www.aozora.gr.jp/cards/000879/files/127_15260.html\n\
+5678,127,森,鴎外,羅生門,なし,https://www.aozora.gr.jp/cards/000879/card127.html,https://www.aozora.gr.jp/cards/000879/files/127_ruby.zip,https://www.aozora.gr.jp/cards/000879/files/127_15260.html\n\
+9999,1000,夏目,漱石,吾輩は猫である,なし,https://www.aozora.gr.jp/cards/000148/card1000.html,x,https://www.aozora.gr.jp/cards/000148/files/1000_148.html\n\
+8888,2000,現代,作家,版権あり作品,あり,https://www.aozora.gr.jp/cards/999/card2000.html,y,https://www.aozora.gr.jp/cards/999/files/2000.html\n";
 
     #[test]
     fn aozora_parse_filters_dedupes_and_maps_rights() {
@@ -436,7 +564,10 @@ mod tests {
         assert_eq!(e.author.as_deref(), Some("芥川龍之介")); // 姓名相连
         assert_eq!(e.rights_status, "public_domain"); // 著作権フラグ=なし
         assert_eq!(e.language.as_deref(), Some("ja"));
-        assert_eq!(e.site_url.as_deref(), Some("https://www.aozora.gr.jp/cards/000879/card127.html"));
+        assert_eq!(
+            e.site_url.as_deref(),
+            Some("https://www.aozora.gr.jp/cards/000879/card127.html")
+        );
         assert!(e.cover_url.is_none() && e.description.is_none());
     }
 
@@ -450,9 +581,19 @@ mod tests {
 
     #[test]
     fn aozora_parse_respects_limit_and_substring() {
-        assert_eq!(aozora::parse_catalog_csv(AOZORA_CSV, "", 1).unwrap().len(), 1);
-        assert_eq!(aozora::parse_catalog_csv(AOZORA_CSV, "猫", 50).unwrap().len(), 1);
-        assert!(aozora::parse_catalog_csv(AOZORA_CSV, "不存在", 50).unwrap().is_empty());
+        assert_eq!(
+            aozora::parse_catalog_csv(AOZORA_CSV, "", 1).unwrap().len(),
+            1
+        );
+        assert_eq!(
+            aozora::parse_catalog_csv(AOZORA_CSV, "猫", 50)
+                .unwrap()
+                .len(),
+            1
+        );
+        assert!(aozora::parse_catalog_csv(AOZORA_CSV, "不存在", 50)
+            .unwrap()
+            .is_empty());
     }
 
     #[test]
@@ -462,16 +603,47 @@ mod tests {
     }
 
     #[test]
+    fn aozora_find_catalog_work_by_id_returns_body_urls() {
+        let work = aozora::find_catalog_work_by_id(AOZORA_CSV, "127")
+            .unwrap()
+            .expect("应命中作品");
+        assert_eq!(work.title, "羅生門");
+        assert_eq!(work.rights_status, "public_domain");
+        assert_eq!(
+            work.text_url.as_deref(),
+            Some("https://www.aozora.gr.jp/cards/000879/files/127_ruby.zip")
+        );
+        assert_eq!(
+            work.html_url.as_deref(),
+            Some("https://www.aozora.gr.jp/cards/000879/files/127_15260.html")
+        );
+        assert!(aozora::find_catalog_work_by_id(AOZORA_CSV, "missing")
+            .unwrap()
+            .is_none());
+    }
+
+    #[test]
     fn aozora_public_domain_entry_lands_on_shelf() {
         let (dir, conn) = open_db();
         let entries = aozora::parse_catalog_csv(AOZORA_CSV, "羅生門", 50).unwrap();
-        ensure_source(&conn, aozora::SOURCE_ID, aozora::SOURCE_NAME, "opds", None, 1000).unwrap();
+        ensure_source(
+            &conn,
+            aozora::SOURCE_ID,
+            aozora::SOURCE_NAME,
+            "catalog",
+            None,
+            1000,
+        )
+        .unwrap();
         let ids = ingest(&conn, aozora::SOURCE_ID, &entries, 1000).unwrap();
         assert_eq!(ids.len(), 1);
         let books = library::list_books(&conn).unwrap();
         let r = books.iter().find(|b| b.title == "羅生門").unwrap();
         assert_eq!(r.availability.as_deref(), Some("remote"));
-        assert_eq!(r.remote_url.as_deref(), Some("https://www.aozora.gr.jp/cards/000879/card127.html"));
+        assert_eq!(
+            r.remote_url.as_deref(),
+            Some("https://www.aozora.gr.jp/cards/000879/card127.html")
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -70,9 +70,13 @@ export interface LibraryBook {
   editionId?: string
   /** 资产可得性（local|remote|missing|cached）：远程条目据此决定能否站内读。 */
   availability?: string
+  /** 授权状态（user_owned/public_domain/official_purchase/unknown...）。 */
+  rightsStatus?: string
   /** 来源外链：受版权/远程条目点击后跳官方页。本地条目缺省。 */
   remoteUrl?: string
 }
+
+export type RemoteLibrarySource = 'anilist' | 'aozora'
 
 export interface ImportOutcome {
   book: LibraryBook
@@ -137,6 +141,10 @@ export interface ReaderBridge {
   searchLibraryBooks(query: string): Promise<LibraryBook[]>
   /** library.searchRemote — 在线元数据搜索（AniList），落库为远程条目并返回 */
   searchRemoteLibraryBooks(query: string): Promise<LibraryBook[]>
+  /** library.searchRemoteSource — 指定在线来源搜索（anilist|aozora），按需缓存来源目录 */
+  searchRemoteLibraryBooksFromSource(source: RemoteLibrarySource, query: string): Promise<LibraryBook[]>
+  /** library.acquireRemote — 获取公共版权远程条目的正文并转为本地可读资产 */
+  acquireRemoteLibraryBook(id: string): Promise<LibraryBook>
   /** library.open — 按自有书库 id 打开书籍 */
   openLibraryBook(id: string): Promise<OpenedBook>
   /** library.touchLastRead — 更新最近阅读时间 */

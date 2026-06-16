@@ -296,3 +296,21 @@
   不能每次在线找书都拉全量。这步（含缓存策略与首拉 UX）单独评估后再做，故 PR-A 只含 parser。
 - PR-B（站内自由阅览）：拉公共版权正文（官方 text URL）→ 导入为本地 asset（availability 转 local/cached）
   → 走现有读路径。需新增 acquire 类协议消息 + 前端「阅读/获取」按钮。
+
+## 2026-06-16：青空公共版权正文获取先合成为单章 EPUB asset
+
+决策：`library.acquireRemote` 当前只支持青空文库 `rights_status=public_domain` 条目。获取流程为：壳侧按需下载/缓存官方 catalog ZIP，读取条目的 `XHTML/HTMLファイルURL`，只允许 `aozora.gr.jp` 官方 URL；下载正文后交给 core 合成为一个单章 EPUB，写入 `library/objects/<assetId>.epub`，挂到既有 `edition`，`asset.availability='cached'`，`source_record.availability` 同步为 `cached`。
+
+理由：
+
+- 公共版权正文可合法站内阅读，但仍需硬门：`著作権あり` / `official_*` / `unknown` 一律拒绝下载，只保留官方外链。
+- 合成 EPUB 能复用现有 `library_open`、章节解析、安全清洗、进度和标注链路；不用在 v0.5-e 额外引入「HTML 可读资产」类型和第二套阅读路径。
+- 青空官方 XHTML/HTML 自带 ruby，路径比 shift-jis txt + 青空标记解析更轻，适合作为站内自由阅览的第一步。
+- 传输层仍归壳（HTTP、ZIP 解压、缓存刷新），解析目录与落库/资产生成归 core；消息面只传 id/元数据，不传大字节。
+
+后果：
+
+- `LibraryBook` 新增可选 `rightsStatus`；前端用它区分「公共版权 · 可站内读」与「需购买/官方外链」。
+- 新增协议 `library.searchRemoteSource(source, query)` 与 `library.acquireRemote(id)`；旧 `library.searchRemote(query)` 保留为 AniList 兼容入口。
+- 青空目录按需下载，缓存 7 天；只在用户主动选择青空文库搜索时触发，不影响只用 AniList/本地书库的用户。
+- 若未来要支持多章 HTML、青空 txt 标记或非 EPUB 可读资产，应另开设计，不在本决策里隐式扩展。

@@ -1076,3 +1076,31 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
 
 - 与用户确认传输/缓存策略 → 接壳（下载缓存 CSV + 并入 library_search_remote）→ 青空进「在线找书」；
 - 之后 PR-B：拉公共版权正文导入为本地 asset → 站内自由阅览。
+
+## 2026-06-16：v0.5-e PR-B — 青空接入在线找书 + 公共版权正文获取
+
+背景：承接 PR-A（青空 catalog parser 已合 main）。用户确认采用方案 A：青空文库作为按需来源，只有用户主动选择青空搜索时才下载官方目录，避免影响只用本地书库/AniList 的用户。
+
+变更：
+
+- `src-tauri/src/lib.rs`：新增 `library_search_remote_source(source, query)` 与 `library_acquire_remote(id)`。AniList 旧 `library_search_remote(query)` 保留为兼容入口；青空搜索按需下载 `list_person_all_extended_utf8.zip`，在壳侧解压 CSV、缓存到 `cache/connectors/aozora/`，7 天内复用；HTTP/ZIP/缓存留在壳。
+- `crates/reading-core/src/connectors.rs`：复用 PR-A parser，补 `CatalogWork` / `find_catalog_work_by_id` 以便 acquire 按作品 ID 取官方 HTML URL；`source.kind` 用 `catalog`；重复 ingest 时保留已 cached 的 `source_record.availability`。
+- `crates/reading-core/src/library.rs`：`LibraryBook` 新增 `rights_status`/TS `rightsStatus`；新增 `remote_acquisition` 和 `attach_remote_html_asset`。公共版权 HTML 合成为单章 EPUB asset 写入对象仓库，挂到既有 edition，`availability=cached`，复用现有阅读/进度/标注链路。
+- `src/platform/*` + `src/main.ts` + `index.html` + `src/styles.css`：在线找书加来源选择（AniList / 青空文库）；远程卡片按 `rightsStatus` 展示「公共版权 · 可站内读」或官方外链；公共版权点击后先 acquire 再打开阅读，非公共版权仍跳官方外链。
+- `docs/resource-library-plan/8_桥接协议_v0.1.md`、`DECISIONS.md`、`NEXT_ACTIONS.md` 同步 `library.searchRemoteSource` / `library.acquireRemote` / `rightsStatus` 与青空获取策略。
+
+验证：
+
+- `npm.cmd run build` 通过（内含 `node scripts/check-arch.mjs` + `tsc` + `vite build`）。
+- `cargo test --workspace` 通过：65 passed。
+- 修复了 connectors 测试目录仅按进程号命名导致并发抢同一个 SQLite 的老 fixture 问题。
+
+未验证 / 阻塞：
+
+- 尚未跑 `npm run tauri dev` 真窗口实机冒烟；青空目录首次下载、公共版权 HTML 正文渲染、ruby/插图显示、非公共版权拒绝下载还需联网真窗口验证。
+- 未做 `catalog_fts`，远程条目的本地全文搜索仍是后续任务。
+
+下一步：
+
+- 真窗口验证 AniList/青空来源切换、青空首次下载缓存、公共版权 acquire 后打开阅读、非公共版权只外链。
+- 通过后推分支开 PR；若实机发现青空 HTML 图片路径/编码问题，再补 shell/core 处理。

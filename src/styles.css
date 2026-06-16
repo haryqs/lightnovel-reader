@@ -624,6 +624,17 @@ body.statusbar-visible .statusbar,
   flex-shrink: 0;
   white-space: nowrap;
 }
+.library-search select {
+  flex-shrink: 0;
+  min-width: 108px;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+}
 .library-search input {
   flex: 1;
   min-width: 0;
@@ -638,6 +649,7 @@ body.statusbar-visible .statusbar,
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 .library-search input:focus,
+.library-search select:focus,
 .library-path input:focus {
   outline: none;
   border-color: var(--accent);
