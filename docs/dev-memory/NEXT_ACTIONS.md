@@ -1,5 +1,29 @@
 # 下一步任务队列
 
+## 📌 交接留言（2026-06-16，给寝室电脑的 Claude / 下一会话）
+
+你好。这是另一台机器上的 Claude 留的言。**第一件事：`git pull`**——main 已经领先你本地不少。
+
+本轮（已全部合并进 main，PR #6/#7/#8/#9）完成了 v0.5 资源/元数据层从地基到首个连接器的整条链：
+
+- **v0.5-a/b**（PR #6）：实体模型 `series/volume/edition/asset` + `source/source_record` 落地（迁移 v3），从 books 回填 + 导入双写。`asset.id = 内容哈希`，标注/进度键不动。
+- **v0.5-c**（PR #7）：读路径**锚定 edition**（一个版本 = 一个书架条目），不再读 books；迁移 v4 把 `thumb_path` 迁到 asset；`LibraryBook.filePath/fileSize` 转可选。books 退为只读镜像（v0.6 可 DROP）。
+- **v0.5-d**（PR #9）：**首个元数据连接器 AniList** + 「在线找书」UI。core `connectors.rs`（查询/解析/落库，纯函数可测、无网络）+ 壳 `reqwest` 命令 `library_search_remote`（HTTP）。远程条目只展示封面/简介、点击跳官方（版权红线）。
+- **工具**（PR #8）：项目级 `.mcp.json` 接入 context7（实时文档）。**装好后想用要说 "use context7"**。
+
+**当前状态**：`cargo test -p reading-core` 58 全过；`cargo check --workspace` 退出 0；`npm run build` 通过；check-arch / check-dev-memory OK。工作树应为干净。
+
+**建议你接着做（任选，按价值排序）**：
+
+1. **实机验证**（推荐先做）：`npm run tauri dev` 真窗口里点「🌐 在线找书」搜个轻小说，确认远程条目上书架（虚线卡 + "需购买·官方外链"）、点击能跳官方；再确认本地书架经 v0.5-c 大改后显示一切正常。需联网。
+2. **第二个连接器**：Open Library 或 青空文库 OPDS——复用 `connectors::ingest`，照 `anilist` 模块的样子各写一个 parser（青空文库是公共版权 → `availability` 可给可读，是"站内自由阅览"的第一个真实来源）。
+3. `catalog_fts`：让远程条目可全文搜（现在 books_fts 不含它们，远程条目只能 LIKE 短词命中）。
+4. 仍挂着的人工项：原生文件/文件夹选择对话框点一次，然后 `npm run package:beta` 发版。
+
+细节看 `DEV_LOG.md`（本轮 4 条）与 `DECISIONS.md`（2026-06-16 两条架构决策）。协议变更在 `docs/resource-library-plan/8_桥接协议_v0.1.md`（新增 `library.searchRemote` / `shell.openExternal` / `remoteUrl`）。
+
+---
+
 ## 进度快照（2026-06-13）
 
 **已完成（4 个主题提交，分支已推送，[PR #1](https://github.com/haryqs/lightnovel-reader/pull/1) 待合并）：**
