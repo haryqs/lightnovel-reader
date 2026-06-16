@@ -949,3 +949,25 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
 下一步：
 
 - 开封面缩略图 PR；v0.4 余下「并行导入（rayon）」待定（需新依赖，等用户点头）。
+
+## 2026-06-16：v0.5-a 实体模型落地：library 迁移 v3 建 series/volume/edition/asset + source/source_record + catalog_fts，从 books 回填四层链（asset.id=books.id，标注/进度键不动）；import 双写实体链；顺手修 EPUB fixture 时间戳致去重测试 flaky
+
+变更：
+
+- v0.5-a 实体模型落地：library 迁移 v3 建 series/volume/edition/asset + source/source_record + catalog_fts，从 books 回填四层链（asset.id=books.id，标注/进度键不动）；import 双写实体链；顺手修 EPUB fixture 时间戳致去重测试 flaky
+
+修改文件：
+
+- 待补充
+
+验证：
+
+- cargo test --workspace 52 全过（+3 新测试：回填/双写/同系列归并）；check-arch OK；check-dev-memory OK
+
+未验证/阻塞：
+
+- 无
+
+下一步：
+
+- v0.5-b：list/search/get 改读实体表 JOIN 回填扁平 DTO，books 转只读；LibraryBook DTO 加可选 seriesId/volumeId/editionId/availability

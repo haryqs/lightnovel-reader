@@ -84,12 +84,129 @@ CREATE TRIGGER IF NOT EXISTS books_au AFTER UPDATE ON books BEGIN
 END;
 "#;
 
+/// v0.5 实体模型（schema 草案 §4/§5）：books 单表 → 系列/卷/版本/资产 四层图谱
+/// + 来源层（source/source_record，供 v0.5 连接器写入）。
+///
+/// 关键不变量：`asset.id = books.id`（EPUB 内容哈希）→ annotations / reading_state 以
+/// 同一键关联，本次迁移完全不动它们。books 表本周期保留为只读回滚保险，v0.6 再 DROP。
+///
+/// 回填用确定性派生 id（'series:'+名 / 'vol:'+bookId / …）+ `INSERT OR IGNORE`，
+/// 迁移可重入、同系列多卷只建一行 series。source/source_record 建空表（本地导入无来源记录），
+/// catalog_fts 的同步触发器留待 v0.5-b（list/search 改读实体表时）一并加。
+const ENTITY_SCHEMA_V3: &str = r#"
+CREATE TABLE IF NOT EXISTS series (
+  id          TEXT PRIMARY KEY,
+  title       TEXT NOT NULL,
+  title_sort  TEXT,
+  author      TEXT,
+  description TEXT,
+  cover_path  TEXT,
+  created_at  INTEGER NOT NULL,
+  updated_at  INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS volume (
+  id            TEXT PRIMARY KEY,
+  series_id     TEXT REFERENCES series(id) ON DELETE SET NULL,
+  kind          TEXT NOT NULL DEFAULT 'main',
+  volume_number REAL,
+  title         TEXT NOT NULL,
+  subtitle      TEXT,
+  description   TEXT,
+  created_at    INTEGER NOT NULL,
+  updated_at    INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_volume_series ON volume(series_id, volume_number);
+
+CREATE TABLE IF NOT EXISTS edition (
+  id            TEXT PRIMARY KEY,
+  volume_id     TEXT REFERENCES volume(id) ON DELETE CASCADE,
+  language      TEXT,
+  publisher     TEXT,
+  translator    TEXT,
+  isbn          TEXT,
+  edition_name  TEXT,
+  rights_status TEXT NOT NULL DEFAULT 'user_owned',
+  created_at    INTEGER NOT NULL,
+  updated_at    INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_edition_volume ON edition(volume_id);
+
+CREATE TABLE IF NOT EXISTS asset (
+  id            TEXT PRIMARY KEY,
+  edition_id    TEXT REFERENCES edition(id) ON DELETE SET NULL,
+  kind          TEXT NOT NULL DEFAULT 'epub',
+  availability  TEXT NOT NULL DEFAULT 'local',
+  file_path     TEXT,
+  file_size     INTEGER,
+  cover_path    TEXT,
+  added_at      INTEGER NOT NULL,
+  last_read_at  INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_asset_edition ON asset(edition_id);
+CREATE INDEX IF NOT EXISTS idx_asset_lastread ON asset(last_read_at);
+
+CREATE TABLE IF NOT EXISTS source (
+  id             TEXT PRIMARY KEY,
+  name           TEXT NOT NULL,
+  kind           TEXT NOT NULL,
+  base_url       TEXT,
+  license_policy TEXT,
+  risk_level     TEXT,
+  enabled        INTEGER NOT NULL DEFAULT 1,
+  created_at     INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS source_record (
+  id              TEXT PRIMARY KEY,
+  source_id       TEXT REFERENCES source(id) ON DELETE CASCADE,
+  entity_type     TEXT NOT NULL,
+  entity_id       TEXT NOT NULL,
+  remote_url      TEXT,
+  remote_id       TEXT,
+  rights_status   TEXT NOT NULL DEFAULT 'unknown',
+  availability    TEXT,
+  last_checked_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_source_record_entity ON source_record(entity_type, entity_id);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS catalog_fts USING fts5(
+  title, author, series_title,
+  tokenize='trigram'
+);
+
+-- 回填：每行 books 拆成 series ← volume ← edition ← asset 一条链。
+-- series_id 同名归并（'series:'+名），无系列名的书各自独立（'solo:'+bookId）。
+INSERT OR IGNORE INTO series(id, title, title_sort, author, description, cover_path, created_at, updated_at)
+  SELECT
+    CASE WHEN series IS NOT NULL AND series <> '' THEN 'series:'||series ELSE 'solo:'||id END,
+    COALESCE(NULLIF(series, ''), title), NULL, author, description, cover_path, added_at, added_at
+  FROM books;
+
+INSERT OR IGNORE INTO volume(id, series_id, kind, volume_number, title, subtitle, description, created_at, updated_at)
+  SELECT
+    'vol:'||id,
+    CASE WHEN series IS NOT NULL AND series <> '' THEN 'series:'||series ELSE 'solo:'||id END,
+    'main', series_index, title, NULL, description, added_at, added_at
+  FROM books;
+
+INSERT OR IGNORE INTO edition(id, volume_id, language, publisher, translator, isbn, edition_name, rights_status, created_at, updated_at)
+  SELECT 'ed:'||id, 'vol:'||id, language, NULL, NULL, NULL, NULL, 'user_owned', added_at, added_at
+  FROM books;
+
+INSERT OR IGNORE INTO asset(id, edition_id, kind, availability, file_path, file_size, cover_path, added_at, last_read_at)
+  SELECT id, 'ed:'||id, 'epub', 'local', file_path, file_size, cover_path, added_at, last_read_at
+  FROM books;
+"#;
+
 /// 书库数据库的迁移序列。新增列/表一律追加新版本，绝不改 SCHEMA_V1
-/// （旧库已盖戳 v1，不会再跑 v1）。v0.5 实体模型（series/volume/edition/asset）作为更高版本追加。
+/// （旧库已盖戳 v1，不会再跑 v1）。
 const MIGRATIONS: &[Migration] = &[
     Migration { version: 1, sql: SCHEMA_V1 },
     // v2：封面缩略图列。已在 v1 的旧库经 ALTER 补列；新库 v1 建表后 v2 补列。
     Migration { version: 2, sql: "ALTER TABLE books ADD COLUMN thumb_path TEXT;" },
+    // v3：v0.5 实体模型（系列/卷/版本/资产 + 来源层）+ 从 books 回填。
+    Migration { version: 3, sql: ENTITY_SCHEMA_V3 },
 ];
 
 pub fn open_library(db_path: &Path) -> rusqlite::Result<Connection> {
@@ -188,10 +305,80 @@ pub fn import_epub_bytes(
     )
     .map_err(|e| e.to_string())?;
 
+    // 双写实体链（v0.5-a）：books 仍是读路径，实体表跟着写，保持两侧一致，
+    // 为 v0.5-b 切换读路径与远程元数据条目铺路。
+    insert_entity_chain(conn, &book).map_err(|e| e.to_string())?;
+
     Ok(ImportOutcome {
         book,
         duplicate: false,
     })
+}
+
+/// 派生某本书的系列 id，与 v3 回填 SQL 同口径：有系列名按名归并，否则按 bookId 独立。
+fn series_id_of(book: &LibraryBook) -> String {
+    match book.series.as_deref() {
+        Some(s) if !s.is_empty() => format!("series:{}", s),
+        _ => format!("solo:{}", book.id),
+    }
+}
+
+/// 导入新书时同步写入 series ← volume ← edition ← asset 实体链。
+/// 全程 `INSERT OR IGNORE`：迁移可重入、同系列多卷只补一行 series。
+/// `asset.id = book.id`（内容哈希）→ 与 annotations/reading_state 同键。
+fn insert_entity_chain(conn: &Connection, book: &LibraryBook) -> rusqlite::Result<()> {
+    let series_id = series_id_of(book);
+    let volume_id = format!("vol:{}", book.id);
+    let edition_id = format!("ed:{}", book.id);
+    let series_title = book
+        .series
+        .clone()
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| book.title.clone());
+
+    conn.execute(
+        "INSERT OR IGNORE INTO series(id, title, author, description, cover_path, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)",
+        params![
+            series_id,
+            series_title,
+            book.author,
+            book.description,
+            book.cover_path,
+            book.added_at
+        ],
+    )?;
+    conn.execute(
+        "INSERT OR IGNORE INTO volume(id, series_id, kind, volume_number, title, description, created_at, updated_at)
+         VALUES (?1, ?2, 'main', ?3, ?4, ?5, ?6, ?6)",
+        params![
+            volume_id,
+            series_id,
+            book.series_index,
+            book.title,
+            book.description,
+            book.added_at
+        ],
+    )?;
+    conn.execute(
+        "INSERT OR IGNORE INTO edition(id, volume_id, language, rights_status, created_at, updated_at)
+         VALUES (?1, ?2, ?3, 'user_owned', ?4, ?4)",
+        params![edition_id, volume_id, book.language, book.added_at],
+    )?;
+    conn.execute(
+        "INSERT OR IGNORE INTO asset(id, edition_id, kind, availability, file_path, file_size, cover_path, added_at, last_read_at)
+         VALUES (?1, ?2, 'epub', 'local', ?3, ?4, ?5, ?6, ?7)",
+        params![
+            book.id,
+            edition_id,
+            book.file_path,
+            book.file_size,
+            book.cover_path,
+            book.added_at,
+            book.last_read_at
+        ],
+    )?;
+    Ok(())
 }
 
 /// 提取封面原图并生成缩略图。返回 (原图路径, 缩略图路径)；无封面返回 (None, None)。
@@ -325,7 +512,8 @@ mod tests {
     /// 构造最小合法 EPUB(container.xml + OPF + 单章;TOC 由 spine 兜底)。
     fn make_epub(title: &str, author: &str) -> Vec<u8> {
         let mut w = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
-        let opts = SimpleFileOptions::default();
+        // 固定时间戳：默认会写入当前时间，致同内容 epub 跨秒字节不同、内容哈希漂移（去重 flaky）。
+        let opts = SimpleFileOptions::default().last_modified_time(zip::DateTime::default());
         w.start_file("mimetype", opts).unwrap();
         w.write_all(b"application/epub+zip").unwrap();
         w.start_file("META-INF/container.xml", opts).unwrap();
@@ -367,7 +555,8 @@ mod tests {
 
     fn make_epub_with_cover(title: &str, author: &str) -> Vec<u8> {
         let mut w = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
-        let opts = SimpleFileOptions::default();
+        // 固定时间戳：默认会写入当前时间，致同内容 epub 跨秒字节不同、内容哈希漂移（去重 flaky）。
+        let opts = SimpleFileOptions::default().last_modified_time(zip::DateTime::default());
         w.start_file("mimetype", opts).unwrap();
         w.write_all(b"application/epub+zip").unwrap();
         w.start_file("META-INF/container.xml", opts).unwrap();
@@ -412,7 +601,8 @@ mod tests {
 
     fn make_epub_with_rich_metadata(title: &str, author: &str) -> Vec<u8> {
         let mut w = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
-        let opts = SimpleFileOptions::default();
+        // 固定时间戳：默认会写入当前时间，致同内容 epub 跨秒字节不同、内容哈希漂移（去重 flaky）。
+        let opts = SimpleFileOptions::default().last_modified_time(zip::DateTime::default());
         w.start_file("mimetype", opts).unwrap();
         w.write_all(b"application/epub+zip").unwrap();
         w.start_file("META-INF/container.xml", opts).unwrap();
@@ -592,19 +782,136 @@ mod tests {
         let path = dir.join("library.sqlite");
 
         let conn = open_library(&path).unwrap();
-        assert_eq!(crate::migrations::current_version(&conn).unwrap(), 2);
+        assert_eq!(crate::migrations::current_version(&conn).unwrap(), 3);
         drop(conn);
 
         // 重开已有库：迁移幂等跳过，版本不变、数据仍在。
         let conn = open_library(&path).unwrap();
-        assert_eq!(crate::migrations::current_version(&conn).unwrap(), 2);
+        assert_eq!(crate::migrations::current_version(&conn).unwrap(), 3);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn count_rows(conn: &Connection, table: &str) -> i64 {
+        conn.query_row(&format!("SELECT COUNT(*) FROM {}", table), [], |r| r.get(0))
+            .unwrap()
+    }
+
+    #[test]
+    fn import_double_writes_entity_chain() {
+        let dir = temp_library("entity-dw");
+        let conn = open_library(&dir.join("library.sqlite")).unwrap();
+        let r = import_fixture(&conn, &dir, "a.epub", "孤本书", "作者甲");
+
+        // asset.id == book.id（内容哈希）→ 标注/进度同键。
+        let asset_id: String = conn
+            .query_row("SELECT id FROM asset WHERE id = ?1", [&r.book.id], |x| {
+                x.get(0)
+            })
+            .unwrap();
+        assert_eq!(asset_id, r.book.id);
+
+        // 四层链各一行。
+        assert_eq!(count_rows(&conn, "series"), 1);
+        assert_eq!(count_rows(&conn, "volume"), 1);
+        assert_eq!(count_rows(&conn, "edition"), 1);
+        assert_eq!(count_rows(&conn, "asset"), 1);
+
+        // asset → edition → volume → series 能串起来；无系列名时 series.title 回退书名。
+        let series_title: String = conn
+            .query_row(
+                "SELECT s.title FROM asset a
+                   JOIN edition e ON e.id = a.edition_id
+                   JOIN volume  v ON v.id = e.volume_id
+                   JOIN series  s ON s.id = v.series_id
+                  WHERE a.id = ?1",
+                [&r.book.id],
+                |x| x.get(0),
+            )
+            .unwrap();
+        assert_eq!(series_title, "孤本书");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn same_series_books_share_one_series_row() {
+        let dir = temp_library("entity-series");
+        let conn = open_library(&dir.join("library.sqlite")).unwrap();
+        // rich metadata fixture 固定 series = "Skyline Chronicle"；不同标题 → 不同内容哈希。
+        let a = import_epub_bytes(
+            &conn,
+            &dir,
+            &make_epub_with_rich_metadata("卷一", "作者"),
+            Some("v1.epub"),
+            1000,
+        )
+        .unwrap();
+        let b = import_epub_bytes(
+            &conn,
+            &dir,
+            &make_epub_with_rich_metadata("卷二", "作者"),
+            Some("v2.epub"),
+            2000,
+        )
+        .unwrap();
+        assert_ne!(a.book.id, b.book.id);
+
+        assert_eq!(count_rows(&conn, "series"), 1, "同系列两卷应共用一个 series");
+        assert_eq!(count_rows(&conn, "volume"), 2);
+        assert_eq!(count_rows(&conn, "asset"), 2);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn migration_v3_backfills_preexisting_books() {
+        // 模拟升级前的 v2 旧库：跑到 v2、直接塞一行 books，再 open_library 触发 v3 回填。
+        let dir = temp_library("entity-backfill");
+        let path = dir.join("library.sqlite");
+        {
+            let conn = Connection::open(&path).unwrap();
+            migrations::run(&conn, &MIGRATIONS[..2]).unwrap();
+            assert_eq!(migrations::current_version(&conn).unwrap(), 2);
+            conn.execute(
+                "INSERT INTO books
+                   (id, title, author, language, series, series_index, description,
+                    file_path, file_size, cover_path, added_at, last_read_at, thumb_path)
+                 VALUES ('hash123', '旧书', '旧作者', 'zh', '旧系列', 1.0, 'desc',
+                         '/p.epub', 10, NULL, 500, NULL, NULL)",
+                [],
+            )
+            .unwrap();
+        }
+
+        // 重开 → 仅跑 v3，回填实体链。
+        let conn = open_library(&path).unwrap();
+        assert_eq!(migrations::current_version(&conn).unwrap(), 3);
+
+        let asset_id: String = conn
+            .query_row("SELECT id FROM asset WHERE id = 'hash123'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(asset_id, "hash123");
+
+        let series_id: String = conn
+            .query_row("SELECT series_id FROM volume WHERE id = 'vol:hash123'", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(series_id, "series:旧系列");
+
+        // 再次 open 幂等：回填不重复。
+        drop(conn);
+        let conn = open_library(&path).unwrap();
+        assert_eq!(count_rows(&conn, "asset"), 1);
 
         let _ = std::fs::remove_dir_all(&dir);
     }
 
     fn make_epub_with_cover_bytes(title: &str, cover: &[u8]) -> Vec<u8> {
         let mut w = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
-        let opts = SimpleFileOptions::default();
+        // 固定时间戳：默认会写入当前时间，致同内容 epub 跨秒字节不同、内容哈希漂移（去重 flaky）。
+        let opts = SimpleFileOptions::default().last_modified_time(zip::DateTime::default());
         w.start_file("mimetype", opts).unwrap();
         w.write_all(b"application/epub+zip").unwrap();
         w.start_file("META-INF/container.xml", opts).unwrap();
