@@ -231,6 +231,70 @@ pub mod anilist {
     }
 }
 
+/// 小説家になろう连接器：官方 Web 小说元数据 API。
+///
+/// なろう比青空更贴近轻小说/网文发现，但这里仍然只做元数据 + 官方外链；
+/// 不下载、不清洗、不缓存正文。本模块只解析官方 API JSON（纯函数，可测/可 wasm）。
+pub mod narou {
+    use super::RemoteEntry;
+    use serde::Deserialize;
+
+    pub const SOURCE_ID: &str = "src:narou";
+    pub const SOURCE_NAME: &str = "小説家になろう";
+    pub const ENDPOINT: &str = "https://api.syosetu.com/novelapi/api/";
+    const READER_BASE_URL: &str = "https://ncode.syosetu.com";
+
+    #[derive(Deserialize)]
+    struct ApiItem {
+        allcount: Option<i64>,
+        ncode: Option<String>,
+        title: Option<String>,
+        writer: Option<String>,
+        story: Option<String>,
+    }
+
+    fn clean(v: Option<String>) -> Option<String> {
+        v.map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
+    }
+
+    /// Parse the official Narou JSON response into remote metadata entries.
+    ///
+    /// The API returns a leading summary object (`{"allcount": ...}`), followed
+    /// by novel rows. We skip the summary and any row without an `ncode`/title.
+    pub fn parse_search(json: &str) -> Result<Vec<RemoteEntry>, String> {
+        let items: Vec<ApiItem> =
+            serde_json::from_str(json).map_err(|e| format!("parse Narou response failed: {e}"))?;
+        let mut out = Vec::new();
+
+        for item in items {
+            if item.allcount.is_some() {
+                continue;
+            }
+            let Some(ncode) = clean(item.ncode) else {
+                continue;
+            };
+            let Some(title) = clean(item.title) else {
+                continue;
+            };
+            let remote_id = ncode.to_ascii_uppercase();
+            let reader_code = remote_id.to_ascii_lowercase();
+
+            out.push(RemoteEntry {
+                remote_id,
+                title,
+                author: clean(item.writer),
+                description: clean(item.story),
+                cover_url: None,
+                language: Some("ja".into()),
+                site_url: Some(format!("{READER_BASE_URL}/{reader_code}/")),
+                rights_status: "official_free".into(),
+            });
+        }
+
+        Ok(out)
+    }
+}
+
 /// 青空文库连接器：日本公共版权文学。来源 = 官方「全作品扩展目录」CSV（UTF-8，打包为 zip）。
 /// 只对接官方权威数据（不依赖第三方服务），ToS 干净；正文亦在官方站，留待 PR-B 做站内阅览。
 ///
@@ -553,6 +617,95 @@ mod tests {
 5678,127,森,鴎外,羅生門,なし,https://www.aozora.gr.jp/cards/000879/card127.html,https://www.aozora.gr.jp/cards/000879/files/127_ruby.zip,https://www.aozora.gr.jp/cards/000879/files/127_15260.html\n\
 9999,1000,夏目,漱石,吾輩は猫である,なし,https://www.aozora.gr.jp/cards/000148/card1000.html,x,https://www.aozora.gr.jp/cards/000148/files/1000_148.html\n\
 8888,2000,現代,作家,版権あり作品,あり,https://www.aozora.gr.jp/cards/999/card2000.html,y,https://www.aozora.gr.jp/cards/999/files/2000.html\n";
+
+    const NAROU_FIXTURE: &str = r#"[
+      { "allcount": 2 },
+      {
+        "ncode": "n1234ab",
+        "title": "転生したらテストだった件",
+        "writer": "テスト作者",
+        "story": "  公式APIから返るあらすじ。  "
+      },
+      {
+        "ncode": "N5678CD",
+        "title": "空白の旅人",
+        "writer": "",
+        "story": null
+      },
+      {
+        "ncode": "N0000ZZ",
+        "title": "",
+        "writer": "skip",
+        "story": "missing title"
+      }
+    ]"#;
+
+    #[test]
+    fn narou_parse_search_maps_official_free_metadata() {
+        let entries = narou::parse_search(NAROU_FIXTURE).unwrap();
+        assert_eq!(entries.len(), 2);
+
+        let first = &entries[0];
+        assert_eq!(first.remote_id, "N1234AB");
+        assert_eq!(first.title, "転生したらテストだった件");
+        assert_eq!(first.author.as_deref(), Some("テスト作者"));
+        assert_eq!(
+            first.description.as_deref(),
+            Some("公式APIから返るあらすじ。")
+        );
+        assert_eq!(first.language.as_deref(), Some("ja"));
+        assert_eq!(
+            first.site_url.as_deref(),
+            Some("https://ncode.syosetu.com/n1234ab/")
+        );
+        assert_eq!(first.rights_status, "official_free");
+        assert!(first.cover_url.is_none());
+
+        let second = &entries[1];
+        assert_eq!(second.remote_id, "N5678CD");
+        assert!(second.author.is_none());
+        assert!(second.description.is_none());
+    }
+
+    #[test]
+    fn narou_parse_search_handles_empty_and_garbage() {
+        assert!(narou::parse_search(r#"[{"allcount":0}]"#)
+            .unwrap()
+            .is_empty());
+        assert!(narou::parse_search("not json").is_err());
+    }
+
+    #[test]
+    fn narou_entry_lands_on_shelf_as_remote_official_free() {
+        let (dir, conn) = open_db();
+        let entries = narou::parse_search(NAROU_FIXTURE).unwrap();
+        ensure_source(
+            &conn,
+            narou::SOURCE_ID,
+            narou::SOURCE_NAME,
+            "metadata",
+            Some(narou::ENDPOINT),
+            1000,
+        )
+        .unwrap();
+        let ids = ingest(&conn, narou::SOURCE_ID, &entries, 1000).unwrap();
+        assert_eq!(ids.len(), 2);
+
+        let books = library::list_books(&conn).unwrap();
+        let first = books
+            .iter()
+            .find(|b| b.title == "転生したらテストだった件")
+            .unwrap();
+        assert_eq!(first.availability.as_deref(), Some("remote"));
+        assert_eq!(first.rights_status.as_deref(), Some("official_free"));
+        assert_eq!(
+            first.remote_url.as_deref(),
+            Some("https://ncode.syosetu.com/n1234ab/")
+        );
+        assert!(first.file_path.is_none());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn aozora_parse_filters_dedupes_and_maps_rights() {
