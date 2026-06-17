@@ -15,7 +15,7 @@ git status -sb
 当前事实：
 
 - `main` 已合并到 PR #17 / v0.5-h `catalog_fts`，在线元数据条目已能进入统一目录搜索。
-- 当前分支 `codex/remote-local-link` 正在做远程 metadata 条目 ↔ 本地可读资产的人工关联；完成后应开 PR，不直推 `main`。
+- 当前分支 `codex/remote-local-link` 已推送并开 PR #18，内容是远程 metadata 条目 ↔ 本地可读资产的人工关联；不要直推 `main`。
 - 发版前最后的原生文件 / 文件夹选择框人工项已补验通过。
 - `npm.cmd run package:beta` 已通过，生成 `dist-beta/lightnovel-reader-v0.1.0-release-windows-x64.zip`。
 - 如果看到未跟踪的本机文件（例如 `.codex/config.toml`），不要提交，除非明确确认它属于项目配置。
@@ -26,13 +26,13 @@ git status -sb
 - 真实 Tauri 窗口里点击“导入文件夹”，确认弹出 Windows 原生 `#32770` 文件夹对话框（标题“选择要上传的文件夹”）；选择 smoke fixtures 文件夹后，`library_list` 出现 `Smoke Test Light Novel Vol.2`，本地 `user_owned`。
 - `npm.cmd run package:beta` 已通过，生成 `dist-beta/lightnovel-reader-v0.1.0-release-windows-x64` 与 `.zip`。
 - `library.linkRemoteToLocal` 已实现第一版：core 移动 `source_record` 到本地 `edition`，保留本地 `asset.id`，隐藏无 asset/无 source_record 的远程空壳；前端远程卡片提供“关联本地”动作，由用户显式确认。
+- `npm.cmd run smoke:remote-link` 已新增并通过：真实 Tauri 窗口里导入本地 smoke EPUB、在线搜 AniList `Tanya`、把 `Youjo Senki` 远程卡片关联到本地书，验证远程空壳消失、进度/标注键不变、重复在线搜索不反弹。
 
 下一步优先级：
 
-1. 先完成本分支收工检查并开 PR：`node scripts/check-arch.mjs`、`node scripts/check-dev-memory.mjs`、`npm.cmd run build`、`cargo test --workspace`、`git diff --check`。
-2. 真窗口补验：导入一本本地 EPUB，再在线搜索同名/相近条目，点远程卡片“关联本地”，确认远程卡片消失、本地书仍可打开、进度/标注键不变；重复在线搜索后不应冒出无来源远程空壳。
-3. 若要发便携测试版，先在目标机器重新跑一次 `npm.cmd run package:beta`，基于该机器生成的 `dist-beta/lightnovel-reader-v0.1.0-release-windows-x64.zip` 做分发前人工检查。
-4. 后续若继续关联体验，只能做候选排序/提示/批量人工确认，不要自动合并；继续遵守版权边界：Bangumi / なろう 只做元数据 + 外链，不做正文抓取；`library.acquireRemote` 仍只允许青空公共版权条目。
+1. 先完成本分支收工检查并更新 PR #18：`node scripts/check-arch.mjs`、`node scripts/check-dev-memory.mjs`、`npm.cmd run build`、`cargo test --workspace`、`git diff --check`。
+2. PR #18 review/merge 后，若要发便携测试版，先在目标机器重新跑一次 `npm.cmd run package:beta`，基于该机器生成的 `dist-beta/lightnovel-reader-v0.1.0-release-windows-x64.zip` 做分发前人工检查。
+3. 后续若继续关联体验，只能做候选排序/提示/批量人工确认，不要自动合并；继续遵守版权边界：Bangumi / なろう 只做元数据 + 外链，不做正文抓取；`library.acquireRemote` 仍只允许青空公共版权条目。
 
 ## 📌 交接留言（2026-06-17，v0.5-h catalog_fts）
 
