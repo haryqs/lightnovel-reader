@@ -231,6 +231,107 @@ pub mod anilist {
     }
 }
 
+/// Bangumi 连接器：中文/ACG 书籍元数据目录，使用公开 OpenAPI，只读取 subject 元数据。
+///
+/// Bangumi 不是正文来源，也不是可下载来源；这里仅把书籍 subject 映射为远程元数据条目，
+/// 点击后跳 Bangumi subject 页面，后续正版购买/阅读入口由用户在外部页面自行判断。
+pub mod bangumi {
+    use super::RemoteEntry;
+    use serde::Deserialize;
+
+    pub const SOURCE_ID: &str = "src:bangumi";
+    pub const SOURCE_NAME: &str = "Bangumi";
+    pub const ENDPOINT: &str = "https://api.bgm.tv/v0/search/subjects";
+    const SUBJECT_BASE_URL: &str = "https://bgm.tv/subject";
+
+    /// 构造 Bangumi subject 搜索请求体。type=1 表示书籍，nsfw=false 避免默认引入成人条目。
+    /// 调用方应以 `application/json` POST 到 [`ENDPOINT`] 并用 query 参数控制 limit。
+    pub fn search_request_body(term: &str) -> String {
+        let body = serde_json::json!({
+            "keyword": term,
+            "sort": "match",
+            "filter": {
+                "type": [1],
+                "nsfw": false
+            }
+        });
+        body.to_string()
+    }
+
+    #[derive(Deserialize)]
+    struct Resp {
+        data: Option<Vec<Subject>>,
+    }
+
+    #[derive(Deserialize)]
+    struct Subject {
+        id: i64,
+        #[serde(rename = "type")]
+        subject_type: Option<i64>,
+        name: Option<String>,
+        name_cn: Option<String>,
+        short_summary: Option<String>,
+        summary: Option<String>,
+        images: Option<Images>,
+    }
+
+    #[derive(Deserialize)]
+    struct Images {
+        large: Option<String>,
+        medium: Option<String>,
+        common: Option<String>,
+        grid: Option<String>,
+        small: Option<String>,
+    }
+
+    fn clean(v: Option<String>) -> Option<String> {
+        v.map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
+    }
+
+    fn best_image(images: Images) -> Option<String> {
+        images
+            .large
+            .or(images.medium)
+            .or(images.common)
+            .or(images.grid)
+            .or(images.small)
+    }
+
+    /// Parse the official Bangumi search response into remote metadata entries.
+    ///
+    /// Search already asks for book subjects, but parsing still filters non-book rows defensively.
+    pub fn parse_search(json: &str) -> Result<Vec<RemoteEntry>, String> {
+        let resp: Resp =
+            serde_json::from_str(json).map_err(|e| format!("parse Bangumi response failed: {e}"))?;
+        let subjects = resp.data.unwrap_or_default();
+        let mut out = Vec::new();
+
+        for s in subjects {
+            if s.subject_type.is_some_and(|t| t != 1) {
+                continue;
+            }
+            let title = clean(s.name_cn).or_else(|| clean(s.name));
+            let Some(title) = title else {
+                continue;
+            };
+
+            out.push(RemoteEntry {
+                remote_id: s.id.to_string(),
+                title,
+                author: None,
+                description: clean(s.short_summary).or_else(|| clean(s.summary)),
+                cover_url: s.images.and_then(best_image),
+                language: None,
+                site_url: Some(format!("{SUBJECT_BASE_URL}/{}", s.id)),
+                // Bangumi 是社区/目录型元数据源，不代表正文授权或购买入口，保守标为 unknown。
+                rights_status: "unknown".into(),
+            });
+        }
+
+        Ok(out)
+    }
+}
+
 /// 小説家になろう连接器：官方 Web 小说元数据 API。
 ///
 /// なろう比青空更贴近轻小说/网文发现，但这里仍然只做元数据 + 官方外链；
@@ -640,6 +741,40 @@ mod tests {
       }
     ]"#;
 
+    const BANGUMI_FIXTURE: &str = r#"{
+      "data": [
+        {
+          "id": 26449,
+          "type": 1,
+          "name": "狼と香辛料",
+          "name_cn": "狼与香辛料",
+          "short_summary": "旅行商人与贤狼的故事。",
+          "images": {
+            "large": "https://lain.bgm.tv/pic/cover/l/26449.jpg",
+            "common": "https://lain.bgm.tv/pic/cover/c/26449.jpg"
+          }
+        },
+        {
+          "id": 123,
+          "type": 2,
+          "name": "动画条目",
+          "name_cn": "",
+          "short_summary": "skip non-book"
+        },
+        {
+          "id": 26500,
+          "type": 1,
+          "name": "Book Without CN",
+          "name_cn": "",
+          "summary": "fallback summary",
+          "images": { "small": "https://lain.bgm.tv/pic/cover/s/26500.jpg" }
+        }
+      ],
+      "total": 3,
+      "limit": 20,
+      "offset": 0
+    }"#;
+
     #[test]
     fn narou_parse_search_maps_official_free_metadata() {
         let entries = narou::parse_search(NAROU_FIXTURE).unwrap();
@@ -673,6 +808,83 @@ mod tests {
             .unwrap()
             .is_empty());
         assert!(narou::parse_search("not json").is_err());
+    }
+
+    #[test]
+    fn bangumi_request_body_is_book_metadata_search() {
+        let body = bangumi::search_request_body("狼与香辛料");
+        let v: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(v["keyword"], "狼与香辛料");
+        assert_eq!(v["sort"], "match");
+        assert_eq!(v["filter"]["type"][0], 1);
+        assert_eq!(v["filter"]["nsfw"], false);
+    }
+
+    #[test]
+    fn bangumi_parse_search_maps_metadata_and_filters_non_books() {
+        let entries = bangumi::parse_search(BANGUMI_FIXTURE).unwrap();
+        assert_eq!(entries.len(), 2);
+
+        let first = &entries[0];
+        assert_eq!(first.remote_id, "26449");
+        assert_eq!(first.title, "狼与香辛料");
+        assert_eq!(first.description.as_deref(), Some("旅行商人与贤狼的故事。"));
+        assert_eq!(
+            first.cover_url.as_deref(),
+            Some("https://lain.bgm.tv/pic/cover/l/26449.jpg")
+        );
+        assert_eq!(
+            first.site_url.as_deref(),
+            Some("https://bgm.tv/subject/26449")
+        );
+        assert_eq!(first.rights_status, "unknown");
+        assert!(first.author.is_none());
+        assert!(first.language.is_none());
+
+        let second = &entries[1];
+        assert_eq!(second.remote_id, "26500");
+        assert_eq!(second.title, "Book Without CN");
+        assert_eq!(second.description.as_deref(), Some("fallback summary"));
+        assert_eq!(
+            second.cover_url.as_deref(),
+            Some("https://lain.bgm.tv/pic/cover/s/26500.jpg")
+        );
+    }
+
+    #[test]
+    fn bangumi_parse_search_handles_empty_and_garbage() {
+        assert!(bangumi::parse_search(r#"{"data":[]}"#).unwrap().is_empty());
+        assert!(bangumi::parse_search(r#"{"data":null}"#).unwrap().is_empty());
+        assert!(bangumi::parse_search("not json").is_err());
+    }
+
+    #[test]
+    fn bangumi_entry_lands_on_shelf_as_remote_unknown_metadata() {
+        let (dir, conn) = open_db();
+        let entries = bangumi::parse_search(BANGUMI_FIXTURE).unwrap();
+        ensure_source(
+            &conn,
+            bangumi::SOURCE_ID,
+            bangumi::SOURCE_NAME,
+            "metadata",
+            Some(bangumi::ENDPOINT),
+            1000,
+        )
+        .unwrap();
+        let ids = ingest(&conn, bangumi::SOURCE_ID, &entries, 1000).unwrap();
+        assert_eq!(ids.len(), 2);
+
+        let books = library::list_books(&conn).unwrap();
+        let first = books.iter().find(|b| b.title == "狼与香辛料").unwrap();
+        assert_eq!(first.availability.as_deref(), Some("remote"));
+        assert_eq!(first.rights_status.as_deref(), Some("unknown"));
+        assert_eq!(
+            first.remote_url.as_deref(),
+            Some("https://bgm.tv/subject/26449")
+        );
+        assert!(first.file_path.is_none());
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

@@ -559,6 +559,7 @@ let libraryBooks: LibraryBook[] = []
 let librarySearchTimer: number | null = null
 const REMOTE_SOURCE_LABEL: Record<RemoteLibrarySource, string> = {
   anilist: 'AniList',
+  bangumi: 'Bangumi（中文/ACG 元数据）',
   narou: '小説家になろう（Web小说元数据）',
   aozora: '青空文库（公共版权经典）',
 }
@@ -792,7 +793,7 @@ function remoteStatusLabel(book: LibraryBook): string {
     case 'official_purchase':
       return '需购买 · 官方外链'
     default:
-      return '远程条目 · 官方外链'
+      return '远程条目 · 外链'
   }
 }
 

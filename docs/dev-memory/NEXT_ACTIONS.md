@@ -1,5 +1,34 @@
 # 下一步任务队列
 
+## 📌 交接留言（2026-06-17，v0.5-g Bangumi 元数据源）
+
+本轮 Codex 继续 v0.5-g，新增 **Bangumi（中文/ACG 元数据）** 在线找书来源。当前分支：`feature/v0.5g-bangumi-metadata`。
+
+已完成：
+
+- core：`crates/reading-core/src/connectors.rs` 新增 `connectors::bangumi`，构造 Bangumi OpenAPI `POST /v0/search/subjects` 请求体（`type=[1]` 书籍、`nsfw=false`），解析 `id/name/name_cn/short_summary/summary/images`，落库为 `rights_status=unknown`、`availability=remote`、`remoteUrl=https://bgm.tv/subject/<id>`；补 4 个单测。
+- shell：`src-tauri/src/lib.rs` 的 `library_search_remote_source` 新增 `source=bangumi`，HTTP POST 留在 Tauri 壳侧，解析/落库仍在 core。
+- frontend/protocol/docs：`RemoteLibrarySource` 扩展为 `anilist|bangumi|aozora|narou`，在线找书下拉新增“Bangumi（中文/ACG 元数据）”；`unknown` 远程卡片文案改为“远程条目 · 外链”，避免把 Bangumi 误称为官方授权入口；协议 8、DEV_LOG、DECISIONS 已同步。
+
+已验证：
+
+- `cargo test --workspace` 通过（reading-core 72 passed）。
+- `npm.cmd run build` 通过。
+- Bangumi OpenAPI 轻量探测通过：经系统代理 POST `https://api.bgm.tv/v0/search/subjects?limit=2` 返回 HTTP 200，含 `type=1` 书籍 subject。
+- `npm run tauri dev` 真窗口 + WebView2 CDP 冒烟通过：在线来源下拉确认四源 AniList / Bangumi / 小説家になろう / 青空文库；Bangumi 搜索 `狼与香辛料` 返回远程卡片，卡片为 `book-card-remote`，有远程封面，标签为“远程条目 · 外链”。
+
+边界：
+
+- Bangumi 只做社区/目录型元数据 + subject 外链，不做正文抓取、不缓存正文、不标记为官方授权入口。
+- `library.acquireRemote` 仍只支持青空 `public_domain` 条目；不要让 Bangumi/なろう 进入正文获取路径。
+- HTTP 继续留在 src-tauri 壳侧；解析/落库在 `reading-core`；前端继续只通过 `src/platform`。
+
+下一步优先级：
+
+1. 跑收工检查：`node scripts/check-arch.mjs`、`node scripts/check-dev-memory.mjs`、`git diff --check`；若无问题，提交、推送并开 PR。
+2. 合并 v0.5-g 后，优先做 `catalog_fts`，让 remote metadata 条目进入独立目录全文搜索。
+3. 仍挂着的人工项：原生文件/文件夹选择对话框点一次，然后 `npm run package:beta` 发版。
+
 ## 📌 交接留言（2026-06-17，给实验室电脑 Codex）
 
 先同步 GitHub：`git fetch --all --prune`，切到最新 main 后查看/接续 `feature/v0.5f-narou-metadata` / PR #14。本轮 Codex 已完成 **v0.5-f 小説家になろう官方 API 元数据源**，并在后续接手中补过真窗口联网冒烟：

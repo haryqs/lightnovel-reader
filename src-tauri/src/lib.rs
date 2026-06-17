@@ -53,6 +53,7 @@ fn now_ms() -> i64 {
 const AOZORA_CATALOG_MAX_AGE: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 const AOZORA_SEARCH_LIMIT: usize = 40;
 const NAROU_SEARCH_LIMIT: usize = 40;
+const BANGUMI_SEARCH_LIMIT: usize = 20;
 
 fn resolve_app_data_dir(app: &tauri::App) -> PathBuf {
     const OVERRIDE_ENV: &str = "LIGHTNOVEL_READER_APP_DATA_DIR";
@@ -314,6 +315,7 @@ async fn search_remote_source(
 ) -> Result<Vec<library::LibraryBook>, String> {
     match source.trim().to_ascii_lowercase().as_str() {
         "anilist" => search_anilist(state, query).await,
+        "bangumi" => search_bangumi(state, query).await,
         "aozora" => search_aozora(state, query).await,
         "narou" => search_narou(state, query).await,
         other => Err(format!("不支持的在线来源: {}", other)),
@@ -364,6 +366,64 @@ async fn search_anilist(
         connectors::ingest(&db, anilist::SOURCE_ID, &entries, now).map_err(|e| e.to_string())?;
 
     // 3) 回读落库后的条目返回前端。
+    let mut out = Vec::with_capacity(ids.len());
+    for id in ids {
+        if let Some(b) = library::get_book(&db, &id).map_err(|e| e.to_string())? {
+            out.push(b);
+        }
+    }
+    Ok(out)
+}
+
+async fn search_bangumi(
+    state: &AppState,
+    query: &str,
+) -> Result<Vec<library::LibraryBook>, String> {
+    use reading_core::connectors::{self, bangumi};
+
+    let q = query.trim();
+    if q.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let body = bangumi::search_request_body(q);
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(bangumi::ENDPOINT)
+        .query(&[("limit", BANGUMI_SEARCH_LIMIT.to_string())])
+        .header("content-type", "application/json")
+        .header("accept", "application/json")
+        .header(
+            "user-agent",
+            "LightNovel Reader/0.3.1 (https://github.com/haryqs/lightnovel-reader)",
+        )
+        .body(body)
+        .send()
+        .await
+        .map_err(|e| format!("Bangumi request failed: {e}"))?;
+    if !resp.status().is_success() {
+        return Err(format!("Bangumi request failed: HTTP {}", resp.status()));
+    }
+    let json = resp
+        .text()
+        .await
+        .map_err(|e| format!("read Bangumi response failed: {e}"))?;
+
+    let entries = bangumi::parse_search(&json)?;
+    let now = now_ms();
+    let db = state.library_db.lock().map_err(|e| e.to_string())?;
+    connectors::ensure_source(
+        &db,
+        bangumi::SOURCE_ID,
+        bangumi::SOURCE_NAME,
+        "metadata",
+        Some(bangumi::ENDPOINT),
+        now,
+    )
+    .map_err(|e| e.to_string())?;
+    let ids =
+        connectors::ingest(&db, bangumi::SOURCE_ID, &entries, now).map_err(|e| e.to_string())?;
+
     let mut out = Vec::with_capacity(ids.len());
     for id in ids {
         if let Some(b) = library::get_book(&db, &id).map_err(|e| e.to_string())? {
