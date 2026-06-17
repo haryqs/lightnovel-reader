@@ -361,3 +361,19 @@
 
 - 在线找书现在有四个内置来源：AniList（轻小说/ACG 商业元数据）、Bangumi（中文/ACG 目录元数据）、なろう（官方 Web 小说元数据）、青空文库（公共版权经典 + 可 acquire）。
 - Bangumi 不能成为正文抓取或缓存的依据；正文/章节类来源仍留给 v0.7 插件运行时、ToS 门控和用户显式选择。
+
+## 2026-06-17：目录搜索改由 catalog_fts 覆盖本地与远程 metadata 条目
+
+决策：把 `library.search` 的 ≥3 字搜索从旧 `books_fts` 切到实体目录索引 `catalog_fts`。schema v5 重建 `catalog_fts(edition_id UNINDEXED, title, author, series_title)`，从 `edition → volume → series` 回填，并用触发器同步实体标题、作者和系列变化。
+
+理由：
+
+- v0.5 读路径已经锚定 `edition`，远程 metadata-only 条目没有 `books` 行，继续走 `books_fts` 会让 AniList/Bangumi/なろう/青空远程条目在长词搜索里不可见。
+- `catalog_fts` 索引的是目录元数据，不涉及正文，因此符合“远程来源只落 metadata/外链，不抓正文”的版权边界。
+- `edition_id` 只用于回连实体读路径，FTS 仍只索引标题、作者、系列标题，避免把来源 URL、rights 状态等非目录字段混入检索。
+
+后果：
+
+- 本地 EPUB 和远程 metadata 条目统一可被 `library.search` 长词命中；短词仍走实体表 LIKE 兜底。
+- schema 版本升到 5；旧 v3 预建的空 `catalog_fts` 会被 v5 重建并回填。
+- `books_fts` 暂留作旧镜像表的兼容索引，后续 v0.6/v0.7 清理 books 镜像时再统一评估删除。

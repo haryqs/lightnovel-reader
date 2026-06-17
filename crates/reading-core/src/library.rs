@@ -121,7 +121,7 @@ END;
 ///
 /// 回填用确定性派生 id（'series:'+名 / 'vol:'+bookId / …）+ `INSERT OR IGNORE`，
 /// 迁移可重入、同系列多卷只建一行 series。source/source_record 建空表（本地导入无来源记录），
-/// catalog_fts 的同步触发器留待 v0.5-b（list/search 改读实体表时）一并加。
+/// catalog_fts 的同步触发器由 v5 迁移重建补齐。
 const ENTITY_SCHEMA_V3: &str = r#"
 CREATE TABLE IF NOT EXISTS series (
   id          TEXT PRIMARY KEY,
@@ -237,6 +237,77 @@ const ASSET_THUMB_V4: &str = "\
     UPDATE asset SET thumb_path = (SELECT thumb_path FROM books WHERE books.id = asset.id) \
       WHERE thumb_path IS NULL;";
 
+const CATALOG_FTS_V5: &str = r#"
+DROP TABLE IF EXISTS catalog_fts;
+CREATE VIRTUAL TABLE catalog_fts USING fts5(
+  edition_id UNINDEXED,
+  title,
+  author,
+  series_title,
+  tokenize='trigram'
+);
+
+INSERT INTO catalog_fts(edition_id, title, author, series_title)
+  SELECT e.id, v.title, s.author, CASE WHEN s.id LIKE 'series:%' THEN s.title END
+    FROM edition e
+    JOIN volume v ON v.id = e.volume_id
+    JOIN series s ON s.id = v.series_id;
+
+CREATE TRIGGER IF NOT EXISTS catalog_fts_edition_ai AFTER INSERT ON edition BEGIN
+  DELETE FROM catalog_fts WHERE edition_id = new.id;
+  INSERT INTO catalog_fts(edition_id, title, author, series_title)
+    SELECT new.id, v.title, s.author, CASE WHEN s.id LIKE 'series:%' THEN s.title END
+      FROM volume v
+      JOIN series s ON s.id = v.series_id
+     WHERE v.id = new.volume_id;
+END;
+
+CREATE TRIGGER IF NOT EXISTS catalog_fts_edition_ad AFTER DELETE ON edition BEGIN
+  DELETE FROM catalog_fts WHERE edition_id = old.id;
+END;
+
+CREATE TRIGGER IF NOT EXISTS catalog_fts_edition_au AFTER UPDATE OF volume_id ON edition BEGIN
+  DELETE FROM catalog_fts WHERE edition_id = old.id;
+  INSERT INTO catalog_fts(edition_id, title, author, series_title)
+    SELECT new.id, v.title, s.author, CASE WHEN s.id LIKE 'series:%' THEN s.title END
+      FROM volume v
+      JOIN series s ON s.id = v.series_id
+     WHERE v.id = new.volume_id;
+END;
+
+CREATE TRIGGER IF NOT EXISTS catalog_fts_volume_ad AFTER DELETE ON volume BEGIN
+  DELETE FROM catalog_fts
+   WHERE edition_id IN (SELECT id FROM edition WHERE volume_id = old.id);
+END;
+
+CREATE TRIGGER IF NOT EXISTS catalog_fts_volume_au AFTER UPDATE OF title, series_id ON volume BEGIN
+  DELETE FROM catalog_fts
+   WHERE edition_id IN (
+     SELECT id FROM edition WHERE volume_id = old.id OR volume_id = new.id
+   );
+  INSERT INTO catalog_fts(edition_id, title, author, series_title)
+    SELECT e.id, new.title, s.author, CASE WHEN s.id LIKE 'series:%' THEN s.title END
+      FROM edition e
+      JOIN series s ON s.id = new.series_id
+     WHERE e.volume_id = new.id;
+END;
+
+CREATE TRIGGER IF NOT EXISTS catalog_fts_series_au AFTER UPDATE OF title, author ON series BEGIN
+  DELETE FROM catalog_fts
+   WHERE edition_id IN (
+     SELECT e.id
+       FROM edition e
+       JOIN volume v ON v.id = e.volume_id
+      WHERE v.series_id = new.id
+   );
+  INSERT INTO catalog_fts(edition_id, title, author, series_title)
+    SELECT e.id, v.title, new.author, CASE WHEN new.id LIKE 'series:%' THEN new.title END
+      FROM edition e
+      JOIN volume v ON v.id = e.volume_id
+     WHERE v.series_id = new.id;
+END;
+"#;
+
 const MIGRATIONS: &[Migration] = &[
     Migration {
         version: 1,
@@ -256,6 +327,11 @@ const MIGRATIONS: &[Migration] = &[
     Migration {
         version: 4,
         sql: ASSET_THUMB_V4,
+    },
+    // v5：实体目录 FTS（本地 + 远程 metadata），让 library.search 覆盖远程条目。
+    Migration {
+        version: 5,
+        sql: CATALOG_FTS_V5,
     },
 ];
 
@@ -750,14 +826,13 @@ pub fn search_books(conn: &Connection, query: &str) -> rusqlite::Result<Vec<Libr
     }
 
     if q.chars().count() >= 3 {
-        // ≥3 字走 books_fts（trigram 子串命中）。books_fts 仅含本地书，故经 asset→books
-        // 内连接桥接——远程条目要可搜需将来填 catalog_fts（草案 §8，触发器留待后续）。
+        // ≥3 字走 catalog_fts（trigram 子串命中）。catalog_fts 由实体表同步，
+        // 因此本地 asset 与远程 metadata-only 条目都能命中。
         let phrase = format!("\"{}\"", q.replace('"', "\"\""));
         let sql = format!(
             "SELECT {} {}
-              JOIN books b ON b.id = a.id
-              JOIN books_fts f ON f.rowid = b.rowid
-             WHERE books_fts MATCH ?1
+              JOIN catalog_fts ON catalog_fts.edition_id = e.id
+             WHERE catalog_fts MATCH ?1
              ORDER BY rank",
             SELECT_ENTRY, FROM_ENTRY
         );
@@ -1078,12 +1153,12 @@ mod tests {
         let path = dir.join("library.sqlite");
 
         let conn = open_library(&path).unwrap();
-        assert_eq!(crate::migrations::current_version(&conn).unwrap(), 4);
+        assert_eq!(crate::migrations::current_version(&conn).unwrap(), 5);
         drop(conn);
 
         // 重开已有库：迁移幂等跳过，版本不变、数据仍在。
         let conn = open_library(&path).unwrap();
-        assert_eq!(crate::migrations::current_version(&conn).unwrap(), 4);
+        assert_eq!(crate::migrations::current_version(&conn).unwrap(), 5);
 
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -1184,9 +1259,9 @@ mod tests {
             .unwrap();
         }
 
-        // 重开 → 仅跑 v3，回填实体链。
+        // 重开 → 跑 v3-v5，回填实体链并建立 catalog_fts。
         let conn = open_library(&path).unwrap();
-        assert_eq!(migrations::current_version(&conn).unwrap(), 4);
+        assert_eq!(migrations::current_version(&conn).unwrap(), 5);
 
         let asset_id: String = conn
             .query_row("SELECT id FROM asset WHERE id = 'hash123'", [], |r| {
@@ -1208,6 +1283,41 @@ mod tests {
         drop(conn);
         let conn = open_library(&path).unwrap();
         assert_eq!(count_rows(&conn, "asset"), 1);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn migration_v5_backfills_remote_entries_into_catalog_fts() {
+        // 模拟 v4 旧库：已有远程 metadata-only 实体，但 catalog_fts 仍是 v3 预建空表。
+        let dir = temp_library("catalog-fts-backfill");
+        let path = dir.join("library.sqlite");
+        {
+            let conn = Connection::open(&path).unwrap();
+            migrations::run(&conn, &MIGRATIONS[..4]).unwrap();
+            assert_eq!(migrations::current_version(&conn).unwrap(), 4);
+            conn.execute_batch(
+                "INSERT INTO series(id,title,author,description,created_at,updated_at)
+                   VALUES('series:remote-old','旧远程系列','旧远程作者',NULL,0,0);
+                 INSERT INTO volume(id,series_id,kind,volume_number,title,created_at,updated_at)
+                   VALUES('vol:remote-old','series:remote-old','main',NULL,'旧远程标题',0,0);
+                 INSERT INTO edition(id,volume_id,language,rights_status,created_at,updated_at)
+                   VALUES('ed:remote-old','vol:remote-old','ja','unknown',0,0);
+                 INSERT INTO source(id,name,kind,created_at)
+                   VALUES('src:old','Old Source','metadata',0);
+                 INSERT INTO source_record(id,source_id,entity_type,entity_id,remote_url,rights_status,availability)
+                   VALUES('sr:remote-old','src:old','edition','ed:remote-old',
+                          'https://example/old','unknown','remote');",
+            )
+            .unwrap();
+        }
+
+        let conn = open_library(&path).unwrap();
+        assert_eq!(migrations::current_version(&conn).unwrap(), 5);
+        let hit = search_books(&conn, "旧远程标题").unwrap();
+        assert_eq!(hit.len(), 1);
+        assert_eq!(hit[0].id, "ed:remote-old");
+        assert_eq!(hit[0].availability.as_deref(), Some("remote"));
 
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -1295,6 +1405,39 @@ mod tests {
             .unwrap()
             .expect("应能按 edition id 取远程条目");
         assert_eq!(got.id, "ed:remote1");
+
+        // ≥3 字搜索现在走 catalog_fts，远程 metadata-only 条目也应被标题/作者/系列命中。
+        let hit = search_books(&conn, "远程卷一").unwrap();
+        assert_eq!(hit.len(), 1);
+        assert_eq!(hit[0].id, "ed:remote1");
+        assert_eq!(hit[0].availability.as_deref(), Some("remote"));
+
+        let hit = search_books(&conn, "远程作者").unwrap();
+        assert_eq!(hit.len(), 1);
+        assert_eq!(hit[0].id, "ed:remote1");
+
+        let hit = search_books(&conn, "远程系列").unwrap();
+        assert_eq!(hit.len(), 1);
+        assert_eq!(hit[0].id, "ed:remote1");
+
+        conn.execute(
+            "UPDATE volume SET title = '全新修订版' WHERE id = 'vol:remote1'",
+            [],
+        )
+        .unwrap();
+        assert!(search_books(&conn, "远程卷一").unwrap().is_empty());
+        let hit = search_books(&conn, "修订版").unwrap();
+        assert_eq!(hit.len(), 1);
+        assert_eq!(hit[0].id, "ed:remote1");
+
+        conn.execute(
+            "UPDATE series SET author = '远程作者改' WHERE id = 'series:远程系列'",
+            [],
+        )
+        .unwrap();
+        let hit = search_books(&conn, "作者改").unwrap();
+        assert_eq!(hit.len(), 1);
+        assert_eq!(hit[0].id, "ed:remote1");
 
         // 本地书仍按内容哈希取到、且有文件。
         let got_local = get_book(&conn, &local.book.id).unwrap().unwrap();
