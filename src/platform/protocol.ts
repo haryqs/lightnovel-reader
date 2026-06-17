@@ -145,6 +145,8 @@ export interface ReaderBridge {
   searchRemoteLibraryBooksFromSource(source: RemoteLibrarySource, query: string): Promise<LibraryBook[]>
   /** library.acquireRemote — 获取公共版权远程条目的正文并转为本地可读资产 */
   acquireRemoteLibraryBook(id: string): Promise<LibraryBook>
+  /** library.linkRemoteToLocal — 人工关联远程元数据条目到本地可读资产 */
+  linkRemoteToLocalLibraryBook(remoteId: string, localId: string): Promise<LibraryBook>
   /** library.open — 按自有书库 id 打开书籍 */
   openLibraryBook(id: string): Promise<OpenedBook>
   /** library.touchLastRead — 更新最近阅读时间 */

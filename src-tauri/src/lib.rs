@@ -287,6 +287,16 @@ fn library_search(
     library::search_books(&db, &query).map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+fn library_link_remote_to_local(
+    state: tauri::State<AppState>,
+    remote_id: String,
+    local_id: String,
+) -> Result<library::LibraryBook, String> {
+    let db = state.library_db.lock().map_err(|e| e.to_string())?;
+    library::link_remote_to_local(&db, &remote_id, &local_id, now_ms())
+}
+
 /// 在线元数据搜索（AniList）：拉索引/封面/简介 → 落库为远程条目（availability=remote）→
 /// 返回新出现在书架上的条目。**只取元数据**，正文须经官方外链；HTTP 传输是壳的职责，
 /// 解析/落库在 core。
@@ -812,6 +822,7 @@ pub fn run() {
             library_import_bytes,
             library_list,
             library_search,
+            library_link_remote_to_local,
             library_search_remote,
             library_search_remote_source,
             library_acquire_remote,

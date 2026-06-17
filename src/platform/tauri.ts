@@ -37,6 +37,8 @@ export const tauriBridge: ReaderBridge = {
     invoke<LibraryBook[]>('library_search_remote_source', { source, query }),
   acquireRemoteLibraryBook: (id) =>
     invoke<LibraryBook>('library_acquire_remote', { id }),
+  linkRemoteToLocalLibraryBook: (remoteId, localId) =>
+    invoke<LibraryBook>('library_link_remote_to_local', { remoteId, localId }),
   openLibraryBook: (id) => invoke<OpenedBook>('library_open', { id }),
   touchLibraryLastRead: (id) => invoke('library_touch_last_read', { id }),
   saveAnnotation: (annotation) => invoke('save_annotation', { annotation }),

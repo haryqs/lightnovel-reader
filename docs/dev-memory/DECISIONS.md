@@ -377,3 +377,19 @@
 - 本地 EPUB 和远程 metadata 条目统一可被 `library.search` 长词命中；短词仍走实体表 LIKE 兜底。
 - schema 版本升到 5；旧 v3 预建的空 `catalog_fts` 会被 v5 重建并回填。
 - `books_fts` 暂留作旧镜像表的兼容索引，后续 v0.6/v0.7 清理 books 镜像时再统一评估删除。
+
+## 2026-06-17：远程条目与本地书采用人工关联，不做自动合并
+
+决策：新增 `library.linkRemoteToLocal(remoteId, localId)`，用于把一个远程 metadata-only 条目人工关联到一个本地/缓存资产。core 只移动 `source_record.entity_id` 到本地 `edition`，随后删除已经无 asset、无 source_record 的远程空壳；查询层同时隐藏未来重复搜索可能写出的无来源空壳。前端只提供候选列表和显式确认，不做自动推断合并。
+
+理由：
+
+- 远程来源标题、卷号、译名和本地 EPUB 元数据经常不完全一致，自动合并容易误伤。
+- 本地 `asset.id` 是内容哈希，也是阅读进度和标注的稳定键；关联来源记录即可把远程 metadata 挂到本地 edition，不需要迁移或重写阅读数据。
+- 连接器重搜时可能因为 `source_record` 已移走而重建同一个远程 edition 空壳，查询层隐藏无 asset/无 source_record 条目可避免书架重复长回来。
+
+后果：
+
+- 用户能把 AniList/Bangumi/なろう/青空等远程条目与自己导入的 EPUB 明确绑定。
+- 手动关联不会让本地条目获得站内正文授权；`library.acquireRemote` 仍只允许青空公共版权条目。
+- 后续若做自动推荐，只能作为“候选排序/提示”，不能直接自动写关联。

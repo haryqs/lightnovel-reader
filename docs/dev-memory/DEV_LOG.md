@@ -1257,3 +1257,31 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
 
 - 寝室电脑 Codex 接手时先同步 `main`，再按 `NEXT_ACTIONS.md` 顶部交接：若发便携测试版，在目标机器重跑 `npm.cmd run package:beta`；若继续功能开发，优先做远程条目去重 / 本地条目手动关联。
 - 后续继续保持边界：Bangumi / なろう 只做元数据 + 外链，不做正文抓取；`library.acquireRemote` 仍只允许青空公共版权条目。
+
+## 2026-06-17：远程 metadata 条目手动关联本地书
+
+背景：v0.5-h 已让远程 metadata 条目进入统一目录搜索；下一步需要处理“在线找到的条目”和“用户已导入 EPUB”描述同一本书时的去重/关联，但不能自动合并误伤阅读进度和标注。
+
+变更：
+
+- `crates/reading-core/src/library.rs`：新增 `link_remote_to_local(remote_id, local_id, now_ms)`，只允许把无 asset 的远程 metadata 条目关联到已有本地/缓存 asset；实现方式是把 `source_record` 从远程 `edition` 移到本地 `edition`，随后清理无 asset/无 source_record 的远程空壳。
+- `library::list_books/get_book/search_books` 增加可见性条件：只显示有 asset 或有 `source_record` 的 edition，避免未来重复在线搜索写回“无来源空壳”后重新出现在书架/搜索中。
+- `src-tauri/src/lib.rs` + `src/platform/*`：新增桥接消息 `library.linkRemoteToLocal` / `linkRemoteToLocalLibraryBook(remoteId, localId)`。
+- `src/main.ts` + `src/styles.css`：远程卡片增加“关联本地”动作；按远程标题优先搜索本地候选，找不到再回退全部本地书；用户显式确认后再关联。
+- `docs/resource-library-plan/8_桥接协议_v0.1.md`、`DECISIONS.md` 同步协议与取舍。
+
+验证：
+
+- `cargo test -p reading-core` 通过（74 passed；新增手动关联测试覆盖 source_record 迁移、远程空壳隐藏、重复空壳回写后仍不可见）。
+- `node scripts/check-arch.mjs` 通过。
+- `node scripts/check-dev-memory.mjs` 通过。
+- `npm.cmd run build` 通过（内含 `check-arch`、`tsc`、`vite build`）。
+- `cargo test --workspace` 通过（reading-core 74 passed）。
+
+未验证 / 阻塞：
+
+- 尚未跑真窗口 UI 冒烟；需要后续在真实 Tauri 窗口里验证“远程卡片关联本地”交互、远程空壳消失和重复在线搜索不反弹。
+
+下一步：
+
+- 跑 `git diff --check` 后推送分支并开 PR；后续可继续优化候选排序/展示，但不要改成自动合并。

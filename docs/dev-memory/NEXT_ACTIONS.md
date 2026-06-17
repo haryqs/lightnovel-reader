@@ -15,6 +15,7 @@ git status -sb
 当前事实：
 
 - `main` 已合并到 PR #17 / v0.5-h `catalog_fts`，在线元数据条目已能进入统一目录搜索。
+- 当前分支 `codex/remote-local-link` 正在做远程 metadata 条目 ↔ 本地可读资产的人工关联；完成后应开 PR，不直推 `main`。
 - 发版前最后的原生文件 / 文件夹选择框人工项已补验通过。
 - `npm.cmd run package:beta` 已通过，生成 `dist-beta/lightnovel-reader-v0.1.0-release-windows-x64.zip`。
 - 如果看到未跟踪的本机文件（例如 `.codex/config.toml`），不要提交，除非明确确认它属于项目配置。
@@ -24,13 +25,14 @@ git status -sb
 - 真实 Tauri 窗口里点击“导入 EPUB”，确认弹出 Windows 原生 `#32770` 文件对话框（标题“打开”）；选择 smoke Vol.1 后，`library_list` 出现 `Smoke Test Light Novel Vol.1`，本地 `user_owned`。
 - 真实 Tauri 窗口里点击“导入文件夹”，确认弹出 Windows 原生 `#32770` 文件夹对话框（标题“选择要上传的文件夹”）；选择 smoke fixtures 文件夹后，`library_list` 出现 `Smoke Test Light Novel Vol.2`，本地 `user_owned`。
 - `npm.cmd run package:beta` 已通过，生成 `dist-beta/lightnovel-reader-v0.1.0-release-windows-x64` 与 `.zip`。
+- `library.linkRemoteToLocal` 已实现第一版：core 移动 `source_record` 到本地 `edition`，保留本地 `asset.id`，隐藏无 asset/无 source_record 的远程空壳；前端远程卡片提供“关联本地”动作，由用户显式确认。
 
 下一步优先级：
 
-1. 若要发便携测试版，先在寝室电脑重新跑一次 `npm.cmd run package:beta`，基于该机器生成的 `dist-beta/lightnovel-reader-v0.1.0-release-windows-x64.zip` 做分发前人工检查。
-2. 若继续功能开发，优先做 **远程条目去重 / 本地条目手动关联**：当远程 metadata 条目与用户导入的本地 EPUB 描述同一本书时，提供可控的人工关联，而不是自动合并。
-3. 做功能前先读 `docs/resource-library-plan/8_桥接协议_v0.1.md` 与 `crates/reading-core/src/library.rs` 的 edition/asset/source_record 模型；保持 HTTP 在 `src-tauri` 壳侧，解析和落库在 `reading-core`。
-4. 继续遵守版权边界：Bangumi / なろう 只做元数据 + 外链，不做正文抓取；`library.acquireRemote` 仍只允许青空公共版权条目。
+1. 先完成本分支收工检查并开 PR：`node scripts/check-arch.mjs`、`node scripts/check-dev-memory.mjs`、`npm.cmd run build`、`cargo test --workspace`、`git diff --check`。
+2. 真窗口补验：导入一本本地 EPUB，再在线搜索同名/相近条目，点远程卡片“关联本地”，确认远程卡片消失、本地书仍可打开、进度/标注键不变；重复在线搜索后不应冒出无来源远程空壳。
+3. 若要发便携测试版，先在目标机器重新跑一次 `npm.cmd run package:beta`，基于该机器生成的 `dist-beta/lightnovel-reader-v0.1.0-release-windows-x64.zip` 做分发前人工检查。
+4. 后续若继续关联体验，只能做候选排序/提示/批量人工确认，不要自动合并；继续遵守版权边界：Bangumi / なろう 只做元数据 + 外链，不做正文抓取；`library.acquireRemote` 仍只允许青空公共版权条目。
 
 ## 📌 交接留言（2026-06-17，v0.5-h catalog_fts）
 
