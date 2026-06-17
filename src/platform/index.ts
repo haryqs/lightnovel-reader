@@ -28,6 +28,7 @@ const noBridge: ReaderBridge = {
   searchRemoteLibraryBooks: async () => unavailable('library.searchRemote'),
   searchRemoteLibraryBooksFromSource: async () => unavailable('library.searchRemoteSource'),
   acquireRemoteLibraryBook: async () => unavailable('library.acquireRemote'),
+  linkRemoteToLocalLibraryBook: async () => unavailable('library.linkRemoteToLocal'),
   openLibraryBook: async () => unavailable('library.open'),
   touchLibraryLastRead: async () => unavailable('library.touchLastRead'),
   saveAnnotation: async () => unavailable('annotation.save'),

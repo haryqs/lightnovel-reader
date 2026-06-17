@@ -584,6 +584,11 @@ const FROM_ENTRY: &str = "\
     LEFT JOIN asset a ON a.edition_id = e.id";
 
 const ORDER_ENTRY: &str = "ORDER BY a.last_read_at IS NULL, a.last_read_at DESC, a.added_at DESC";
+const VISIBLE_ENTRY: &str = "\
+    (a.id IS NOT NULL OR EXISTS (
+      SELECT 1 FROM source_record sr_visible
+       WHERE sr_visible.entity_type = 'edition' AND sr_visible.entity_id = e.id
+    ))";
 
 fn row_to_book(row: &rusqlite::Row<'_>) -> rusqlite::Result<LibraryBook> {
     Ok(LibraryBook {
@@ -611,8 +616,8 @@ fn row_to_book(row: &rusqlite::Row<'_>) -> rusqlite::Result<LibraryBook> {
 
 pub fn get_book(conn: &Connection, id: &str) -> rusqlite::Result<Option<LibraryBook>> {
     let sql = format!(
-        "SELECT {} {} WHERE COALESCE(a.id, e.id) = ?1",
-        SELECT_ENTRY, FROM_ENTRY
+        "SELECT {} {} WHERE COALESCE(a.id, e.id) = ?1 AND {}",
+        SELECT_ENTRY, FROM_ENTRY, VISIBLE_ENTRY
     );
     let mut stmt = conn.prepare(&sql)?;
     let mut rows = stmt.query_map([id], row_to_book)?;
@@ -621,10 +626,113 @@ pub fn get_book(conn: &Connection, id: &str) -> rusqlite::Result<Option<LibraryB
 
 /// 全部书目，最近阅读优先、其次最近加入。
 pub fn list_books(conn: &Connection) -> rusqlite::Result<Vec<LibraryBook>> {
-    let sql = format!("SELECT {} {} {}", SELECT_ENTRY, FROM_ENTRY, ORDER_ENTRY);
+    let sql = format!(
+        "SELECT {} {} WHERE {} {}",
+        SELECT_ENTRY, FROM_ENTRY, VISIBLE_ENTRY, ORDER_ENTRY
+    );
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt.query_map([], row_to_book)?;
     rows.collect()
+}
+
+pub fn link_remote_to_local(
+    conn: &Connection,
+    remote_id: &str,
+    local_id: &str,
+    now_ms: i64,
+) -> Result<LibraryBook, String> {
+    if remote_id == local_id {
+        return Err("远程条目和本地条目不能相同".to_string());
+    }
+
+    let (remote_edition_id, remote_volume_id, remote_series_id) = remote_link_target(conn, remote_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "只能关联尚未本地化的远程元数据条目".to_string())?;
+    let (local_asset_id, local_edition_id) = local_link_target(conn, local_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "找不到可关联的本地书库条目".to_string())?;
+
+    if remote_edition_id == local_edition_id {
+        return get_book(conn, &local_asset_id)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| "关联后的本地条目丢失".to_string());
+    }
+
+    let moved = conn
+        .execute(
+            "UPDATE source_record
+                SET entity_id = ?1, last_checked_at = ?2
+              WHERE entity_type = 'edition' AND entity_id = ?3",
+            params![local_edition_id, now_ms, remote_edition_id],
+        )
+        .map_err(|e| e.to_string())?;
+    if moved == 0 {
+        return Err("远程条目没有可关联的来源记录".to_string());
+    }
+
+    // 删除已经没有 asset/source_record 的远程空壳，避免书架和 catalog_fts 继续显示重复条目。
+    conn.execute(
+        "DELETE FROM edition
+          WHERE id = ?1
+            AND NOT EXISTS (SELECT 1 FROM asset WHERE edition_id = ?1)
+            AND NOT EXISTS (
+              SELECT 1 FROM source_record
+               WHERE entity_type = 'edition' AND entity_id = ?1
+            )",
+        params![remote_edition_id],
+    )
+    .map_err(|e| e.to_string())?;
+    conn.execute(
+        "DELETE FROM volume
+          WHERE id = ?1
+            AND NOT EXISTS (SELECT 1 FROM edition WHERE volume_id = ?1)",
+        params![remote_volume_id],
+    )
+    .map_err(|e| e.to_string())?;
+    conn.execute(
+        "DELETE FROM series
+          WHERE id = ?1
+            AND NOT EXISTS (SELECT 1 FROM volume WHERE series_id = ?1)",
+        params![remote_series_id],
+    )
+    .map_err(|e| e.to_string())?;
+
+    get_book(conn, &local_asset_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "关联后的本地条目丢失".to_string())
+}
+
+fn remote_link_target(
+    conn: &Connection,
+    id: &str,
+) -> rusqlite::Result<Option<(String, String, String)>> {
+    let mut stmt = conn.prepare(
+        "SELECT e.id, v.id, s.id
+           FROM edition e
+           JOIN volume v ON v.id = e.volume_id
+           JOIN series s ON s.id = v.series_id
+           JOIN source_record sr ON sr.entity_type = 'edition' AND sr.entity_id = e.id
+           LEFT JOIN asset a ON a.edition_id = e.id
+          WHERE e.id = ?1 OR a.id = ?1
+          GROUP BY e.id, v.id, s.id
+         HAVING COUNT(a.id) = 0
+          LIMIT 1",
+    )?;
+    let mut rows = stmt.query_map([id], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?;
+    rows.next().transpose()
+}
+
+fn local_link_target(conn: &Connection, id: &str) -> rusqlite::Result<Option<(String, String)>> {
+    let mut stmt = conn.prepare(
+        "SELECT a.id, e.id
+           FROM asset a
+           JOIN edition e ON e.id = a.edition_id
+          WHERE (a.id = ?1 OR e.id = ?1)
+            AND a.availability IN ('local', 'cached')
+          LIMIT 1",
+    )?;
+    let mut rows = stmt.query_map([id], |row| Ok((row.get(0)?, row.get(1)?)))?;
+    rows.next().transpose()
 }
 
 pub fn remote_acquisition(
@@ -833,8 +941,9 @@ pub fn search_books(conn: &Connection, query: &str) -> rusqlite::Result<Vec<Libr
             "SELECT {} {}
               JOIN catalog_fts ON catalog_fts.edition_id = e.id
              WHERE catalog_fts MATCH ?1
+               AND {}
              ORDER BY rank",
-            SELECT_ENTRY, FROM_ENTRY
+            SELECT_ENTRY, FROM_ENTRY, VISIBLE_ENTRY
         );
         let mut stmt = conn.prepare(&sql)?;
         let rows = stmt.query_map([phrase], row_to_book)?;
@@ -849,11 +958,14 @@ pub fn search_books(conn: &Connection, query: &str) -> rusqlite::Result<Vec<Libr
     let pattern = format!("%{}%", escaped);
     let sql = format!(
         "SELECT {} {}
-          WHERE v.title LIKE ?1 ESCAPE '\\'
+          WHERE (
+                v.title LIKE ?1 ESCAPE '\\'
              OR s.author LIKE ?1 ESCAPE '\\'
              OR (s.id LIKE 'series:%' AND s.title LIKE ?1 ESCAPE '\\')
+          )
+            AND {}
           {}",
-        SELECT_ENTRY, FROM_ENTRY, ORDER_ENTRY
+        SELECT_ENTRY, FROM_ENTRY, VISIBLE_ENTRY, ORDER_ENTRY
     );
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt.query_map([pattern], row_to_book)?;
@@ -1442,6 +1554,79 @@ mod tests {
         // 本地书仍按内容哈希取到、且有文件。
         let got_local = get_book(&conn, &local.book.id).unwrap().unwrap();
         assert!(got_local.file_path.is_some());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn link_remote_metadata_entry_to_local_asset_hides_remote_shell() {
+        let dir = temp_library("remote-link");
+        let conn = open_library(&dir.join("library.sqlite")).unwrap();
+        let local = import_fixture(&conn, &dir, "local.epub", "Local Volume", "Local Author");
+        let local_edition_id = local.book.edition_id.clone().unwrap();
+
+        conn.execute_batch(
+            "INSERT INTO series(id,title,author,description,created_at,updated_at)
+               VALUES('series:remote-link','Remote Series','Remote Author','Remote description',0,0);
+             INSERT INTO volume(id,series_id,kind,volume_number,title,created_at,updated_at)
+               VALUES('vol:remote-link','series:remote-link','main',1,'Remote Volume',0,0);
+             INSERT INTO edition(id,volume_id,language,rights_status,created_at,updated_at)
+               VALUES('ed:remote-link','vol:remote-link','ja','official_purchase',0,0);
+             INSERT INTO source(id,name,kind,created_at)
+               VALUES('src:test','Test Source','metadata',0);
+             INSERT INTO source_record(id,source_id,entity_type,entity_id,remote_url,remote_id,rights_status)
+               VALUES('sr:remote-link','src:test','edition','ed:remote-link','https://example.test/remote','remote-1','official_purchase');",
+        )
+        .unwrap();
+
+        assert_eq!(list_books(&conn).unwrap().len(), 2);
+        assert_eq!(
+            get_book(&conn, "ed:remote-link")
+                .unwrap()
+                .unwrap()
+                .availability
+                .as_deref(),
+            Some("remote")
+        );
+        assert_eq!(search_books(&conn, "Remote").unwrap().len(), 1);
+
+        let linked = link_remote_to_local(&conn, "ed:remote-link", &local.book.id, 2000).unwrap();
+        assert_eq!(linked.id, local.book.id);
+        assert_eq!(linked.edition_id.as_deref(), Some(local_edition_id.as_str()));
+        assert_eq!(linked.availability.as_deref(), Some("local"));
+
+        let books = list_books(&conn).unwrap();
+        assert_eq!(books.len(), 1);
+        assert_eq!(books[0].id, local.book.id);
+        assert!(get_book(&conn, "ed:remote-link").unwrap().is_none());
+        assert!(search_books(&conn, "Remote").unwrap().is_empty());
+
+        let moved_entity: String = conn
+            .query_row(
+                "SELECT entity_id FROM source_record WHERE id = 'sr:remote-link'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(moved_entity, local_edition_id);
+
+        // 模拟同一远程搜索再次写出 edition 空壳，但 source_record 已经归到本地 edition。
+        // 这种无 asset 且无 source_record 的空壳不应重新出现在书架或搜索结果里。
+        conn.execute_batch(
+            "INSERT INTO series(id,title,author,created_at,updated_at)
+               VALUES('series:remote-link','Remote Series','Remote Author',0,0);
+             INSERT INTO volume(id,series_id,kind,volume_number,title,created_at,updated_at)
+               VALUES('vol:remote-link','series:remote-link','main',1,'Remote Volume',0,0);
+             INSERT INTO edition(id,volume_id,language,rights_status,created_at,updated_at)
+               VALUES('ed:remote-link','vol:remote-link','ja','official_purchase',0,0);",
+        )
+        .unwrap();
+
+        let books = list_books(&conn).unwrap();
+        assert_eq!(books.len(), 1);
+        assert_eq!(books[0].id, local.book.id);
+        assert!(get_book(&conn, "ed:remote-link").unwrap().is_none());
+        assert!(search_books(&conn, "Remote").unwrap().is_empty());
 
         let _ = std::fs::remove_dir_all(&dir);
     }
