@@ -1,5 +1,37 @@
 # 下一步任务队列
 
+## 📌 交接留言（2026-06-17，给寝室电脑 Codex）
+
+先同步 GitHub：
+
+```powershell
+cd E:\workspace\game-cooperative-plan\lightnovel-reader
+git fetch --all --prune
+git checkout main
+git pull --ff-only
+git status -sb
+```
+
+当前事实：
+
+- `main` 已合并到 PR #17 / v0.5-h `catalog_fts`，在线元数据条目已能进入统一目录搜索。
+- 发版前最后的原生文件 / 文件夹选择框人工项已补验通过。
+- `npm.cmd run package:beta` 已通过，生成 `dist-beta/lightnovel-reader-v0.1.0-release-windows-x64.zip`。
+- 如果看到未跟踪的本机文件（例如 `.codex/config.toml`），不要提交，除非明确确认它属于项目配置。
+
+已完成：
+
+- 真实 Tauri 窗口里点击“导入 EPUB”，确认弹出 Windows 原生 `#32770` 文件对话框（标题“打开”）；选择 smoke Vol.1 后，`library_list` 出现 `Smoke Test Light Novel Vol.1`，本地 `user_owned`。
+- 真实 Tauri 窗口里点击“导入文件夹”，确认弹出 Windows 原生 `#32770` 文件夹对话框（标题“选择要上传的文件夹”）；选择 smoke fixtures 文件夹后，`library_list` 出现 `Smoke Test Light Novel Vol.2`，本地 `user_owned`。
+- `npm.cmd run package:beta` 已通过，生成 `dist-beta/lightnovel-reader-v0.1.0-release-windows-x64` 与 `.zip`。
+
+下一步优先级：
+
+1. 若要发便携测试版，先在寝室电脑重新跑一次 `npm.cmd run package:beta`，基于该机器生成的 `dist-beta/lightnovel-reader-v0.1.0-release-windows-x64.zip` 做分发前人工检查。
+2. 若继续功能开发，优先做 **远程条目去重 / 本地条目手动关联**：当远程 metadata 条目与用户导入的本地 EPUB 描述同一本书时，提供可控的人工关联，而不是自动合并。
+3. 做功能前先读 `docs/resource-library-plan/8_桥接协议_v0.1.md` 与 `crates/reading-core/src/library.rs` 的 edition/asset/source_record 模型；保持 HTTP 在 `src-tauri` 壳侧，解析和落库在 `reading-core`。
+4. 继续遵守版权边界：Bangumi / なろう 只做元数据 + 外链，不做正文抓取；`library.acquireRemote` 仍只允许青空公共版权条目。
+
 ## 📌 交接留言（2026-06-17，v0.5-h catalog_fts）
 
 当前分支：`feature/v0.5h-catalog-fts`。PR #16（Bangumi）已合并进 `main`，本分支从最新 `main` 开出。
@@ -20,10 +52,9 @@
 - `node scripts/check-dev-memory.mjs` 通过。
 - `git diff --check` 通过（仅 Windows 换行提示）。
 
-下一步优先级：
+当前状态：
 
-1. 提交、推送并开 PR。
-2. v0.5-h 合并后，可继续做远程条目去重/本地条目手动关联；或回到发版前人工项：原生文件/文件夹选择对话框点一次，然后 `npm run package:beta`。
+- 已合并进 `main`（PR #17）。本段保留为历史交接记录；继续开发请看本文顶部“给寝室电脑 Codex”。
 
 ## 📌 交接留言（2026-06-17，v0.5-g Bangumi 元数据源）
 
@@ -48,11 +79,9 @@
 - `library.acquireRemote` 仍只支持青空 `public_domain` 条目；不要让 Bangumi/なろう 进入正文获取路径。
 - HTTP 继续留在 src-tauri 壳侧；解析/落库在 `reading-core`；前端继续只通过 `src/platform`。
 
-下一步优先级：
+当前状态：
 
-1. 跑收工检查：`node scripts/check-arch.mjs`、`node scripts/check-dev-memory.mjs`、`git diff --check`；若无问题，提交、推送并开 PR。
-2. 合并 v0.5-g 后，优先做 `catalog_fts`，让 remote metadata 条目进入独立目录全文搜索。
-3. 仍挂着的人工项：原生文件/文件夹选择对话框点一次，然后 `npm run package:beta` 发版。
+- 已合并进 `main`，且后续 `catalog_fts` 与发版前原生选择框人工项也已完成。本段保留为历史交接记录；继续开发请看本文顶部“给寝室电脑 Codex”。
 
 ## 📌 交接留言（2026-06-17，给实验室电脑 Codex）
 
@@ -64,12 +93,9 @@
 - 验证已跑：`cargo test --workspace`（reading-core 68 passed）、`npm.cmd run build`、`node scripts/check-arch.mjs`、`node scripts/check-dev-memory.mjs`、`git diff --check`；另用官方 API 做过一次 HTTP 200 轻量探测。
 - 2026-06-17 接手补验：`npm run tauri dev` 真窗口 + WebView2 CDP 联网 smoke 通过 AniList / なろう / 青空三源；なろう `転生` 返回“官方免费 · 外链”远程条目（样例 `https://ncode.syosetu.com/n6316bn/`），青空 `羅生門` acquire 后可打开，青空非公共版权与无 HTML URL 样例均拒绝下载。为适配本机 Windows 用户代理，`src-tauri/Cargo.toml` 的 reqwest 增加 `system-proxy` feature。
 
-下一步优先级：
+当前状态：
 
-1. 收尾 PR #14：确认最终常规检查结果，推送更新后的 `feature/v0.5f-narou-metadata`（包含 `system-proxy` 与 DEV_LOG/NEXT_ACTIONS 补记）。
-2. 不要把なろう正文抓取或缓存加入内核；正文/章节抓取类来源仍按 ToS 审核后走 v0.7 插件运行时。
-3. 后续连接器优先评估 Bangumi 元数据；再做 `catalog_fts` 让远程条目可全文搜。
-4. 仍挂着的人工项：原生文件/文件夹选择对话框点一次，然后 `npm run package:beta` 发版。
+- 已合并进 `main`，且 Bangumi、`catalog_fts`、发版前原生选择框人工项也已完成。本段保留为历史交接记录；继续开发请看本文顶部“给寝室电脑 Codex”。
 
 ## 📌 交接留言（2026-06-16，给寝室电脑的 Claude / 下一会话）
 
@@ -111,11 +137,11 @@
 - **真实 NSIS 安装器/卸载器静默装卸验证通过**（≈7.4MB）。
 - 文档整理 37 → 23（建 `docs/README.md` 索引、合并去重）。
 
-**距 v0.3.1 发版仅剩：**
+**v0.3.1 发版前人工项状态（2026-06-17 更新）：**
 
-1. 合并 [PR #1](https://github.com/haryqs/lightnovel-reader/pull/1) 到 main。
-2. 人工点一次原生文件/文件夹选择对话框（约 20 秒；导入逻辑已由 smoke:p0 路径版证过，自动化够不着原生对话框）。
-3. `npm.cmd run package:beta` 出便携测试包发版。
+- PR #1 以来的主线内容已进入 `main`。
+- 原生文件 / 文件夹选择对话框已在真实 Tauri 窗口补验通过。
+- `npm.cmd run package:beta` 已生成便携测试包。
 
 ## P0.5：打包发版（配置就绪，已验证一次）
 

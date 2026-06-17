@@ -1233,3 +1233,27 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
 下一步：
 
 - 提交、推送并开 PR；若 v0.5-h 合并，在线元数据侧的下一步可转向远程条目去重/本地条目手动关联，或回到发版前人工项（原生文件/文件夹选择对话框 + `npm run package:beta`）。
+
+## 2026-06-17：发版前原生选择框冒烟与 beta 便携包
+
+背景：v0.5-h 合并进 `main` 后，回到 v0.3.1 发版前最后的人工项：真实 Tauri 窗口里点一次系统原生文件 / 文件夹选择对话框，并在通过后生成 beta 便携测试包。
+
+验证：
+
+- 已同步 `main` 到 `origin/main` 最新提交（PR #17 merge commit）。
+- `npm.cmd run smoke:fixtures` 生成 smoke EPUB 样本。
+- `npm run tauri dev` 真实窗口启动成功；通过 WebView2 CDP 触发书库 UI 按钮，再用 Windows 原生窗口枚举确认对话框：
+  - “导入 EPUB”弹出系统 `#32770` 文件对话框，标题“打开”；选择 `smoke-test-lightnovel-vol1.epub` 后，后端 `library_list` 出现 `Smoke Test Light Novel Vol.1`，`availability=local`、`rightsStatus=user_owned`。
+  - “导入文件夹”弹出系统 `#32770` 文件夹对话框，标题“选择要上传的文件夹”；选择 smoke fixtures 文件夹后，后端 `library_list` 出现 `Smoke Test Light Novel Vol.2`，`availability=local`、`rightsStatus=user_owned`，Vol.1 复制本按既有去重路径处理。
+- `npm.cmd run package:beta` 通过；产物：
+  - `dist-beta/lightnovel-reader-v0.1.0-release-windows-x64`
+  - `dist-beta/lightnovel-reader-v0.1.0-release-windows-x64.zip`
+
+未验证 / 阻塞：
+
+- 本轮没有重跑 NSIS 安装器 / 卸载器；该项此前已通过一次。此次只验证发版前剩余的原生选择框和 beta 便携包。
+
+下一步：
+
+- 寝室电脑 Codex 接手时先同步 `main`，再按 `NEXT_ACTIONS.md` 顶部交接：若发便携测试版，在目标机器重跑 `npm.cmd run package:beta`；若继续功能开发，优先做远程条目去重 / 本地条目手动关联。
+- 后续继续保持边界：Bangumi / なろう 只做元数据 + 外链，不做正文抓取；`library.acquireRemote` 仍只允许青空公共版权条目。

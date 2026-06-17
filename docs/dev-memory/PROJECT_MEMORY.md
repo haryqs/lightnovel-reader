@@ -48,8 +48,9 @@
 - 已新增 `npm.cmd run installer:web`，可生成 `LightNovelReaderSetup.exe` Web 下载安装器；公网发布时必须嵌入 HTTPS zip URL 与 SHA-256。
 - 已新增持久化解析缓存、SQLite 迁移框架、章节 HTML 安全清洗（防 XSS）；reading-core 测试 49 个全过。
 - v0.4 进行中：标注 JSON 导出 + 跨元素高亮 + 稳健定位（已合并）；封面缩略图（迁移 v2 + image 依赖，待合 PR）。
+- v0.5 在线元数据主线已合并到 `main`：AniList / 青空文库 / 小説家になろう / Bangumi 均接入在线找书；青空公共版权条目可 acquire，Bangumi / なろう 只做元数据 + 外链；`catalog_fts` 已覆盖本地资产与远程 metadata 条目搜索。
 - v0.3.1 三套自动冒烟全绿（`smoke:tauri`/`smoke:p0`/`smoke:p1`，覆盖开书/翻页/划词高亮/进度+标注重启恢复/真实 Calibre 读取）+ 真实 NSIS 安装器/卸载器装卸验证通过（≈7.4MB）。
-- 仅剩原生文件/文件夹选择对话框为人工验证项；之后即可 `package:beta` 发版。发布与测试统一见 `docs/current-project/发布与测试.md`。
+- 2026-06-17 已补过真实 Tauri 窗口里的原生文件/文件夹选择对话框冒烟，并已通过 `npm.cmd run package:beta` 生成 `dist-beta/lightnovel-reader-v0.1.0-release-windows-x64.zip`。发布与测试统一见 `docs/current-project/发布与测试.md`。
 
 ## 不可变约束
 
