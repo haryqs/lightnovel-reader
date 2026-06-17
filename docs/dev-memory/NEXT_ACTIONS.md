@@ -1,5 +1,30 @@
 # 下一步任务队列
 
+## 📌 交接留言（2026-06-17，v0.5-h catalog_fts）
+
+当前分支：`feature/v0.5h-catalog-fts`。PR #16（Bangumi）已合并进 `main`，本分支从最新 `main` 开出。
+
+已完成：
+
+- `crates/reading-core/src/library.rs` 新增 schema 迁移 v5：重建 `catalog_fts(edition_id UNINDEXED, title, author, series_title)`，回填 `edition → volume → series` 实体目录，并用 `edition/volume/series` 触发器同步更新。
+- `library::search_books` 的 ≥3 字路径从旧 `books_fts` 改走 `catalog_fts`，本地 asset 与远程 metadata-only 条目都能被标题/作者/系列命中；短词 LIKE 兜底保持不变。
+- 测试覆盖：schema 版本升到 5；v4 旧库远程条目升级后回填进 `catalog_fts`；远程 metadata-only 条目可被标题/作者/系列长词搜索命中，且标题/作者更新会同步 FTS。
+- 协议 8、DEV_LOG、DECISIONS 已同步。
+
+已验证：
+
+- `cargo test -p reading-core` 通过（73 passed）。
+- `cargo test --workspace` 通过（reading-core 73 passed）。
+- `npm.cmd run build` 通过。
+- `node scripts/check-arch.mjs` 通过。
+- `node scripts/check-dev-memory.mjs` 通过。
+- `git diff --check` 通过（仅 Windows 换行提示）。
+
+下一步优先级：
+
+1. 提交、推送并开 PR。
+2. v0.5-h 合并后，可继续做远程条目去重/本地条目手动关联；或回到发版前人工项：原生文件/文件夹选择对话框点一次，然后 `npm run package:beta`。
+
 ## 📌 交接留言（2026-06-17，v0.5-g Bangumi 元数据源）
 
 本轮 Codex 继续 v0.5-g，新增 **Bangumi（中文/ACG 元数据）** 在线找书来源。当前分支：`feature/v0.5g-bangumi-metadata`。

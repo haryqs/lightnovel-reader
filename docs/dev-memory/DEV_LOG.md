@@ -1205,3 +1205,31 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
 
 - 跑收工检查：`node scripts/check-arch.mjs`、`node scripts/check-dev-memory.mjs`、`git diff --check`。
 - 若 v0.5-g 合并后继续推进，优先做 `catalog_fts`，让 remote metadata 条目进入独立目录全文搜索；不要把 Bangumi/なろう 正文抓取放进内核。
+
+## 2026-06-17：v0.5-h catalog_fts 覆盖远程 metadata 条目搜索
+
+背景：v0.5-d/g 接入多个在线元数据源后，远程条目已经能落库和上书架，但 `library.search` 的 ≥3 字路径仍走 `books_fts`，只覆盖本地 EPUB 镜像表；远程 metadata-only 条目只能靠短词 LIKE 兜底。
+
+变更：
+
+- `crates/reading-core/src/library.rs`：新增 schema 迁移 v5，重建 `catalog_fts` 为 `edition_id UNINDEXED + title/author/series_title` 的 trigram FTS 表；回填现有 `edition → volume → series` 实体条目，并添加 `edition/volume/series` 触发器保持目录索引同步。
+- `library::search_books`：≥3 字搜索改走 `catalog_fts` 并回连实体读路径；本地 asset 与远程 metadata-only 条目统一可搜，短词 LIKE 路径保持不变。
+- 测试更新：schema 版本断言升到 5；新增 v4→v5 远程条目回填测试；远程 metadata-only 条目测试覆盖标题/作者/系列命中以及标题/作者更新后的 FTS 同步。
+- `docs/resource-library-plan/8_桥接协议_v0.1.md`：同步 `library.search` 语义为“已落库目录条目（本地资产 + 远程 metadata）”。
+
+验证：
+
+- `cargo test -p reading-core` 通过（73 passed）。
+- `cargo test --workspace` 通过（reading-core 73 passed）。
+- `npm.cmd run build` 通过（内含 `check-arch` + `tsc` + `vite build`）。
+- `node scripts/check-arch.mjs` 通过。
+- `node scripts/check-dev-memory.mjs` 通过。
+- `git diff --check` 通过（仅 Windows 换行提示）。
+
+未验证 / 阻塞：
+
+- 未跑真窗口 UI 冒烟；本轮是 core 搜索/迁移行为变更，已由 reading-core 单测覆盖本地与远程条目搜索。
+
+下一步：
+
+- 提交、推送并开 PR；若 v0.5-h 合并，在线元数据侧的下一步可转向远程条目去重/本地条目手动关联，或回到发版前人工项（原生文件/文件夹选择对话框 + `npm run package:beta`）。
