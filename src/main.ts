@@ -819,6 +819,9 @@ function renderLibraryBooks() {
     const isRemote = b.availability === 'remote' || (!b.filePath && !!b.remoteUrl)
     const card = document.createElement('div')
     card.className = isRemote ? 'book-card book-card-remote' : 'book-card'
+    card.dataset.bookId = b.id
+    if (b.editionId) card.dataset.editionId = b.editionId
+    card.dataset.availability = b.availability || (isRemote ? 'remote' : 'local')
     const cover = document.createElement('div')
     cover.className = 'cover'
     // 书架优先加载缩略图（小图省内存、滚动更流畅），无则回退原封面
@@ -859,6 +862,7 @@ function renderLibraryBooks() {
       const linkBtn = document.createElement('button')
       linkBtn.type = 'button'
       linkBtn.className = 'btn btn-subtle'
+      linkBtn.dataset.action = 'link-remote'
       linkBtn.textContent = '关联本地'
       linkBtn.addEventListener('click', (event) => {
         event.stopPropagation()

@@ -1285,3 +1285,32 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
 下一步：
 
 - 跑 `git diff --check` 后推送分支并开 PR；后续可继续优化候选排序/展示，但不要改成自动合并。
+
+## 2026-06-17：远程条目手动关联真窗口冒烟脚本
+
+背景：PR #18 已实现 `library.linkRemoteToLocal`，但还欠真实 Tauri 窗口里的 UI 交互验证。为避免只做一次性手测，本轮把验证固化为可复跑脚本。
+
+变更：
+
+- `src/main.ts`：书架卡片增加 `data-book-id` / `data-edition-id` / `data-availability`，远程卡片的“关联本地”按钮增加 `data-action="link-remote"`，用于稳定 UI 自动化定位，不改变业务逻辑。
+- `scripts/tauri-remote-link-smoke.mjs`：新增真窗口冒烟。流程：隔离 app data → 生成/导入 smoke EPUB → 写入本地进度和标注 → 在线搜索远程 metadata（默认 AniList `Tanya`）→ 点击远程卡片“关联本地” → 确认远程空壳消失、本地书仍在、进度/标注键不变 → 重复在线搜索确认无来源远程空壳不反弹。
+- `package.json`：新增 `npm.cmd run smoke:remote-link`。
+
+验证：
+
+- `npm.cmd run build` 通过。
+- `node --check scripts/tauri-remote-link-smoke.mjs` 通过。
+- `npm.cmd run tauri -- build --debug --no-bundle` 通过。
+- `npm.cmd run smoke:remote-link` 通过：AniList `Tanya` 返回 `Youjo Senki`（`ed:src:anilist:94846`），成功关联到 `Smoke Test Light Novel Vol.1`；关联后本地书仍可见，目标远程空壳不可见，`get_progress` 与 `list_annotations` 仍按本地 `asset.id` 命中；重复在线搜索后目标空壳仍不出现在 `library_list`。
+- `node scripts/check-arch.mjs` 通过。
+- `node scripts/check-dev-memory.mjs` 通过。
+- `cargo test --workspace` 通过（reading-core 74 passed）。
+- `git diff --check` 通过（仅 Windows 换行提示）。
+
+未验证 / 阻塞：
+
+- 未重新跑 NSIS 安装/卸载和 `package:beta`；本轮目标是 PR #18 的远程关联 UI 冒烟，不是发布包复验。
+
+下一步：
+
+- 更新 PR #18 并进入 review/merge；若合并后要发便携测试版，再在目标机器跑 `npm.cmd run package:beta`。
