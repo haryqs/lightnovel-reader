@@ -15,7 +15,7 @@ git status -sb
 当前事实：
 
 - `main` 已合并到 PR #17 / v0.5-h `catalog_fts`，在线元数据条目已能进入统一目录搜索。
-- 当前分支 `codex/remote-local-link` 已推送并开 PR #18，内容是远程 metadata 条目 ↔ 本地可读资产的人工关联；不要直推 `main`。
+- `main` 已合并 PR #18（远程 metadata 条目 ↔ 本地可读资产人工关联）与 PR #19（`smoke:remote-link` 真窗口冒烟脚本）。
 - 发版前最后的原生文件 / 文件夹选择框人工项已补验通过。
 - `npm.cmd run package:beta` 已通过，生成 `dist-beta/lightnovel-reader-v0.1.0-release-windows-x64.zip`。
 - 如果看到未跟踪的本机文件（例如 `.codex/config.toml`），不要提交，除非明确确认它属于项目配置。
@@ -27,11 +27,12 @@ git status -sb
 - `npm.cmd run package:beta` 已通过，生成 `dist-beta/lightnovel-reader-v0.1.0-release-windows-x64` 与 `.zip`。
 - `library.linkRemoteToLocal` 已实现第一版：core 移动 `source_record` 到本地 `edition`，保留本地 `asset.id`，隐藏无 asset/无 source_record 的远程空壳；前端远程卡片提供“关联本地”动作，由用户显式确认。
 - `npm.cmd run smoke:remote-link` 已新增并通过：真实 Tauri 窗口里导入本地 smoke EPUB、在线搜 AniList `Tanya`、把 `Youjo Senki` 远程卡片关联到本地书，验证远程空壳消失、进度/标注键不变、重复在线搜索不反弹。
+- PR #18/#19 合并后，`npm.cmd run package:beta` 已在当前机器重新通过；zip 解压后用 release `reader.exe` 跑 `tauri-webdriver-smoke` 启动冒烟通过。
 
 下一步优先级：
 
-1. 先完成本分支收工检查并更新 PR #18：`node scripts/check-arch.mjs`、`node scripts/check-dev-memory.mjs`、`npm.cmd run build`、`cargo test --workspace`、`git diff --check`。
-2. PR #18 review/merge 后，若要发便携测试版，先在目标机器重新跑一次 `npm.cmd run package:beta`，基于该机器生成的 `dist-beta/lightnovel-reader-v0.1.0-release-windows-x64.zip` 做分发前人工检查。
+1. 若要发便携测试版，可以使用当前 `dist-beta/lightnovel-reader-v0.1.0-release-windows-x64.zip` 作为候选；正式发出前再做一次人工下载/解压/启动抽检即可。
+2. 若继续功能开发，下一项建议做“本地条目详情/来源记录可视化”：在书库卡片或详情面板展示已关联的来源（AniList/Bangumi/なろう/青空）和外链，仍不自动合并、不抓正文。
 3. 后续若继续关联体验，只能做候选排序/提示/批量人工确认，不要自动合并；继续遵守版权边界：Bangumi / なろう 只做元数据 + 外链，不做正文抓取；`library.acquireRemote` 仍只允许青空公共版权条目。
 
 ## 📌 交接留言（2026-06-17，v0.5-h catalog_fts）

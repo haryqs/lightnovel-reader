@@ -1314,3 +1314,26 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
 下一步：
 
 - 更新 PR #18 并进入 review/merge；若合并后要发便携测试版，再在目标机器跑 `npm.cmd run package:beta`。
+
+## 2026-06-17：PR #18/#19 合并后重跑便携测试包与解压启动检查
+
+背景：远程条目手动关联功能（PR #18）与对应真窗口冒烟脚本（PR #19）已合并进 `main`，回到发版队列，按交接要求在当前机器重新生成便携测试包并做分发前解压/启动检查。
+
+验证：
+
+- `git checkout main && git pull --ff-only` 后同步到 `bc49c6a`（PR #19 merge）。
+- `npm.cmd run package:beta` 通过，生成：
+  - `dist-beta/lightnovel-reader-v0.1.0-release-windows-x64`
+  - `dist-beta/lightnovel-reader-v0.1.0-release-windows-x64.zip`
+- 将 zip 解压到临时目录，确认包内存在 `reader.exe`。
+- 对解压出的 release `reader.exe` 运行 `node scripts/tauri-webdriver-smoke.mjs --application <extracted reader.exe>` 通过：真实 WebView2/Tauri 窗口启动、light 主题、品牌/插图/书库入口/导入按钮/来源面板均正常。
+- 临时解压目录已清理。
+
+未验证 / 阻塞：
+
+- 本轮没有重跑 NSIS 安装/卸载；当前发版路径是便携 zip。
+- 未额外手动打开启动器 `.cmd`，但 release `reader.exe` 已通过真窗口启动冒烟。
+
+下一步：
+
+- 若要对外分发测试版，使用当前机器生成的 `dist-beta/lightnovel-reader-v0.1.0-release-windows-x64.zip` 作为候选；正式发出前可再做一次人工下载/解压/启动抽检。
