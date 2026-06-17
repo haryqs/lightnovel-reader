@@ -1151,3 +1151,30 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
 未验证 / 阻塞：
 
 - 尚未跑 `npm run tauri dev` 真窗口联网冒烟；需后续验证 AniList/なろう/青空三源切换、なろう搜索结果落库与官方外链打开。
+
+## 2026-06-17：v0.5-f 真窗口联网冒烟 + Windows 系统代理兼容
+
+背景：接手 PR #14 后按交接优先级跑 `npm run tauri dev` 真窗口联网冒烟。首次在真实 Tauri 窗口中触发なろう搜索时，PowerShell `Invoke-WebRequest` 可经 Windows 用户代理访问 `api.syosetu.com`，但壳侧 `reqwest` 直连失败；本机 Internet Settings 启用了 `127.0.0.1:7890` 用户代理，WinHTTP/环境变量未配置代理。
+
+变更：
+
+- `src-tauri/Cargo.toml`：`reqwest` 保持 `default-features=false` + `rustls-tls`，新增 `system-proxy` feature，让壳侧 HTTP 传输尊重系统代理配置；core 仍无网络依赖。
+- `Cargo.lock` 随 reqwest `system-proxy` 增加 `windows-registry` 等间接依赖。
+
+验证：
+
+- `npm run tauri dev` 真实窗口启动成功；通过 WebView2 CDP 连接到 `http://localhost:3000/` 的 Tauri WebView 页面执行联网 smoke。
+- 在线来源下拉确认三源顺序：AniList / 小説家になろう / 青空文库。
+- なろう UI 搜索 `転生` 返回远程卡片，样例《転生したらスライムだった件》显示“官方免费 · 外链”，落库为 `rightsStatus=official_free`、`availability=remote`、`remoteUrl=https://ncode.syosetu.com/n6316bn/`；对なろう条目调用 `library.acquireRemote` 被拒绝（只支持青空公共版权条目）。
+- AniList 搜索 `Tanya` 返回 `official_purchase` 远程条目，样例 `Youjo Senki` 跳 `https://anilist.co/manga/94846`。
+- 青空搜索 `羅生門` 返回公共版权条目；`library.acquireRemote` 成功合成为 `availability=cached` 本地可读资产，`library.open` + `chapter.get` 打开首章成功（章节 HTML 约 27k 字符）。
+- 青空拒绝分流补验：`作品著作権フラグ=あり` 样例《食品の混ぜ物処理および調理の毒物（1820）》拒绝下载；公共版权但无 XHTML/HTML URL 样例《更級日記》拒绝站内阅读。
+
+未验证 / 阻塞：
+
+- 未额外验证默认浏览器窗口实际打开行为；本轮验证到远程卡片的 `remoteUrl`、`availability=remote`、无 `filePath`，以及非可 acquire 条目不进入正文下载路径。
+
+下一步：
+
+- 跑常规收工检查：`cargo test --workspace`、`npm.cmd run build`、`node scripts/check-arch.mjs`、`node scripts/check-dev-memory.mjs`、`git diff --check`。
+- 若 PR #14 继续推进，更新分支并把系统代理兼容纳入 PR 描述；后续转向 Bangumi 元数据或 `catalog_fts`。

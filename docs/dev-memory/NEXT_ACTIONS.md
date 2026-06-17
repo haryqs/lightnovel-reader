@@ -2,19 +2,20 @@
 
 ## 📌 交接留言（2026-06-17，给实验室电脑 Codex）
 
-先同步 GitHub：`git fetch --all --prune`，切到最新 main 后查看/接续 `feature/v0.5f-narou-metadata`（PR 创建后以 PR 为准）。本轮 Codex 已完成 **v0.5-f 小説家になろう官方 API 元数据源**：
+先同步 GitHub：`git fetch --all --prune`，切到最新 main 后查看/接续 `feature/v0.5f-narou-metadata` / PR #14。本轮 Codex 已完成 **v0.5-f 小説家になろう官方 API 元数据源**，并在后续接手中补过真窗口联网冒烟：
 
 - core：`crates/reading-core/src/connectors.rs` 新增 `connectors::narou`，解析官方 API JSON（`allcount` 汇总行跳过，`ncode/title/writer/story` 映射为 `RemoteEntry`），落库为 `rights_status=official_free`、`availability=remote`，补 3 个单测。
 - shell：`src-tauri/src/lib.rs` 的 `library_search_remote_source` 新增 `source=narou`，壳侧用 reqwest GET 官方 API；HTTP 留在壳，解析/落库仍在 core。
 - frontend/protocol/docs：`RemoteLibrarySource` 扩展为 `anilist|aozora|narou`，在线找书下拉新增“小説家になろう（Web小说元数据）”；协议 8、DEV_LOG、DECISIONS 已同步。
 - 验证已跑：`cargo test --workspace`（reading-core 68 passed）、`npm.cmd run build`、`node scripts/check-arch.mjs`、`node scripts/check-dev-memory.mjs`、`git diff --check`；另用官方 API 做过一次 HTTP 200 轻量探测。
+- 2026-06-17 接手补验：`npm run tauri dev` 真窗口 + WebView2 CDP 联网 smoke 通过 AniList / なろう / 青空三源；なろう `転生` 返回“官方免费 · 外链”远程条目（样例 `https://ncode.syosetu.com/n6316bn/`），青空 `羅生門` acquire 后可打开，青空非公共版权与无 HTML URL 样例均拒绝下载。为适配本机 Windows 用户代理，`src-tauri/Cargo.toml` 的 reqwest 增加 `system-proxy` feature。
 
 下一步优先级：
 
-1. 真窗口联网冒烟：`npm run tauri dev` 验证 AniList / なろう / 青空三源切换；なろう搜索应返回“官方免费 · 外链”远程条目，点击跳 `https://ncode.syosetu.com/<ncode>/`。
-2. 继续补青空 acquire 实机：公共版权条目可获取并打开，非公共版权/无 HTML URL 必须拒绝下载并只外链。
-3. 不要把なろう正文抓取或缓存加入内核；正文/章节抓取类来源仍按 ToS 审核后走 v0.7 插件运行时。
-4. 后续连接器优先评估 Bangumi 元数据；再做 `catalog_fts` 让远程条目可全文搜。
+1. 收尾 PR #14：确认最终常规检查结果，推送更新后的 `feature/v0.5f-narou-metadata`（包含 `system-proxy` 与 DEV_LOG/NEXT_ACTIONS 补记）。
+2. 不要把なろう正文抓取或缓存加入内核；正文/章节抓取类来源仍按 ToS 审核后走 v0.7 插件运行时。
+3. 后续连接器优先评估 Bangumi 元数据；再做 `catalog_fts` 让远程条目可全文搜。
+4. 仍挂着的人工项：原生文件/文件夹选择对话框点一次，然后 `npm run package:beta` 发版。
 
 ## 📌 交接留言（2026-06-16，给寝室电脑的 Claude / 下一会话）
 
