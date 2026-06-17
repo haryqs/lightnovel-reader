@@ -1178,3 +1178,30 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
 
 - 跑常规收工检查：`cargo test --workspace`、`npm.cmd run build`、`node scripts/check-arch.mjs`、`node scripts/check-dev-memory.mjs`、`git diff --check`。
 - 若 PR #14 继续推进，更新分支并把系统代理兼容纳入 PR 描述；后续转向 Bangumi 元数据或 `catalog_fts`。
+
+## 2026-06-17：v0.5-g Bangumi 书籍元数据源接入在线找书
+
+背景：v0.5-f 已完成なろう官方 API 元数据源和真窗口联网冒烟后，继续扩展更贴近中文/ACG 发现链路的元数据来源。Bangumi 本轮只作为书籍 subject 元数据目录，不作为正文来源、购买来源或可 acquire 来源。
+
+变更：
+
+- `crates/reading-core/src/connectors.rs`：新增 `connectors::bangumi`，构造 Bangumi OpenAPI `POST /v0/search/subjects` 请求体（`type=[1]` 书籍、`nsfw=false`），解析 `id/name/name_cn/short_summary/summary/images`，落库为 `rights_status=unknown`、`availability=remote`、`remoteUrl=https://bgm.tv/subject/<id>`；补解析、空响应、请求体和 ingest 上书架单测。
+- `src-tauri/src/lib.rs`：`library_search_remote_source` 新增 `source=bangumi`；HTTP POST 留在 Tauri 壳侧，设置 `Content-Type/Accept/User-Agent`，解析和落库仍交给 `reading-core`。
+- `src/platform/protocol.ts`、`index.html`、`src/main.ts`：`RemoteLibrarySource` 扩展为 `anilist|bangumi|aozora|narou`，在线找书下拉新增“Bangumi（中文/ACG 元数据）”；`unknown` 远程条目标签从“远程条目 · 官方外链”收紧为“远程条目 · 外链”，避免把 Bangumi 社区目录误写成官方授权入口。
+- `docs/resource-library-plan/8_桥接协议_v0.1.md` 同步四源协议说明，明确 Bangumi 只取标题/简介/封面/subject 外链。
+
+验证：
+
+- `cargo test --workspace` 通过（reading-core 72 passed）。
+- `npm.cmd run build` 通过（内含 `check-arch` + `tsc` + `vite build`）。
+- Bangumi OpenAPI 轻量探测通过：经系统代理 POST `https://api.bgm.tv/v0/search/subjects?limit=2` 返回 HTTP 200，含 `type=1` 书籍 subject。
+- `npm run tauri dev` 真窗口 + WebView2 CDP 冒烟通过：在线来源下拉确认四源 AniList / Bangumi / 小説家になろう / 青空文库；选择 Bangumi 搜索 `狼与香辛料` 返回远程卡片，卡片为 `book-card-remote`，有远程封面，标签为“远程条目 · 外链”。
+
+未验证 / 阻塞：
+
+- 本轮没有额外验证点击 Bangumi 卡片后默认浏览器实际打开 `bgm.tv/subject/<id>`；已验证远程卡片以外链条目呈现，且 `library.acquireRemote` 代码路径仍只允许青空 `src:aozora` 公共版权条目。
+
+下一步：
+
+- 跑收工检查：`node scripts/check-arch.mjs`、`node scripts/check-dev-memory.mjs`、`git diff --check`。
+- 若 v0.5-g 合并后继续推进，优先做 `catalog_fts`，让 remote metadata 条目进入独立目录全文搜索；不要把 Bangumi/なろう 正文抓取放进内核。

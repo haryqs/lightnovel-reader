@@ -345,3 +345,19 @@
 
 - 在线找书现在有三个内置来源：AniList（轻小说/ACG 商业元数据）、なろう（官方 Web 小说元数据）、青空文库（公共版权经典 + 可 acquire）。
 - 免费/站内全文的轻小说向来源仍归 v0.7 插件运行时和 ToS 门控，不因接入なろう API 而进入内核正文抓取。
+
+## 2026-06-17：Bangumi 作为社区/目录型书籍元数据源接入，不标记为官方授权入口
+
+决策：新增 `bangumi` 在线来源，使用 Bangumi OpenAPI `POST /v0/search/subjects` 搜索书籍 subject（`type=1`），只读取标题、简介、封面和 subject 外链。落库条目使用 `rights_status=unknown`、`availability=remote`，点击跳 `https://bgm.tv/subject/<id>`；`library.acquireRemote` 不支持 Bangumi。
+
+理由：
+
+- Bangumi 对中文/ACG 轻小说发现很有价值，但它是社区/目录型元数据源，不代表作品正文授权、购买授权或官方阅读入口。
+- 为避免误导，`unknown` 远程条目 UI 文案统一收紧为“远程条目 · 外链”，不再写“官方外链”。
+- 分层纪律不变：HTTP POST 在 Tauri 壳侧，Bangumi JSON 解析与落库映射在 `reading-core::connectors::bangumi`；core 不引入网络依赖。
+- 不新增协议消息，继续复用 `library.searchRemoteSource(source, query)`，source union 扩展为 `anilist|bangumi|aozora|narou`。
+
+后果：
+
+- 在线找书现在有四个内置来源：AniList（轻小说/ACG 商业元数据）、Bangumi（中文/ACG 目录元数据）、なろう（官方 Web 小说元数据）、青空文库（公共版权经典 + 可 acquire）。
+- Bangumi 不能成为正文抓取或缓存的依据；正文/章节类来源仍留给 v0.7 插件运行时、ToS 门控和用户显式选择。
