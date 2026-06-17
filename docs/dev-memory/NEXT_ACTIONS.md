@@ -1,27 +1,45 @@
 # 下一步任务队列
 
+## 📌 交接留言（2026-06-17，给实验室电脑 Codex）
+
+先同步 GitHub：`git fetch --all --prune`，切到最新 main 后查看/接续 `feature/v0.5f-narou-metadata`（PR 创建后以 PR 为准）。本轮 Codex 已完成 **v0.5-f 小説家になろう官方 API 元数据源**：
+
+- core：`crates/reading-core/src/connectors.rs` 新增 `connectors::narou`，解析官方 API JSON（`allcount` 汇总行跳过，`ncode/title/writer/story` 映射为 `RemoteEntry`），落库为 `rights_status=official_free`、`availability=remote`，补 3 个单测。
+- shell：`src-tauri/src/lib.rs` 的 `library_search_remote_source` 新增 `source=narou`，壳侧用 reqwest GET 官方 API；HTTP 留在壳，解析/落库仍在 core。
+- frontend/protocol/docs：`RemoteLibrarySource` 扩展为 `anilist|aozora|narou`，在线找书下拉新增“小説家になろう（Web小说元数据）”；协议 8、DEV_LOG、DECISIONS 已同步。
+- 验证已跑：`cargo test --workspace`（reading-core 68 passed）、`npm.cmd run build`、`node scripts/check-arch.mjs`、`node scripts/check-dev-memory.mjs`、`git diff --check`；另用官方 API 做过一次 HTTP 200 轻量探测。
+
+下一步优先级：
+
+1. 真窗口联网冒烟：`npm run tauri dev` 验证 AniList / なろう / 青空三源切换；なろう搜索应返回“官方免费 · 外链”远程条目，点击跳 `https://ncode.syosetu.com/<ncode>/`。
+2. 继续补青空 acquire 实机：公共版权条目可获取并打开，非公共版权/无 HTML URL 必须拒绝下载并只外链。
+3. 不要把なろう正文抓取或缓存加入内核；正文/章节抓取类来源仍按 ToS 审核后走 v0.7 插件运行时。
+4. 后续连接器优先评估 Bangumi 元数据；再做 `catalog_fts` 让远程条目可全文搜。
+
 ## 📌 交接留言（2026-06-16，给寝室电脑的 Claude / 下一会话）
 
 你好。这是另一台机器上的 Claude 留的言。**第一件事：`git pull`**——main 已经领先你本地不少。
 
-本轮（已全部合并进 main，PR #6/#7/#8/#9）完成了 v0.5 资源/元数据层从地基到首个连接器的整条链：
+本轮（已全部合并进 main，PR #6/#7/#8/#9/#11/#12/#13）完成了 v0.5 资源/元数据层从地基到在线来源扩展的主链：
 
 - **v0.5-a/b**（PR #6）：实体模型 `series/volume/edition/asset` + `source/source_record` 落地（迁移 v3），从 books 回填 + 导入双写。`asset.id = 内容哈希`，标注/进度键不动。
 - **v0.5-c**（PR #7）：读路径**锚定 edition**（一个版本 = 一个书架条目），不再读 books；迁移 v4 把 `thumb_path` 迁到 asset；`LibraryBook.filePath/fileSize` 转可选。books 退为只读镜像（v0.6 可 DROP）。
 - **v0.5-d**（PR #9）：**首个元数据连接器 AniList** + 「在线找书」UI。core `connectors.rs`（查询/解析/落库，纯函数可测、无网络）+ 壳 `reqwest` 命令 `library_search_remote`（HTTP）。远程条目只展示封面/简介、点击跳官方（版权红线）。
+- **v0.5-e**（PR #11/#12/#13）：青空文库作为**公共版权经典文学**来源接入在线找书，并完成 `library.acquireRemote` 公共版权正文获取管线；青空不再表述为轻小说主来源。
+- **v0.5-f**（当前分支）：小説家になろう官方 API 接入在线找书，定位为 Web 小说元数据 + 官方入口，`official_free` 远程条目，不做正文获取。
 - **工具**（PR #8）：项目级 `.mcp.json` 接入 context7（实时文档）。**装好后想用要说 "use context7"**。
 
-**当前状态**：`cargo test -p reading-core` 58 全过；`cargo check --workspace` 退出 0；`npm run build` 通过；check-arch / check-dev-memory OK。工作树应为干净。
+**当前状态**：v0.5-f 实现中；本轮收工前需跑 `cargo test --workspace`、`npm.cmd run build`、check-arch / check-dev-memory / diff-check。
 
 **建议你接着做（任选，按价值排序）**：
 
-1. **实机验证**（推荐先做）：`npm run tauri dev` 真窗口里验证「🌐 在线找书」的 AniList/青空文库来源切换。AniList 是轻小说/ACG 元数据入口，条目应仍是“需购买/官方外链”；青空文库是公共版权经典文学入口，首次搜索应按需下载目录并缓存，公共版权条目应显示“公共版权经典 · 可站内读”，点击后获取官方 XHTML/HTML、合成为 cached asset 并能直接打开阅读。需联网。
+1. **实机验证**（推荐先做）：`npm run tauri dev` 真窗口里验证「🌐 在线找书」的 AniList/なろう/青空文库来源切换。AniList 是轻小说/ACG 商业元数据入口；なろう是官方 Web 小说元数据入口，条目应显示“官方免费 · 外链”并跳官方 ncode 页面；青空文库是公共版权经典文学入口，首次搜索应按需下载目录并缓存，公共版权条目应显示“公共版权经典 · 可站内读”，点击后获取官方 XHTML/HTML、合成为 cached asset 并能直接打开阅读。需联网。
 2. **青空 acquire 实机补验**：找一条 `rightsStatus=public_domain` 且带 ruby/插图的青空经典文学条目，确认正文 ruby 保留、图片/HTML 安全清洗不破坏阅读；再找非公共版权/无 HTML URL 条目确认命令层拒绝下载并只走外链。
 3. `catalog_fts`：让远程条目可全文搜（现在 books_fts 不含它们，远程条目只能 LIKE 短词命中）。
-4. 真正贴近轻小说的后续连接器：优先评估 Bangumi（中文/ACG 元数据）与 なろう（官方小说 API，可先做 metadata/官方入口）。カクヨム/Royal Road/正文抓取类来源必须先过 ToS 审核，倾向 v0.7 插件运行时而非内核连接器。
+4. 真正贴近轻小说的后续连接器：优先评估 Bangumi（中文/ACG 元数据）。カクヨム/Royal Road/正文抓取类来源必须先过 ToS 审核，倾向 v0.7 插件运行时而非内核连接器；なろう metadata 已由 v0.5-f 接入。
 4. 仍挂着的人工项：原生文件/文件夹选择对话框点一次，然后 `npm run package:beta` 发版。
 
-细节看 `DEV_LOG.md` 与 `DECISIONS.md`（2026-06-16 青空连接器与 acquire 决策）。协议变更在 `docs/resource-library-plan/8_桥接协议_v0.1.md`（新增/保留 `library.searchRemote`、`library.searchRemoteSource`、`library.acquireRemote`、`shell.openExternal`、`remoteUrl`、`rightsStatus`）。
+细节看 `DEV_LOG.md` 与 `DECISIONS.md`（2026-06-16 青空连接器、acquire、なろう metadata 决策）。协议变更在 `docs/resource-library-plan/8_桥接协议_v0.1.md`（新增/保留 `library.searchRemote`、`library.searchRemoteSource`、`library.acquireRemote`、`shell.openExternal`、`remoteUrl`、`rightsStatus`）。
 
 ---
 

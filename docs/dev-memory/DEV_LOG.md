@@ -1127,3 +1127,27 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
 未验证 / 阻塞：
 
 - 尚未跑真窗口联网冒烟；本次只是语义/UI/文档修正。
+
+## 2026-06-16：v0.5-f なろう官方 Web 小说元数据源接入在线找书
+
+背景：用户确认青空文库不是轻小说主来源后，继续推进更贴近轻小说/网文方向的合法来源。なろう采用官方小说 API，只做元数据与官方入口，不做正文抓取。
+
+变更：
+
+- `crates/reading-core/src/connectors.rs`：新增 `narou` 子模块，解析官方 API JSON（跳过 `allcount` 汇总行，映射 `ncode/title/writer/story`），生成 `rights_status=official_free`、`language=ja`、`site_url=https://ncode.syosetu.com/<ncode>/` 的远程条目；补 3 个单测（解析、空/坏 JSON、ingest 上书架）。
+- `src-tauri/src/lib.rs`：`library_search_remote_source` 新增 `source=narou` 分支；壳侧用 `reqwest` GET `https://api.syosetu.com/novelapi/api/`，传 `out=json/lim/word/order/of`，HTTP 留在壳，解析/落库仍进 core。
+- `src/platform/protocol.ts`、`index.html`、`src/main.ts`：`RemoteLibrarySource` 扩展为 `anilist|aozora|narou`，在线找书下拉框新增“小説家になろう（Web小说元数据）”，远程卡片复用 `official_free` 标签并点击跳官方外链。
+- `docs/resource-library-plan/8_桥接协议_v0.1.md`、`DECISIONS.md`、`NEXT_ACTIONS.md` 同步三源语义：AniList 商业 LN/ACG 元数据，なろう官方 Web 小说元数据，青空公共版权经典与 acquire 管线。
+
+验证：
+
+- `cargo test --workspace` 通过（reading-core 68 passed）。
+- `npm.cmd run build` 通过（内含 check-arch + tsc + vite build）。
+- `node scripts/check-arch.mjs` 通过。
+- `node scripts/check-dev-memory.mjs` 通过。
+- `git diff --check` 通过（仅 Windows 换行提示）。
+- 官方 API 轻量探测通过：`https://api.syosetu.com/novelapi/api/?out=json&lim=2&word=転生&of=n-t-w-s` 返回 HTTP 200、实际 ncode/title。
+
+未验证 / 阻塞：
+
+- 尚未跑 `npm run tauri dev` 真窗口联网冒烟；需后续验证 AniList/なろう/青空三源切换、なろう搜索结果落库与官方外链打开。

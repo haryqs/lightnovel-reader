@@ -559,6 +559,7 @@ let libraryBooks: LibraryBook[] = []
 let librarySearchTimer: number | null = null
 const REMOTE_SOURCE_LABEL: Record<RemoteLibrarySource, string> = {
   anilist: 'AniList',
+  narou: '小説家になろう（Web小说元数据）',
   aozora: '青空文库（公共版权经典）',
 }
 libraryPathInput.value = localStorage.getItem(LIBRARY_PATH_KEY) || DEFAULT_CALIBRE_LIBRARY

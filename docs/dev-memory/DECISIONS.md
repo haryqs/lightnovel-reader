@@ -330,3 +330,18 @@
 - 前端来源选择和远程卡片文案使用“青空文库（公共版权经典）/ 公共版权经典 · 可站内读”。
 - 后续若接 Bangumi/なろう，优先做 metadata/官方入口；正文站内阅读必须另做 ToS 审核或放入 v0.7 插件。
 - PR/交接文档不得再把青空写成“轻小说源”，只能写作“公共版权经典库”和“站内阅览管线验证源”。
+
+## 2026-06-16：小説家になろう作为官方 Web 小说元数据源接入，不做正文获取
+
+决策：新增 `narou` 在线来源，使用小説家になろう官方小说 API（`https://api.syosetu.com/novelapi/api/`）做在线找书。内核只解析 `ncode/title/writer/story`，落库为 `rights_status=official_free`、`availability=remote` 的远程条目；点击仍跳 `https://ncode.syosetu.com/<ncode>/` 官方页面。`library.acquireRemote` 不支持なろう。
+
+理由：
+
+- なろう比青空更贴近轻小说/网文发现，但作品仍由作者/平台持有版权；官方 API 适合索引、简介、作者与官方入口，不等于授权客户端下载或缓存正文。
+- 继续维持分层纪律：HTTP GET 在壳侧，API JSON 解析与落库映射在 `reading-core::connectors::narou`，core 不引入网络依赖。
+- 不新增协议消息，复用 `library.searchRemoteSource(source, query)` 并把 source union 扩展为 `anilist|aozora|narou`。
+
+后果：
+
+- 在线找书现在有三个内置来源：AniList（轻小说/ACG 商业元数据）、なろう（官方 Web 小说元数据）、青空文库（公共版权经典 + 可 acquire）。
+- 免费/站内全文的轻小说向来源仍归 v0.7 插件运行时和 ToS 门控，不因接入なろう API 而进入内核正文抓取。

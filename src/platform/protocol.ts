@@ -76,7 +76,7 @@ export interface LibraryBook {
   remoteUrl?: string
 }
 
-export type RemoteLibrarySource = 'anilist' | 'aozora'
+export type RemoteLibrarySource = 'anilist' | 'aozora' | 'narou'
 
 export interface ImportOutcome {
   book: LibraryBook
@@ -141,7 +141,7 @@ export interface ReaderBridge {
   searchLibraryBooks(query: string): Promise<LibraryBook[]>
   /** library.searchRemote — 在线元数据搜索（AniList），落库为远程条目并返回 */
   searchRemoteLibraryBooks(query: string): Promise<LibraryBook[]>
-  /** library.searchRemoteSource — 指定在线来源搜索（anilist|aozora），按需缓存来源目录 */
+  /** library.searchRemoteSource — 指定在线来源搜索（anilist|aozora|narou），按需缓存来源目录 */
   searchRemoteLibraryBooksFromSource(source: RemoteLibrarySource, query: string): Promise<LibraryBook[]>
   /** library.acquireRemote — 获取公共版权远程条目的正文并转为本地可读资产 */
   acquireRemoteLibraryBook(id: string): Promise<LibraryBook>
