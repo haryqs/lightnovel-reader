@@ -1,5 +1,5 @@
 import { ReaderCore, type PageMode, type ReaderLayoutSettings, type TocItem } from './reader-core'
-import { bridge, hasNativeBridge, type LibraryBook, type LibrarySourceRecord, type RemoteLibrarySource } from './platform'
+import { bridge, hasNativeBridge, type LibraryBook, type LibrarySourceRecord, type OpdsFeed, type OpdsSource, type RemoteLibrarySource } from './platform'
 import type { ThemeName } from './themes'
 
 const reader = new ReaderCore()
@@ -555,6 +555,20 @@ const libraryFolderInput = $<HTMLInputElement>('#library-folder-input')
 const librarySearchInput = $<HTMLInputElement>('#library-search-input')
 const libraryRemoteSourceSelect = $<HTMLSelectElement>('#library-remote-source')
 const librarySourcePanel = $<HTMLDetailsElement>('#library-source-panel')
+// OPDS v0.6
+const libraryOpdsPanel = $<HTMLDetailsElement>('#library-opds-panel')
+const opdsSourceList = $('#opds-source-list')
+const opdsSourceUrlInput = $<HTMLInputElement>('#opds-source-url')
+const opdsSourceNameInput = $<HTMLInputElement>('#opds-source-name')
+const opdsAddSourceBtn = $<HTMLButtonElement>('#btn-opds-add-source')
+const opdsFeedView = $('#opds-feed-view')
+const opdsFeedTitle = $('#opds-feed-title')
+const opdsFeedGrid = $('#opds-feed-grid')
+const opdsFeedBackBtn = $('#btn-opds-feed-back')
+const opdsFeedIngestAllBtn = $<HTMLButtonElement>('#btn-opds-feed-ingest-all')
+// OPDS session state: track current browsing context
+let opdsFeedCache: OpdsFeed | null = null
+let opdsSourceCache: OpdsSource | null = null
 let libraryBooks: LibraryBook[] = []
 let librarySearchTimer: number | null = null
 const REMOTE_SOURCE_LABEL: Record<RemoteLibrarySource, string> = {
@@ -1642,5 +1656,340 @@ async function openLibraryBook(book: LibraryBook) {
     document.body.classList.add('reading-active')
   } catch (e: any) {
     showError(`打开失败：${e?.message || e}`)
+  }
+}
+
+// ── OPDS v0.6 ──
+
+// 监听 OPDS 面板打开 → 刷新源列表；添加源按钮 → 添加源
+libraryOpdsPanel.addEventListener('toggle', () => {
+  if (libraryOpdsPanel.open) {
+    void refreshOpdsSources()
+  }
+})
+opdsAddSourceBtn.addEventListener('click', () => void addOpdsSource())
+opdsSourceUrlInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') void addOpdsSource()
+})
+opdsFeedBackBtn.addEventListener('click', () => hideOpdsFeedView())
+
+opdsFeedIngestAllBtn.addEventListener('click', () => {
+  if (opdsFeedCache && opdsSourceCache) {
+    void ingestOpdsEntries(opdsSourceCache.id, opdsFeedCache)
+  }
+})
+
+async function refreshOpdsSources() {
+  if (!isTauriRuntime()) return
+  try {
+    const sources = await bridge.opdsListSources()
+    renderOpdsSourceList(sources)
+  } catch (e: any) {
+    opdsSourceList.innerHTML = `<div class="opds-feed-empty">读取 OPDS 源列表失败：${e?.message || e}</div>`
+  }
+}
+
+function renderOpdsSourceList(sources: OpdsSource[]) {
+  opdsSourceList.innerHTML = ''
+  if (sources.length === 0) {
+    opdsSourceList.innerHTML = '<div class="opds-feed-empty">暂无 OPDS 书源，请在上方添加。</div>'
+    return
+  }
+  for (const src of sources) {
+    const row = document.createElement('div')
+    row.className = 'opds-source-row'
+    const info = document.createElement('div')
+    info.style.minWidth = '0'
+    const nameEl = document.createElement('div')
+    nameEl.className = 'opds-source-name'
+    nameEl.textContent = src.name
+    const urlEl = document.createElement('div')
+    urlEl.className = 'opds-source-url'
+    urlEl.textContent = src.baseUrl || ''
+    info.append(nameEl, urlEl)
+
+    const actions = document.createElement('div')
+    actions.className = 'opds-source-actions'
+    const browseBtn = document.createElement('button')
+    browseBtn.className = 'btn'
+    browseBtn.textContent = '浏览'
+    browseBtn.addEventListener('click', () => {
+      void browseOpdsFeed(src.baseUrl || '', src.id, src.name)
+    })
+    const searchBtn = document.createElement('button')
+    searchBtn.className = 'btn'
+    searchBtn.textContent = '搜索'
+    searchBtn.addEventListener('click', () => {
+      const q = librarySearchInput.value.trim()
+      if (!q) { showError('请先在书架搜索框输入关键词'); return }
+      void searchOpdsFeed(src.id, q, src.name)
+    })
+    const removeBtn = document.createElement('button')
+    removeBtn.className = 'btn'
+    removeBtn.textContent = '移除'
+    removeBtn.addEventListener('click', () => {
+      if (window.confirm(`确定移除 OPDS 源「${src.name}」？`)) {
+        void removeOpdsSource(src.id)
+      }
+    })
+    actions.append(browseBtn, searchBtn, removeBtn)
+    row.append(info, actions)
+    opdsSourceList.appendChild(row)
+  }
+}
+
+async function addOpdsSource() {
+  if (!isTauriRuntime()) {
+    showError('需要 Tauri 桌面窗口（请运行 npm run tauri dev）')
+    return
+  }
+  const url = opdsSourceUrlInput.value.trim()
+  if (!url) { showError('请输入 OPDS feed URL'); return }
+  const name = opdsSourceNameInput.value.trim() || url
+
+  opdsAddSourceBtn.disabled = true
+  opdsAddSourceBtn.textContent = '添加中…'
+  try {
+    await bridge.opdsAddSource(name, url)
+    opdsSourceUrlInput.value = ''
+    opdsSourceNameInput.value = ''
+    await refreshOpdsSources()
+  } catch (e: any) {
+    showError(`添加 OPDS 源失败：${e?.message || e}`)
+  } finally {
+    opdsAddSourceBtn.disabled = false
+    opdsAddSourceBtn.textContent = '添加 OPDS 源'
+  }
+}
+
+async function removeOpdsSource(id: string) {
+  try {
+    await bridge.opdsRemoveSource(id)
+    hideOpdsFeedView()
+    await refreshOpdsSources()
+  } catch (e: any) {
+    showError(`移除失败：${e?.message || e}`)
+  }
+}
+
+async function browseOpdsFeed(url: string, sourceId: string, sourceName: string) {
+  if (!isTauriRuntime()) return
+  opdsFeedView.hidden = false
+  opdsFeedGrid.innerHTML = '<div class="opds-feed-empty">加载中…</div>'
+  try {
+    const feed = await bridge.opdsBrowseFeed(url)
+    opdsFeedCache = feed
+    opdsSourceCache = { id: sourceId, name: sourceName, enabled: true, baseUrl: url }
+    renderOpdsFeedView(feed, sourceId, sourceName, url)
+  } catch (e: any) {
+    opdsFeedGrid.innerHTML = `<div class="opds-feed-empty" style="color:var(--error)">加载失败：${e?.message || e}</div>`
+  }
+}
+
+async function searchOpdsFeed(sourceId: string, query: string, sourceName: string) {
+  if (!isTauriRuntime()) return
+  opdsFeedView.hidden = false
+  opdsFeedGrid.innerHTML = '<div class="opds-feed-empty">搜索中…</div>'
+  opdsFeedTitle.textContent = `${sourceName} · 搜索「${query}」`
+  try {
+    const feed = await bridge.opdsSearchFeed(sourceId, query)
+    opdsFeedCache = feed
+    renderOpdsFeedView(feed, sourceId, sourceName, '')
+  } catch (e: any) {
+    opdsFeedGrid.innerHTML = `<div class="opds-feed-empty" style="color:var(--error)">搜索失败：${e?.message || e}</div>`
+  }
+}
+
+function hideOpdsFeedView() {
+  opdsFeedView.hidden = true
+  opdsFeedCache = null
+  opdsSourceCache = null
+  opdsFeedGrid.innerHTML = ''
+}
+
+function renderOpdsFeedView(feed: OpdsFeed, sourceId: string, sourceName: string, feedUrl: string) {
+  opdsFeedTitle.textContent = `${sourceName} · ${feed.title || 'OPDS Feed'}`
+  opdsFeedGrid.innerHTML = ''
+
+  // Resolve a possibly-relative URL against the feed URL
+  const resolveUrl = (href: string): string => {
+    if (!feedUrl || /^https?:\/\//i.test(href)) return href
+    try { return new URL(href, feedUrl).href } catch { return href }
+  }
+
+  const pubCount = feed.entries.filter((e) => !e.isNavigation).length
+  const navCount = feed.entries.filter((e) => e.isNavigation).length
+
+  if (pubCount === 0 && navCount === 0) {
+    opdsFeedGrid.innerHTML = '<div class="opds-feed-empty">该 feed 没有条目。</div>'
+    return
+  }
+
+  for (const entry of feed.entries) {
+    const card = document.createElement('div')
+    card.className = entry.isNavigation ? 'opds-feed-card opds-feed-card-nav' : 'opds-feed-card'
+
+    const title = document.createElement('div')
+    title.className = 'opds-feed-card-title'
+    title.textContent = entry.title || '未命名'
+
+    card.appendChild(title)
+
+    if (entry.author) {
+      const author = document.createElement('div')
+      author.className = 'opds-feed-card-author'
+      author.textContent = entry.author
+      card.appendChild(author)
+    }
+
+    if (entry.summary) {
+      const summary = document.createElement('div')
+      summary.className = 'opds-feed-card-summary'
+      summary.textContent = entry.summary
+      card.appendChild(summary)
+    }
+
+    const meta = document.createElement('div')
+    meta.className = 'opds-feed-card-meta'
+    if (entry.isNavigation) {
+      const badge = document.createElement('span')
+      badge.className = 'opds-feed-card-badge'
+      badge.textContent = '📂 子分类'
+      meta.appendChild(badge)
+    } else if (entry.acquisitionUrl) {
+      const badge = document.createElement('span')
+      badge.className = 'opds-feed-card-badge'
+      badge.textContent = '📖 可获取 EPUB'
+      badge.style.background = 'color-mix(in srgb, var(--accent) 22%, var(--surface))'
+      meta.appendChild(badge)
+    } else {
+      const badge = document.createElement('span')
+      badge.className = 'opds-feed-card-badge'
+      badge.textContent = '📋 仅元数据'
+      badge.style.background = 'color-mix(in srgb, var(--muted) 16%, var(--surface))'
+      badge.style.color = 'var(--muted)'
+      meta.appendChild(badge)
+    }
+    card.appendChild(meta)
+
+    const actions = document.createElement('div')
+    actions.className = 'opds-feed-card-actions'
+
+    if (entry.isNavigation) {
+      // Navigation entry: resolve link and navigate
+      const navUrl = resolveUrl(
+        entry.links.find(
+          (l) => l.rel === 'subsection' || l.rel === 'alternate' || l.href
+        )?.href || ''
+      )
+      if (navUrl) {
+        const navBtn = document.createElement('button') as HTMLButtonElement
+        navBtn.className = 'btn'
+        navBtn.textContent = '进入'
+        navBtn.addEventListener('click', () => {
+          void browseOpdsFeed(navUrl, sourceId, sourceName)
+        })
+        actions.appendChild(navBtn)
+        card.style.cursor = 'pointer'
+        card.addEventListener('click', (e) => {
+          if (e.target === navBtn || navBtn.contains(e.target as Node)) return
+          void browseOpdsFeed(navUrl, sourceId, sourceName)
+        })
+      }
+    } else {
+      // Publication entry: add to library
+      const addBtn = document.createElement('button') as HTMLButtonElement
+      addBtn.className = 'btn btn-primary'
+      addBtn.textContent = '加入书架'
+      addBtn.addEventListener('click', async () => {
+        addBtn.disabled = true
+        addBtn.textContent = '添加中…'
+        try {
+          const singleFeed: OpdsFeed = { title: entry.title, entries: [entry], links: [] }
+          const books = await bridge.opdsIngestEntries(sourceId, { ...singleFeed })
+          if (books.length > 0) {
+            addBtn.textContent = '已加入 ✓'
+            await refreshLibraryBooks()
+          }
+        } catch (e: any) {
+          addBtn.textContent = '失败'
+          showError(`加入书架失败：${e?.message || e}`)
+        } finally {
+          addBtn.disabled = true
+        }
+      })
+      actions.appendChild(addBtn)
+
+      // Download button for open_license EPUB entries
+      const acqUrl = entry.acquisitionUrl
+      if (acqUrl) {
+        const dlBtn = document.createElement('button') as HTMLButtonElement
+        dlBtn.className = 'btn btn-primary'
+        dlBtn.textContent = '下载 EPUB'
+        dlBtn.addEventListener('click', async () => {
+          dlBtn.disabled = true
+          dlBtn.textContent = '下载中…'
+          try {
+            // 1) Ingest entry to get edition ID
+            const singleFeed: OpdsFeed = { title: entry.title, entries: [entry], links: [] }
+            const books = await bridge.opdsIngestEntries(sourceId, { ...singleFeed })
+            if (books.length === 0) throw new Error('落库失败')
+            const editionId = books[0].editionId || books[0].id
+            if (!editionId) throw new Error('无法获取 edition ID')
+
+            // 2) Download the EPUB and attach to edition
+            await bridge.opdsDownloadEpub(editionId, acqUrl)
+            dlBtn.textContent = '下载完成 ✓'
+            addBtn.disabled = true
+            addBtn.textContent = '已在书架'
+            await refreshLibraryBooks()
+          } catch (e: any) {
+            dlBtn.textContent = '下载失败'
+            showError(`下载 EPUB 失败：${e?.message || e}`)
+          } finally {
+            dlBtn.disabled = true
+          }
+        })
+        actions.appendChild(dlBtn)
+      }
+
+      // External link if available
+      const siteUrl = resolveUrl(
+        entry.links.find((l) => l.rel === 'alternate')?.href || ''
+      )
+      if (siteUrl) {
+        const extBtn = document.createElement('button') as HTMLButtonElement
+        extBtn.className = 'btn'
+        extBtn.textContent = '打开外链'
+        extBtn.addEventListener('click', () => {
+          void bridge.openExternal(siteUrl)
+        })
+        actions.appendChild(extBtn)
+      }
+    }
+    card.appendChild(actions)
+    opdsFeedGrid.appendChild(card)
+  }
+}
+
+async function ingestOpdsEntries(sourceId: string, feed: OpdsFeed) {
+  if (!isTauriRuntime()) return
+  const pubEntries = feed.entries.filter((e) => !e.isNavigation)
+  if (pubEntries.length === 0) {
+    showError('当前 feed 没有可加入书架的出版物条目。')
+    return
+  }
+  opdsFeedIngestAllBtn.disabled = true
+  opdsFeedIngestAllBtn.textContent = '添加中…'
+  try {
+    const books = await bridge.opdsIngestEntries(sourceId, feed)
+    if (books.length > 0) {
+      opdsFeedIngestAllBtn.textContent = `已加入 ${books.length} 本 ✓`
+      await refreshLibraryBooks()
+    }
+  } catch (e: any) {
+    showError(`加入书架失败：${e?.message || e}`)
+    opdsFeedIngestAllBtn.disabled = false
+    opdsFeedIngestAllBtn.textContent = '全部加入书架'
   }
 }

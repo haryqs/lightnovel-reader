@@ -140,6 +140,25 @@
               <button id="btn-library-import-calibre" class="btn">从 Calibre 迁移</button>
             </div>
           </details>
+          <details id="library-opds-panel" class="library-source-panel">
+            <summary>OPDS 书源（v0.6）</summary>
+            <div class="opds-sources" id="opds-sources">
+              <div class="opds-source-list" id="opds-source-list"></div>
+              <div class="opds-source-add">
+                <input id="opds-source-url" type="text" spellcheck="false" placeholder="OPDS feed URL（如 https://example.com/opds/catalog.atom）" />
+                <input id="opds-source-name" type="text" spellcheck="false" placeholder="书源名称（可选，留空自动从 feed 标题提取）" />
+                <button id="btn-opds-add-source" class="btn">添加 OPDS 源</button>
+              </div>
+              <div id="opds-feed-view" class="opds-feed-view" hidden>
+                <div class="opds-feed-toolbar">
+                  <span class="opds-feed-title" id="opds-feed-title"></span>
+                  <button id="btn-opds-feed-back" class="btn">← 返回源列表</button>
+                  <button id="btn-opds-feed-ingest-all" class="btn btn-primary">全部加入书架</button>
+                </div>
+                <div class="opds-feed-grid" id="opds-feed-grid"></div>
+              </div>
+            </div>
+          </details>
           <div class="library-search">
             <input id="library-search-input" type="search" placeholder="搜索书名、作者或系列" spellcheck="false" />
             <select id="library-remote-source" title="在线来源">
