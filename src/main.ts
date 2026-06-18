@@ -1,5 +1,5 @@
 import { ReaderCore, type PageMode, type ReaderLayoutSettings, type TocItem } from './reader-core'
-import { bridge, hasNativeBridge, type LibraryBook, type RemoteLibrarySource } from './platform'
+import { bridge, hasNativeBridge, type LibraryBook, type LibrarySourceRecord, type RemoteLibrarySource } from './platform'
 import type { ThemeName } from './themes'
 
 const reader = new ReaderCore()
@@ -593,7 +593,11 @@ librarySearchInput.addEventListener('input', () => {
 })
 
 const librarySearchRemoteBtn = $<HTMLButtonElement>('#btn-library-search-remote')
+const libraryBatchLinkBtn = $<HTMLButtonElement>('#btn-library-batch-link')
 librarySearchRemoteBtn.addEventListener('click', () => searchRemoteBooks())
+libraryBatchLinkBtn.addEventListener('click', () => {
+  void showBatchLinkQueue()
+})
 
 // 在线找书：用 AniList 拉元数据 → 落库为远程条目（availability=remote）→ 直接展示结果。
 // 只取索引/封面/简介，正文一律跳官方外链（版权红线）。
@@ -801,8 +805,35 @@ function isLocalReadableBook(book: LibraryBook): boolean {
   return !!book.filePath && book.availability !== 'remote'
 }
 
+function isRemoteLibraryBook(book: LibraryBook): boolean {
+  return book.availability === 'remote' || (!book.filePath && !!book.remoteUrl)
+}
+
+function updateBatchLinkButton(books = libraryBooks) {
+  const remoteCount = books.filter(isRemoteLibraryBook).length
+  libraryBatchLinkBtn.disabled = remoteCount === 0
+  libraryBatchLinkBtn.textContent = remoteCount > 0 ? `批量关联 ${remoteCount}` : '批量关联'
+}
+
+interface RankedLinkCandidate {
+  book: LibraryBook
+  score: number
+  reasons: string[]
+  warnings: string[]
+}
+
+interface BatchLinkQueueEntry {
+  remote: LibraryBook
+  candidates: RankedLinkCandidate[]
+  selectedIndex: number
+  sourceSummary: string
+  status: 'pending' | 'linked' | 'skipped' | 'error'
+  message?: string
+}
+
 function renderLibraryBooks() {
   const books = libraryBooks
+  updateBatchLinkButton(books)
 
   if (books.length === 0) {
     if (librarySearchInput.value.trim()) {
@@ -816,7 +847,7 @@ function renderLibraryBooks() {
   libraryGrid.innerHTML = ''
   for (const b of books) {
     // 远程元数据条目（无本地文件）：封面是 http URL，点击跳官方外链而非站内打开。
-    const isRemote = b.availability === 'remote' || (!b.filePath && !!b.remoteUrl)
+    const isRemote = isRemoteLibraryBook(b)
     const card = document.createElement('div')
     card.className = isRemote ? 'book-card book-card-remote' : 'book-card'
     card.dataset.bookId = b.id
@@ -858,6 +889,16 @@ function renderLibraryBooks() {
       : lastRead
     const actions = document.createElement('div')
     actions.className = 'book-card-actions'
+    const sourcesBtn = document.createElement('button')
+    sourcesBtn.type = 'button'
+    sourcesBtn.className = 'btn btn-subtle'
+    sourcesBtn.dataset.action = 'show-sources'
+    sourcesBtn.textContent = '来源'
+    sourcesBtn.addEventListener('click', (event) => {
+      event.stopPropagation()
+      void showBookSourcePanel(b)
+    })
+    actions.appendChild(sourcesBtn)
     if (isRemote) {
       const linkBtn = document.createElement('button')
       linkBtn.type = 'button'
@@ -926,37 +967,393 @@ function renderLibraryEmptyState() {
 }
 
 async function linkRemoteEntry(remote: LibraryBook) {
-  if (!isTauriRuntime) {
+  if (!isTauriRuntime()) {
     showError('关联本地书需要 Tauri 桌面窗口')
     return
   }
 
   try {
     const query = remote.title?.trim() || ''
-    let candidates = query
+    const searched = query
       ? await bridge.searchLibraryBooks(query)
-      : await bridge.listLibraryBooks()
-    candidates = candidates.filter((book) =>
+      : []
+    const allBooks = !query || searched.length < 8
+      ? await bridge.listLibraryBooks()
+      : []
+    const byId = new Map<string, LibraryBook>()
+    for (const book of [...searched, ...allBooks]) byId.set(book.id, book)
+    const candidates = [...byId.values()].filter((book) =>
       isLocalReadableBook(book) &&
       book.id !== remote.id &&
       book.editionId !== remote.editionId
     )
+    const ranked = candidates
+      .map((book) => rankLinkCandidate(remote, book))
+      .sort(compareRankedLinkCandidates)
+      .slice(0, 8)
+    const remoteRecords = await bridge.listLibrarySourceRecords(remote.id).catch(() => [])
 
-    if (candidates.length === 0 && query) {
-      candidates = (await bridge.listLibraryBooks()).filter((book) =>
-        isLocalReadableBook(book) &&
-        book.id !== remote.id &&
-        book.editionId !== remote.editionId
-      )
-    }
-
-    showRemoteLinkPanel(remote, candidates.slice(0, 8))
+    showRemoteLinkPanel(remote, ranked, remoteRecords)
   } catch (e: any) {
     showError(`查找本地候选失败：${e?.message || e}`)
   }
 }
 
-function showRemoteLinkPanel(remote: LibraryBook, candidates: LibraryBook[]) {
+async function showBatchLinkQueue() {
+  if (!isTauriRuntime()) {
+    showError('批量关联需要 Tauri 桌面窗口')
+    return
+  }
+
+  const remotes = libraryBooks.filter(isRemoteLibraryBook)
+  if (remotes.length === 0) {
+    showError('当前书架没有可关联的远程条目')
+    return
+  }
+
+  const original = libraryBatchLinkBtn.textContent
+  libraryBatchLinkBtn.disabled = true
+  libraryBatchLinkBtn.textContent = '整理候选中'
+  try {
+    const localBooks = (await bridge.listLibraryBooks()).filter(isLocalReadableBook)
+    if (localBooks.length === 0) {
+      showError('还没有可关联的本地 EPUB，请先导入本地书')
+      return
+    }
+    const entries = await Promise.all(remotes.map(async (remote) => {
+      const records = await bridge.listLibrarySourceRecords(remote.id).catch(() => [])
+      return {
+        remote,
+        candidates: rankLocalCandidates(remote, localBooks, 4),
+        selectedIndex: 0,
+        sourceSummary: formatRemoteSourceSummary(records),
+        status: 'pending' as const,
+      }
+    }))
+    renderBatchLinkPanel(entries)
+  } catch (e: any) {
+    showError(`整理批量关联候选失败：${e?.message || e}`)
+  } finally {
+    updateBatchLinkButton()
+    if (!libraryBatchLinkBtn.disabled) libraryBatchLinkBtn.textContent = original || libraryBatchLinkBtn.textContent
+  }
+}
+
+function rankLocalCandidates(
+  remote: LibraryBook,
+  localBooks: LibraryBook[],
+  limit: number,
+): RankedLinkCandidate[] {
+  return localBooks
+    .filter((book) =>
+      book.id !== remote.id &&
+      book.editionId !== remote.editionId
+    )
+    .map((book) => rankLinkCandidate(remote, book))
+    .sort(compareRankedLinkCandidates)
+    .slice(0, limit)
+}
+
+function renderBatchLinkPanel(entries: BatchLinkQueueEntry[]) {
+  libraryGrid.querySelector('.library-batch-panel')?.remove()
+  libraryGrid.querySelector('.library-link-panel')?.remove()
+  libraryGrid.querySelector('.library-source-panel')?.remove()
+
+  const panel = document.createElement('div')
+  panel.className = 'library-batch-panel'
+
+  const header = document.createElement('div')
+  header.className = 'library-link-header'
+  const title = document.createElement('div')
+  title.className = 'library-link-title'
+  title.textContent = '批量人工确认'
+  const close = document.createElement('button')
+  close.type = 'button'
+  close.className = 'icon-btn'
+  close.textContent = '×'
+  close.title = '关闭'
+  close.addEventListener('click', () => panel.remove())
+  header.append(title, close)
+
+  const pending = entries.filter((entry) => entry.status === 'pending' || entry.status === 'error').length
+  const linked = entries.filter((entry) => entry.status === 'linked').length
+  const skipped = entries.filter((entry) => entry.status === 'skipped').length
+  const subtitle = document.createElement('div')
+  subtitle.className = 'library-link-subtitle'
+  subtitle.textContent = `${pending} 待确认 · ${linked} 已关联 · ${skipped} 已跳过`
+  panel.append(header, subtitle)
+
+  const list = document.createElement('div')
+  list.className = 'library-batch-list'
+  for (const entry of entries) {
+    const row = document.createElement('div')
+    row.className = `library-batch-row library-batch-row-${entry.status}`
+
+    const main = document.createElement('div')
+    main.className = 'library-batch-main'
+    const remoteTitle = document.createElement('div')
+    remoteTitle.className = 'library-batch-remote-title'
+    remoteTitle.textContent = entry.remote.title || '未命名远程条目'
+    const remoteMeta = document.createElement('div')
+    remoteMeta.className = 'library-link-candidate-meta'
+    remoteMeta.textContent = [
+      entry.remote.author,
+      entry.sourceSummary,
+      remoteStatusLabel(entry.remote),
+    ].filter(Boolean).join(' · ') || '远程条目'
+    main.append(remoteTitle, remoteMeta)
+
+    if (entry.status === 'linked' || entry.status === 'skipped') {
+      const done = document.createElement('div')
+      done.className = 'library-batch-status'
+      done.textContent = entry.message || (entry.status === 'linked' ? '已关联' : '已跳过')
+      main.appendChild(done)
+      row.appendChild(main)
+      list.appendChild(row)
+      continue
+    }
+
+    const selected = entry.candidates[entry.selectedIndex]
+    if (!selected) {
+      const empty = document.createElement('div')
+      empty.className = 'library-link-candidate-warning'
+      empty.textContent = '没有找到本地候选，可以先跳过'
+      main.appendChild(empty)
+    } else {
+      const picker = document.createElement('select')
+      picker.className = 'library-batch-select'
+      picker.title = '选择要关联的本地书'
+      entry.candidates.forEach((candidate, index) => {
+        const option = document.createElement('option')
+        option.value = String(index)
+        option.textContent = `${candidate.score} · ${candidate.book.title || '未命名'}`
+        picker.appendChild(option)
+      })
+      picker.value = String(entry.selectedIndex)
+      picker.addEventListener('change', () => {
+        entry.selectedIndex = Number(picker.value)
+        renderBatchLinkPanel(entries)
+      })
+
+      const match = document.createElement('div')
+      match.className = selected.score >= 45
+        ? 'library-link-candidate-match'
+        : 'library-link-candidate-match library-link-candidate-match-low'
+      match.textContent = [
+        `匹配 ${selected.score}`,
+        ...selected.reasons,
+      ].filter(Boolean).join(' · ') || '匹配度低，请人工核对'
+      main.append(picker, match)
+      if (selected.warnings.length > 0) {
+        const warning = document.createElement('div')
+        warning.className = 'library-link-candidate-warning'
+        warning.textContent = selected.warnings.join(' · ')
+        main.appendChild(warning)
+      }
+    }
+    if (entry.status === 'error' && entry.message) {
+      const error = document.createElement('div')
+      error.className = 'library-link-candidate-warning'
+      error.textContent = entry.message
+      main.appendChild(error)
+    }
+
+    const actions = document.createElement('div')
+    actions.className = 'library-batch-actions'
+    const link = document.createElement('button')
+    link.type = 'button'
+    link.className = 'btn btn-primary'
+    link.textContent = '关联'
+    link.disabled = !selected
+    link.addEventListener('click', async () => {
+      if (!selected) return
+      const caution = selected.score < 45 ? '\n\n匹配度较低，请确认不是同名/相近标题。' : ''
+      if (!window.confirm(`将《${entry.remote.title || '远程条目'}》关联到《${selected.book.title || '本地书'}》？${caution}`)) {
+        return
+      }
+      link.disabled = true
+      try {
+        const linkedBook = await bridge.linkRemoteToLocalLibraryBook(entry.remote.id, selected.book.id)
+        applyLinkedRemote(entry.remote, linkedBook)
+        removeLibraryCard(entry.remote)
+        entry.status = 'linked'
+        entry.message = `已关联到《${linkedBook.title || selected.book.title || '本地书'}》`
+      } catch (e: any) {
+        entry.status = 'error'
+        entry.message = `关联失败：${e?.message || e}`
+      }
+      updateBatchLinkButton()
+      renderBatchLinkPanel(entries)
+    })
+
+    const skip = document.createElement('button')
+    skip.type = 'button'
+    skip.className = 'btn btn-subtle'
+    skip.textContent = '跳过'
+    skip.addEventListener('click', () => {
+      entry.status = 'skipped'
+      entry.message = '已跳过'
+      renderBatchLinkPanel(entries)
+    })
+
+    actions.append(link, skip)
+    row.append(main, actions)
+    list.appendChild(row)
+  }
+  panel.appendChild(list)
+
+  const footer = document.createElement('div')
+  footer.className = 'library-batch-footer'
+  const refresh = document.createElement('button')
+  refresh.type = 'button'
+  refresh.className = 'btn'
+  refresh.textContent = '关闭并刷新书架'
+  refresh.addEventListener('click', () => {
+    panel.remove()
+    renderLibraryBooks()
+  })
+  footer.appendChild(refresh)
+  panel.appendChild(footer)
+
+  libraryGrid.prepend(panel)
+}
+
+function applyLinkedRemote(remote: LibraryBook, linked: LibraryBook) {
+  libraryBooks = [
+    linked,
+    ...libraryBooks.filter((item) =>
+      item.id !== remote.id &&
+      item.editionId !== remote.editionId &&
+      item.id !== linked.id
+    ),
+  ]
+}
+
+function removeLibraryCard(book: LibraryBook) {
+  for (const card of libraryGrid.querySelectorAll<HTMLElement>('.book-card')) {
+    if (card.dataset.bookId === book.id || card.dataset.editionId === book.editionId) {
+      card.remove()
+    }
+  }
+}
+
+function rankLinkCandidate(remote: LibraryBook, book: LibraryBook): RankedLinkCandidate {
+  let score = 0
+  const reasons: string[] = []
+  const warnings: string[] = []
+
+  const title = scoreTextMatch('标题', remote.title, book.title, 64, 46, 32)
+  score += title.score
+  if (title.reason) reasons.push(title.reason)
+
+  const author = scoreTextMatch('作者', remote.author, book.author, 24, 14, 10)
+  score += author.score
+  if (author.reason) reasons.push(author.reason)
+
+  const series = scoreTextMatch('系列', remote.series, book.series, 16, 10, 8)
+  score += series.score
+  if (series.reason) reasons.push(series.reason)
+
+  if (remote.language && book.language) {
+    if (remote.language.toLowerCase() === book.language.toLowerCase()) {
+      score += 8
+      reasons.push('语言一致')
+    } else {
+      warnings.push(`语言不同：${formatLanguageLabel(remote.language)} / ${formatLanguageLabel(book.language)}`)
+    }
+  }
+
+  if (
+    remote.seriesIndex !== undefined &&
+    remote.seriesIndex !== null &&
+    book.seriesIndex !== undefined &&
+    book.seriesIndex !== null
+  ) {
+    if (Number(remote.seriesIndex) === Number(book.seriesIndex)) {
+      score += 6
+      reasons.push('卷号一致')
+    } else {
+      warnings.push(`卷号不同：${remote.seriesIndex} / ${book.seriesIndex}`)
+    }
+  }
+
+  if (score < 30) warnings.push('弱匹配，建议只在确认同一本书时关联')
+  return {
+    book,
+    score: Math.min(100, Math.round(score)),
+    reasons,
+    warnings,
+  }
+}
+
+function compareRankedLinkCandidates(a: RankedLinkCandidate, b: RankedLinkCandidate): number {
+  if (b.score !== a.score) return b.score - a.score
+  const bRecent = b.book.lastReadAt || b.book.addedAt || 0
+  const aRecent = a.book.lastReadAt || a.book.addedAt || 0
+  if (bRecent !== aRecent) return bRecent - aRecent
+  return (a.book.title || '').localeCompare(b.book.title || '', 'zh-CN')
+}
+
+function scoreTextMatch(
+  label: string,
+  remoteValue: string | undefined,
+  localValue: string | undefined,
+  exactScore: number,
+  containsScore: number,
+  overlapScore: number,
+): { score: number; reason: string } {
+  const remote = normalizeMatchText(remoteValue)
+  const local = normalizeMatchText(localValue)
+  if (!remote || !local) return { score: 0, reason: '' }
+  if (remote === local) return { score: exactScore, reason: `${label}一致` }
+  if (remote.includes(local) || local.includes(remote)) {
+    return { score: containsScore, reason: `${label}相近` }
+  }
+  const overlap = matchTokenOverlap(remote, local)
+  const score = Math.round(overlapScore * overlap)
+  return score >= Math.max(6, overlapScore * 0.45)
+    ? { score, reason: `${label}部分匹配` }
+    : { score, reason: '' }
+}
+
+function normalizeMatchText(value?: string): string {
+  return (value || '')
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/[\p{P}\p{S}\s_]+/gu, '')
+}
+
+function matchTokenOverlap(a: string, b: string): number {
+  const left = new Set(matchTokens(a))
+  const right = new Set(matchTokens(b))
+  if (left.size === 0 || right.size === 0) return 0
+  let common = 0
+  for (const token of left) if (right.has(token)) common += 1
+  return common / Math.max(1, Math.min(left.size, right.size))
+}
+
+function matchTokens(value: string): string[] {
+  const ascii = value.match(/[a-z0-9]+/g) || []
+  const cjk = [...value.replace(/[a-z0-9]+/g, '')].filter(Boolean)
+  return [...new Set([...ascii, ...cjk])]
+}
+
+function formatRemoteSourceSummary(records: LibrarySourceRecord[]): string {
+  return records
+    .map((record) => {
+      const kind = sourceKindLabel(record.sourceKind)
+      return kind ? `${record.sourceName} / ${kind}` : record.sourceName
+    })
+    .filter(Boolean)
+    .slice(0, 3)
+    .join(' · ')
+}
+
+function showRemoteLinkPanel(
+  remote: LibraryBook,
+  candidates: RankedLinkCandidate[],
+  remoteRecords: LibrarySourceRecord[],
+) {
   libraryGrid.querySelector('.library-link-panel')?.remove()
 
   const panel = document.createElement('div')
@@ -977,7 +1374,11 @@ function showRemoteLinkPanel(remote: LibraryBook, candidates: LibraryBook[]) {
 
   const subtitle = document.createElement('div')
   subtitle.className = 'library-link-subtitle'
-  subtitle.textContent = `远程条目：${remote.title || '未命名'}`
+  const sourceSummary = formatRemoteSourceSummary(remoteRecords)
+  subtitle.textContent = [
+    `远程条目：${remote.title || '未命名'}`,
+    sourceSummary ? `来源：${sourceSummary}` : '',
+  ].filter(Boolean).join(' · ')
 
   panel.append(header, subtitle)
 
@@ -989,7 +1390,8 @@ function showRemoteLinkPanel(remote: LibraryBook, candidates: LibraryBook[]) {
   } else {
     const list = document.createElement('div')
     list.className = 'library-link-candidates'
-    for (const candidate of candidates) {
+    for (const entry of candidates) {
+      const candidate = entry.book
       const row = document.createElement('div')
       row.className = 'library-link-candidate'
 
@@ -1003,27 +1405,35 @@ function showRemoteLinkPanel(remote: LibraryBook, candidates: LibraryBook[]) {
       meta.textContent = [candidate.author, formatSeriesLabel(candidate), formatLanguageLabel(candidate.language)]
         .filter(Boolean)
         .join(' · ') || '本地 EPUB'
-      main.append(name, meta)
+      const match = document.createElement('div')
+      match.className = entry.score >= 45
+        ? 'library-link-candidate-match'
+        : 'library-link-candidate-match library-link-candidate-match-low'
+      match.textContent = [
+        `匹配 ${entry.score}`,
+        ...entry.reasons,
+      ].filter(Boolean).join(' · ') || '匹配度低，请人工核对'
+      main.append(name, meta, match)
+      if (entry.warnings.length > 0) {
+        const warning = document.createElement('div')
+        warning.className = 'library-link-candidate-warning'
+        warning.textContent = entry.warnings.join(' · ')
+        main.appendChild(warning)
+      }
 
       const button = document.createElement('button')
       button.type = 'button'
       button.className = 'btn btn-primary'
       button.textContent = '关联'
       button.addEventListener('click', async () => {
-        if (!window.confirm(`将《${remote.title || '远程条目'}》关联到《${candidate.title || '本地书'}》？`)) {
+        const caution = entry.score < 45 ? '\n\n匹配度较低，请确认不是同名/相近标题。' : ''
+        if (!window.confirm(`将《${remote.title || '远程条目'}》关联到《${candidate.title || '本地书'}》？${caution}`)) {
           return
         }
         button.disabled = true
         try {
           const linked = await bridge.linkRemoteToLocalLibraryBook(remote.id, candidate.id)
-          libraryBooks = [
-            linked,
-            ...libraryBooks.filter((item) =>
-              item.id !== remote.id &&
-              item.editionId !== remote.editionId &&
-              item.id !== linked.id
-            ),
-          ]
+          applyLinkedRemote(remote, linked)
           renderLibraryBooks()
           prependLibraryLinkSummary(remote, linked)
         } catch (e: any) {
@@ -1039,6 +1449,149 @@ function showRemoteLinkPanel(remote: LibraryBook, candidates: LibraryBook[]) {
   }
 
   libraryGrid.prepend(panel)
+}
+
+async function showBookSourcePanel(book: LibraryBook) {
+  libraryGrid.querySelector('.library-source-panel')?.remove()
+
+  try {
+    const records = await bridge.listLibrarySourceRecords(book.id)
+    renderBookSourcePanel(book, records)
+  } catch (e: any) {
+    showError(`读取来源记录失败：${e?.message || e}`)
+  }
+}
+
+function renderBookSourcePanel(book: LibraryBook, records: LibrarySourceRecord[]) {
+  libraryGrid.querySelector('.library-source-panel')?.remove()
+
+  const panel = document.createElement('div')
+  panel.className = 'library-source-panel'
+
+  const header = document.createElement('div')
+  header.className = 'library-link-header'
+  const title = document.createElement('div')
+  title.className = 'library-link-title'
+  title.textContent = '来源记录'
+  const close = document.createElement('button')
+  close.type = 'button'
+  close.className = 'icon-btn'
+  close.textContent = '×'
+  close.title = '关闭'
+  close.addEventListener('click', () => panel.remove())
+  header.append(title, close)
+
+  const subtitle = document.createElement('div')
+  subtitle.className = 'library-link-subtitle'
+  subtitle.textContent = book.title || '未命名'
+  panel.append(header, subtitle)
+
+  if (records.length === 0) {
+    const empty = document.createElement('div')
+    empty.className = 'library-link-empty'
+    empty.textContent = book.remoteUrl
+      ? '该条目还没有独立来源记录，可先通过在线找书或手动关联补齐。'
+      : '该本地书尚未关联在线来源。'
+    panel.appendChild(empty)
+  } else {
+    const list = document.createElement('div')
+    list.className = 'library-source-records'
+    for (const record of records) {
+      const row = document.createElement('div')
+      row.className = 'library-source-record'
+
+      const main = document.createElement('div')
+      main.className = 'library-source-record-main'
+      const name = document.createElement('div')
+      name.className = 'library-source-record-title'
+      name.textContent = record.sourceName || record.sourceId
+
+      const meta = document.createElement('div')
+      meta.className = 'library-source-record-meta'
+      meta.textContent = [
+        sourceKindLabel(record.sourceKind),
+        sourceRightsLabel(record.rightsStatus),
+        sourceAvailabilityLabel(record.availability),
+        record.remoteId ? `ID ${record.remoteId}` : '',
+        record.lastCheckedAt ? `检查 ${new Date(record.lastCheckedAt).toLocaleDateString('zh-CN')}` : '',
+      ].filter(Boolean).join(' · ')
+
+      main.append(name, meta)
+      if (record.remoteUrl) {
+        const url = document.createElement('div')
+        url.className = 'library-source-record-url'
+        url.textContent = record.remoteUrl
+        main.appendChild(url)
+      }
+
+      if (record.remoteUrl) {
+        const button = document.createElement('button')
+        button.type = 'button'
+        button.className = 'btn btn-subtle'
+        button.textContent = '外链'
+        button.addEventListener('click', async () => {
+          button.disabled = true
+          try {
+            await bridge.openExternal(record.remoteUrl!)
+          } catch (e: any) {
+            showError(`打开来源外链失败：${e?.message || e}`)
+          } finally {
+            button.disabled = false
+          }
+        })
+        row.append(main, button)
+      } else {
+        row.appendChild(main)
+      }
+      list.appendChild(row)
+    }
+    panel.appendChild(list)
+  }
+
+  libraryGrid.prepend(panel)
+}
+
+function sourceKindLabel(kind?: string): string {
+  switch (kind) {
+    case 'metadata':
+      return '元数据'
+    case 'catalog':
+      return '目录'
+    case 'public_domain':
+      return '公共版权'
+    default:
+      return kind || '来源'
+  }
+}
+
+function sourceRightsLabel(status?: string): string {
+  switch (status) {
+    case 'public_domain':
+      return '公共版权'
+    case 'official_free':
+      return '官方免费'
+    case 'official_purchase':
+      return '官方购买'
+    case 'user_owned':
+      return '自有资产'
+    default:
+      return status || '授权未知'
+  }
+}
+
+function sourceAvailabilityLabel(availability?: string): string {
+  switch (availability) {
+    case 'local':
+      return '本地可读'
+    case 'cached':
+      return '已缓存'
+    case 'remote':
+      return '远程条目'
+    case 'missing':
+      return '缺失'
+    default:
+      return availability || ''
+  }
 }
 
 function prependLibraryLinkSummary(remote: LibraryBook, linked: LibraryBook) {

@@ -76,6 +76,18 @@ export interface LibraryBook {
   remoteUrl?: string
 }
 
+export interface LibrarySourceRecord {
+  id: string
+  sourceId: string
+  sourceName: string
+  sourceKind: string
+  remoteId?: string
+  remoteUrl?: string
+  rightsStatus: string
+  availability?: string
+  lastCheckedAt?: number
+}
+
 export type RemoteLibrarySource = 'anilist' | 'bangumi' | 'aozora' | 'narou'
 
 export interface ImportOutcome {
@@ -139,6 +151,8 @@ export interface ReaderBridge {
   listLibraryBooks(): Promise<LibraryBook[]>
   /** library.search — 搜索自有书库 */
   searchLibraryBooks(query: string): Promise<LibraryBook[]>
+  /** library.listSourceRecords - list remote source records attached to a library entry */
+  listLibrarySourceRecords(bookId: string): Promise<LibrarySourceRecord[]>
   /** library.searchRemote — 在线元数据搜索（AniList），落库为远程条目并返回 */
   searchRemoteLibraryBooks(query: string): Promise<LibraryBook[]>
   /** library.searchRemoteSource — 指定在线来源搜索（anilist|bangumi|aozora|narou），按需缓存来源目录 */

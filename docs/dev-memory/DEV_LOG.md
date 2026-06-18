@@ -1337,3 +1337,159 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
 下一步：
 
 - 若要对外分发测试版，使用当前机器生成的 `dist-beta/lightnovel-reader-v0.1.0-release-windows-x64.zip` 作为候选；正式发出前可再做一次人工下载/解压/启动抽检。
+
+## 2026-06-18：来源记录只读面板
+
+变更：
+
+- 新增 `library.listSourceRecords` 只读协议：reading-core 可按本地 `asset.id` 或远程 `edition.id` 查询同一 edition 的 `source_record`。
+- Tauri command 与 TypeScript bridge 同步，前端仍只经 `src/platform/` 访问平台壳。
+- 书架卡片新增“来源”按钮，展示来源名称、类型、授权/可用状态、remote id、外链和最近检查时间；该面板不下载正文、不自动合并。
+- `library.linkRemoteToLocal` 单测补充来源记录迁移前后查询：远程记录迁到本地 edition 后，本地 asset id 与 edition id 均可查到，远程空壳不再返回。
+
+修改文件：
+
+- `crates/reading-core/src/library.rs`
+- `src-tauri/src/lib.rs`
+- `src/platform/protocol.ts`
+- `src/platform/tauri.ts`
+- `src/platform/index.ts`
+- `src/main.ts`
+- `src/styles.css`
+- `docs/resource-library-plan/8_桥接协议_v0.1.md`
+- `docs/dev-memory/NEXT_ACTIONS.md`
+- `docs/dev-memory/DEV_LOG.md`
+
+验证：
+
+- cargo test -p reading-core 通过（74 passed）；npm.cmd run build 通过（含 check-arch、tsc、vite build）。
+- cargo test --workspace 通过（reading-core 74 passed）。
+- node scripts/check-arch.mjs 通过。
+- node scripts/check-dev-memory.mjs 通过。
+- git diff --check 通过（仅 Windows 换行提示）。
+
+未验证/阻塞：
+
+- 无
+
+下一步：
+
+- 继续做关联候选排序/提示或批量人工确认队列；版权边界不变：Bangumi/なろう 只做元数据和外链，library.acquireRemote 仍只允许青空公共版权条目。
+
+## 2026-06-18：关联候选排序与提示
+
+变更：
+
+- 增强远程条目关联本地书面板：候选合并标题搜索与全量本地书后去重，按标题、作者、系列、语言、卷号打分排序；面板展示匹配分数、命中理由、语言/卷号冲突和低置信提醒；低分关联确认时追加人工核对提示；同时修正 linkRemoteEntry 对 isTauriRuntime 的函数调用。
+
+修改文件：
+
+- `src/main.ts`
+- `src/styles.css`
+- `docs/dev-memory/NEXT_ACTIONS.md`
+- `docs/dev-memory/DEV_LOG.md`
+
+验证：
+
+- npm.cmd run build 通过（含 check-arch、tsc、vite build）。
+- cargo test --workspace 通过（reading-core 74 passed）。
+- node scripts/check-dev-memory.mjs 通过。
+- git diff --check 通过（仅 Windows 换行提示）。
+
+未验证/阻塞：
+
+- 无
+
+下一步：
+
+- 继续做批量人工确认队列，或给真窗口 smoke:remote-link 补来源面板/候选排序断言；版权边界不变，仍不自动合并、不抓正文。
+
+## 2026-06-18：批量人工确认队列
+
+变更：
+
+- 新增批量人工确认队列第一版：当前书架/远程搜索结果中有远程条目时启用“批量关联”按钮。
+- 队列逐条展示远程条目、来源摘要、推荐本地候选、匹配分数/理由/冲突提醒，用户可逐条关联或跳过。
+- 关联成功后复用单条关联的 `library.linkRemoteToLocal` 路径迁移 `source_record`；不自动合并、不抓正文。
+
+修改文件：
+
+- `index.html`
+- `src/main.ts`
+- `src/styles.css`
+- `docs/dev-memory/NEXT_ACTIONS.md`
+- `docs/dev-memory/DEV_LOG.md`
+
+验证：
+
+- npm.cmd run build 通过（含 check-arch、tsc、vite build）。
+- cargo test --workspace 通过（reading-core 74 passed）。
+- node scripts/check-dev-memory.mjs 通过。
+- git diff --check 通过（仅 Windows 换行提示）。
+
+未验证/阻塞：
+
+- 无
+
+下一步：
+
+- 给 smoke:remote-link 补来源面板、候选排序和批量确认队列的真窗口断言；版权边界不变。
+
+## 2026-06-18：实验室电脑交接整理
+
+变更：
+
+- 在 `NEXT_ACTIONS.md` 顶部新增“给实验室电脑 Codex”的交接留言。
+- 明确当前工作在 PR #22 / `codex/source-record-panel`，尚未合并进 `main`。
+- 汇总 PR #22 的 3 个提交、已完成能力、验证命令和下一步建议。
+- 明确下一步优先做真实 Tauri 窗口 `smoke:remote-link` 回归断言，验证通过后再 review/merge PR #22。
+
+修改文件：
+
+- `docs/dev-memory/NEXT_ACTIONS.md`
+- `docs/dev-memory/DEV_LOG.md`
+
+验证：
+
+- `node scripts/check-dev-memory.mjs` 通过。
+- `git diff --check` 通过（仅 Windows 换行提示）。
+
+未验证/阻塞：
+
+- 无。
+
+下一步：
+
+- 实验室电脑先 checkout PR #22，再补真窗口 smoke 断言；不要只在 `main` 上找这些未合并功能。
+
+## 2026-06-18：补强 smoke:remote-link 覆盖来源面板/候选排序/批量队列
+
+变更：
+
+- `scripts/tauri-remote-link-smoke.mjs` 改为先在线搜索真实远程条目，再按该远程标题动态生成一个临时本地 EPUB；这样候选排序面板能稳定显示高置信分数与匹配理由。
+- smoke 新增断言：
+  - 单条“关联本地书”面板显示候选分数、匹配理由，并按分数降序排列。
+  - “批量人工确认”队列可打开，候选下拉显示分数，行内显示匹配分数/理由。
+  - 批量队列可逐条“跳过”，再逐条“关联”；关联后远程空壳消失，本地进度/标注键仍按本地 `asset.id` 命中。
+  - 关联后的本地卡片“来源”面板可打开，能看到 AniList 来源记录、状态信息与外链。
+
+修改文件：
+
+- `scripts/tauri-remote-link-smoke.mjs`
+- `docs/dev-memory/DEV_LOG.md`
+- `docs/dev-memory/NEXT_ACTIONS.md`
+
+验证：
+
+- `node --check scripts/tauri-remote-link-smoke.mjs` 通过。
+- `npm.cmd run tauri -- build --debug --no-bundle` 通过（含 `check-arch`、`tsc`、`vite build`）。
+- `npm.cmd run smoke:remote-link -- --tauri-driver C:\Users\41267\.cargo\bin\tauri-driver.exe --native-driver C:\Users\41267\AppData\Local\lightnovel-reader-tools\msedgedriver\149.0.4022.69\msedgedriver.exe` 通过：AniList `Tanya` → `Youjo Senki`，候选面板显示 `匹配 100 · 标题一致 · 作者一致 · 系列一致 · 语言一致`，批量队列完成跳过/关联，来源面板显示 `AniList`。
+
+环境补充：
+
+- 本机缺少 WebDriver 工具，已通过 `cargo install tauri-driver --locked` 安装 `tauri-driver v2.0.6` 到用户 cargo bin。
+- 本机 Edge 版本为 `149.0.4022.69`，已从官方 `msedgedriver.microsoft.com` 下载匹配的 `msedgedriver.exe` 到 `%LOCALAPPDATA%\lightnovel-reader-tools\msedgedriver\149.0.4022.69\`；下载需走本机系统代理 `127.0.0.1:7890`。
+
+未验证/阻塞：
+
+- 尚未执行 PR review/merge；下一步做最终检查后 review 并合并 PR #22。

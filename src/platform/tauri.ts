@@ -8,6 +8,7 @@ import type {
   CalibreBook,
   ImportOutcome,
   LibraryBook,
+  LibrarySourceRecord,
   OpenedBook,
   ReaderBridge,
   ReadingProgress,
@@ -31,6 +32,8 @@ export const tauriBridge: ReaderBridge = {
   listLibraryBooks: () => invoke<LibraryBook[]>('library_list'),
   searchLibraryBooks: (query) =>
     invoke<LibraryBook[]>('library_search', { query }),
+  listLibrarySourceRecords: (bookId) =>
+    invoke<LibrarySourceRecord[]>('library_source_records', { bookId }),
   searchRemoteLibraryBooks: (query) =>
     invoke<LibraryBook[]>('library_search_remote', { query }),
   searchRemoteLibraryBooksFromSource: (source: RemoteLibrarySource, query) =>
