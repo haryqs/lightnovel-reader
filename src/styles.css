@@ -855,6 +855,7 @@ body.statusbar-visible .statusbar,
   font-size: 12px;
 }
 .library-link-panel,
+.library-batch-panel,
 .library-source-panel {
   grid-column: 1 / -1;
   padding: 12px;
@@ -925,6 +926,64 @@ body.statusbar-visible .statusbar,
 .library-link-candidate-warning {
   margin-top: 2px;
   color: var(--danger);
+}
+.library-batch-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+.library-batch-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 10px;
+  padding: 9px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--soft) 55%, var(--surface));
+}
+.library-batch-row-linked {
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--border));
+}
+.library-batch-row-skipped {
+  opacity: 0.72;
+}
+.library-batch-main {
+  min-width: 0;
+}
+.library-batch-remote-title {
+  overflow: hidden;
+  color: var(--fg);
+  font-size: 13px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.library-batch-select {
+  width: 100%;
+  min-width: 0;
+  margin-top: 6px;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--fg);
+  font: inherit;
+  font-size: 12px;
+}
+.library-batch-actions {
+  display: flex;
+  gap: 6px;
+}
+.library-batch-status {
+  margin-top: 4px;
+  color: color-mix(in srgb, var(--accent) 68%, var(--fg));
+  font-size: 12px;
+}
+.library-batch-footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 10px;
 }
 .library-source-records {
   display: grid;

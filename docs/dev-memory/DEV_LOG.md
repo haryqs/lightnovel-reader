@@ -1403,3 +1403,34 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
 下一步：
 
 - 继续做批量人工确认队列，或给真窗口 smoke:remote-link 补来源面板/候选排序断言；版权边界不变，仍不自动合并、不抓正文。
+
+## 2026-06-18：批量人工确认队列
+
+变更：
+
+- 新增批量人工确认队列第一版：当前书架/远程搜索结果中有远程条目时启用“批量关联”按钮。
+- 队列逐条展示远程条目、来源摘要、推荐本地候选、匹配分数/理由/冲突提醒，用户可逐条关联或跳过。
+- 关联成功后复用单条关联的 `library.linkRemoteToLocal` 路径迁移 `source_record`；不自动合并、不抓正文。
+
+修改文件：
+
+- `index.html`
+- `src/main.ts`
+- `src/styles.css`
+- `docs/dev-memory/NEXT_ACTIONS.md`
+- `docs/dev-memory/DEV_LOG.md`
+
+验证：
+
+- npm.cmd run build 通过（含 check-arch、tsc、vite build）。
+- cargo test --workspace 通过（reading-core 74 passed）。
+- node scripts/check-dev-memory.mjs 通过。
+- git diff --check 通过（仅 Windows 换行提示）。
+
+未验证/阻塞：
+
+- 无
+
+下一步：
+
+- 给 smoke:remote-link 补来源面板、候选排序和批量确认队列的真窗口断言；版权边界不变。
