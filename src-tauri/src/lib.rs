@@ -6,6 +6,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use reading_core::epub_parser::{self, BookInfo};
+use reading_core::connectors;
 use reading_core::{compute_book_id, library, parse_cache, rusqlite, storage};
 use tauri::Manager;
 
@@ -771,6 +772,241 @@ fn get_progress(
     storage::get_progress(&db, &book_id).map_err(|e| e.to_string())
 }
 
+// ── OPDS v0.6 命令 ──
+
+/// 添加一个 OPDS 书源（kind="opds"），幂等。
+#[tauri::command]
+async fn opds_add_source(
+    state: tauri::State<'_, AppState>,
+    name: String,
+    url: String,
+) -> Result<connectors::opds::OpdsSource, String> {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+
+    let url = url.trim().to_string();
+    if url.is_empty() {
+        return Err("URL is required".into());
+    }
+
+    let mut hasher = DefaultHasher::new();
+    url.hash(&mut hasher);
+    let source_id = format!("opds-{:x}", hasher.finish());
+
+    let now = now_ms();
+    let db = state.library_db.lock().map_err(|e| e.to_string())?;
+    connectors::ensure_source(&db, &source_id, &name, "opds", Some(&url), now)
+        .map_err(|e| e.to_string())?;
+
+    Ok(connectors::opds::OpdsSource {
+        id: source_id,
+        name,
+        base_url: Some(url),
+        enabled: true,
+    })
+}
+
+/// 移除一个 OPDS 书源。
+#[tauri::command]
+async fn opds_remove_source(
+    state: tauri::State<'_, AppState>,
+    id: String,
+) -> Result<(), String> {
+    let db = state.library_db.lock().map_err(|e| e.to_string())?;
+    connectors::opds::remove_source(&db, &id).map_err(|e| e.to_string())
+}
+
+/// 列出所有已添加的 OPDS 书源。
+#[tauri::command]
+async fn opds_list_sources(
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<connectors::opds::OpdsSource>, String> {
+    let db = state.library_db.lock().map_err(|e| e.to_string())?;
+    connectors::opds::list_sources(&db).map_err(|e| e.to_string())
+}
+
+/// 抓取并解析一个 OPDS feed（导航或获取），不做落库。
+/// 自动检测 OPDS 1.x (Atom XML) 与 OPDS 2.0 (JSON) 格式。
+#[tauri::command]
+async fn opds_browse_feed(
+    url: String,
+) -> Result<connectors::opds::OpdsFeed, String> {
+    let url = url.trim();
+    if url.is_empty() {
+        return Err("URL is required".into());
+    }
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .get(url)
+        .header("accept", "application/atom+xml, application/opds+json, application/xml, text/xml, application/json")
+        .header(
+            "user-agent",
+            "LightNovel-Reader/0.6 (OPDS client; https://github.com/haryqs/lightnovel-reader)",
+        )
+        .send()
+        .await
+        .map_err(|e| format!("OPDS request failed: {e}"))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("OPDS server returned HTTP {}", resp.status()));
+    }
+
+    let body = resp
+        .text()
+        .await
+        .map_err(|e| format!("read response: {e}"))?;
+    opds_parse_body(&body)
+}
+
+/// Auto-detect OPDS format (1.x XML vs 2.0 JSON) and parse.
+fn opds_parse_body(body: &str) -> Result<connectors::opds::OpdsFeed, String> {
+    let trimmed = body.trim_start();
+    if trimmed.starts_with('{') {
+        connectors::opds::parse_opds_2x(body)
+    } else {
+        connectors::opds::parse_opds_1x(body)
+    }
+}
+
+/// 在已添加的 OPDS 书源中搜索。
+#[tauri::command]
+async fn opds_search_feed(
+    state: tauri::State<'_, AppState>,
+    source_id: String,
+    query: String,
+) -> Result<connectors::opds::OpdsFeed, String> {
+    let q = query.trim();
+    if q.is_empty() {
+        return Err("search query is empty".into());
+    }
+
+    // 在 await 之前取出 base_url 并释放 db 锁（MutexGuard 不能跨 await）。
+    let base_url: String = {
+        let db = state.library_db.lock().map_err(|e| e.to_string())?;
+        db.query_row(
+            "SELECT base_url FROM source WHERE id = ?1 AND kind = 'opds'",
+            [&source_id],
+            |row| row.get(0),
+        )
+        .map_err(|e| format!("source not found: {e}"))?
+    };
+
+    let search_url = connectors::opds::search_url(&base_url, q);
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .get(&search_url)
+        .header("accept", "application/atom+xml, application/opds+json, application/xml, text/xml, application/json")
+        .header(
+            "user-agent",
+            "LightNovel-Reader/0.6 (OPDS client; https://github.com/haryqs/lightnovel-reader)",
+        )
+        .send()
+        .await
+        .map_err(|e| format!("OPDS search request failed: {e}"))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("OPDS server returned HTTP {}", resp.status()));
+    }
+
+    let body = resp
+        .text()
+        .await
+        .map_err(|e| format!("read search response: {e}"))?;
+    opds_parse_body(&body)
+}
+
+/// 把 OPDS feed 中的条目落库为远程书库条目（仅元数据，不拉正文）。
+#[tauri::command]
+async fn opds_ingest_entries(
+    state: tauri::State<'_, AppState>,
+    source_id: String,
+    feed: connectors::opds::OpdsFeed,
+) -> Result<Vec<library::LibraryBook>, String> {
+    let now = now_ms();
+    let entries: Vec<connectors::RemoteEntry> = feed
+        .entries
+        .iter()
+        .filter(|e| !e.is_navigation)
+        .map(|e| e.to_remote_entry(&source_id))
+        .collect();
+
+    if entries.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let db = state.library_db.lock().map_err(|e| e.to_string())?;
+    // 确保来源存在（幂等）
+    connectors::ensure_source(&db, &source_id, &source_id, "opds", None, now)
+        .map_err(|e| e.to_string())?;
+    let ids =
+        connectors::ingest(&db, &source_id, &entries, now).map_err(|e| e.to_string())?;
+
+    let mut out = Vec::with_capacity(ids.len());
+    for id in ids {
+        if let Some(b) = library::get_book(&db, &id).map_err(|e| e.to_string())? {
+            out.push(b);
+        }
+    }
+    Ok(out)
+}
+
+/// 下载 OPDS open_license EPUB 并转为本地可读资产。
+/// 只允许 rights_status=open_license 的条目。
+#[tauri::command]
+async fn opds_download_epub(
+    state: tauri::State<'_, AppState>,
+    edition_id: String,
+    acquisition_url: String,
+) -> Result<library::LibraryBook, String> {
+    // 1) 验证条目存在且为 open_license。
+    let acquisition = {
+        let db = state.library_db.lock().map_err(|e| e.to_string())?;
+        let Some(info) = library::remote_acquisition(&db, &edition_id).map_err(|e| e.to_string())?
+        else {
+            return Err("找不到该条目".to_string());
+        };
+        if info.rights_status != "open_license" {
+            return Err(format!(
+                "该条目授权状态为 {}，不支持下载正文",
+                info.rights_status
+            ));
+        }
+        info
+    };
+
+    // 2) 下载 EPUB 字节。
+    let client = reqwest::Client::new();
+    let resp = client
+        .get(&acquisition_url)
+        .header(
+            "user-agent",
+            "LightNovel-Reader/0.6 (OPDS client; https://github.com/haryqs/lightnovel-reader)",
+        )
+        .send()
+        .await
+        .map_err(|e| format!("下载 EPUB 失败: {e}"))?;
+    if !resp.status().is_success() {
+        return Err(format!("下载 EPUB 失败: HTTP {}", resp.status()));
+    }
+    let epub_bytes = resp
+        .bytes()
+        .await
+        .map_err(|e| format!("读取 EPUB 响应失败: {e}"))?;
+
+    // 3) 落库（core）。
+    let now = now_ms();
+    let db = state.library_db.lock().map_err(|e| e.to_string())?;
+    library::attach_remote_epub_bytes(
+        &db,
+        &state.library_dir,
+        &acquisition.edition_id,
+        &epub_bytes,
+        now,
+    )
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -845,6 +1081,13 @@ pub fn run() {
             delete_annotation,
             save_progress,
             get_progress,
+            opds_add_source,
+            opds_remove_source,
+            opds_list_sources,
+            opds_browse_feed,
+            opds_search_feed,
+            opds_ingest_entries,
+            opds_download_epub,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

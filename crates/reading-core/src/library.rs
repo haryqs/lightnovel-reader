@@ -887,6 +887,68 @@ pub fn attach_remote_html_asset(
         .ok_or_else(|| "获取后未能回读书库条目".to_string())
 }
 
+/// 将已下载的 EPUB 字节附加到已有的远程元数据 edition 上（OPDS open_license 下载管线）。
+/// 与 `attach_remote_html_asset` 不同：输入的已经是标准 EPUB，不需要合成。
+pub fn attach_remote_epub_bytes(
+    conn: &Connection,
+    library_dir: &Path,
+    edition_id: &str,
+    epub_bytes: &[u8],
+    now_ms: i64,
+) -> Result<LibraryBook, String> {
+    if let Some(existing) =
+        existing_asset_for_edition(conn, edition_id).map_err(|e| e.to_string())?
+    {
+        return get_book(conn, &existing)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| "已获取的资产记录丢失".to_string());
+    }
+
+    let id = compute_book_id(epub_bytes);
+
+    let objects_dir = library_dir.join("objects");
+    std::fs::create_dir_all(&objects_dir).map_err(|e| format!("创建对象仓库失败: {e}"))?;
+    let dest = objects_dir.join(format!("{}.epub", id));
+    std::fs::write(&dest, epub_bytes).map_err(|e| format!("写入对象仓库失败: {e}"))?;
+
+    // 尝试从 EPUB 提取封面，但 fail-open（远程条目已有 OPDS 提供的封面）。
+    let (cover_path, thumb_path) = crate::library::save_cover_and_thumb(library_dir, &id, epub_bytes)
+        .unwrap_or((None, None));
+
+    conn.execute(
+        "INSERT INTO asset(id, edition_id, kind, availability, file_path, file_size, cover_path, thumb_path, added_at, last_read_at)
+         VALUES (?1, ?2, 'epub', 'cached', ?3, ?4, ?5, ?6, ?7, NULL)
+         ON CONFLICT(id) DO UPDATE SET
+           edition_id = excluded.edition_id,
+           availability = excluded.availability,
+           file_path = excluded.file_path,
+           file_size = excluded.file_size,
+           cover_path = COALESCE(excluded.cover_path, asset.cover_path),
+           thumb_path = COALESCE(excluded.thumb_path, asset.thumb_path)",
+        params![
+            id,
+            edition_id,
+            dest.to_string_lossy().into_owned(),
+            epub_bytes.len() as i64,
+            cover_path,
+            thumb_path,
+            now_ms
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+    conn.execute(
+        "UPDATE source_record
+            SET availability = 'cached', last_checked_at = ?2
+          WHERE entity_type = 'edition' AND entity_id = ?1",
+        params![edition_id, now_ms],
+    )
+    .map_err(|e| e.to_string())?;
+
+    get_book(conn, &id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "下载后未能回读书库条目".to_string())
+}
+
 fn existing_asset_for_edition(
     conn: &Connection,
     edition_id: &str,
