@@ -14,6 +14,7 @@
     "smoke:p0": "node scripts/tauri-p0-smoke.mjs",
     "smoke:p1": "node scripts/tauri-p1-smoke.mjs",
     "smoke:remote-link": "node scripts/tauri-remote-link-smoke.mjs",
+    "smoke:opds": "node scripts/tauri-opds-smoke.mjs",
     "package:beta": "powershell -ExecutionPolicy Bypass -File scripts/package-beta.ps1",
     "installer:web": "powershell -ExecutionPolicy Bypass -File scripts/build-web-installer.ps1",
     "build": "node scripts/check-arch.mjs && tsc && vite build",

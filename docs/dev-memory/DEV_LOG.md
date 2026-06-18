@@ -1,5 +1,32 @@
 # 开发日志
 
+## 2026-06-18：真实 OPDS 联网冒烟脚本
+
+变更：
+
+- 新增 `npm.cmd run smoke:opds`，通过 tauri-driver + WebView2 驱动真实 Tauri 窗口跑 OPDS 联网冒烟。
+- 冒烟流程覆盖：书架搜索框粘贴 OPDS feed URL 提示 → 填入 OPDS 源 → 添加源 → 浏览 Project Gutenberg OPDS feed → 进入《Pride and Prejudice》单本详情 → 下载 EPUB → 入库 → `library_open` 打开 → 遍历 spine 验证正文可读。
+- 默认真实源为 `https://www.gutenberg.org/ebooks/search.opds/?query=austen`；Standard Ebooks 官方页面公开列出的 OPDS 根 feed 在当前网络环境返回认证/HTML，不作为自动冒烟基线。
+
+修改文件：
+
+- `package.json`
+- `scripts/tauri-opds-smoke.mjs`
+- `docs/dev-memory/DEV_LOG.md`
+- `docs/dev-memory/NEXT_ACTIONS.md`
+
+验证：
+
+- `node --check scripts/tauri-opds-smoke.mjs` 通过。
+- `npm.cmd run build` 通过。
+- `npm.cmd run tauri -- build --debug --no-bundle` 通过，生成 `target/debug/reader.exe`。
+- `npm.cmd run smoke:opds` 通过；下载并打开 Project Gutenberg《Pride and Prejudice》。
+
+下一步：
+
+- 跑完整收工验证套件后，把 PR #23 更新为包含 OPDS 冒烟脚本。
+- 后续仍可继续推进结构化错误码与协议冻结审计。
+
 ## 2026-06-18：OPDS feed URL 粘贴识别
 
 变更：

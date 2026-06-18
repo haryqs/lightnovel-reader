@@ -16,7 +16,8 @@ git status -sb
 
 - `main` 已包含 v0.6 OPDS parser / source management / feed browser / OPDS EPUB download acquire pipeline。
 - 本轮 `codex/opds-url-detect` 新增书架搜索框 OPDS feed URL 粘贴识别：检测到看起来像 `opds` / `feed` / `catalog` / `.atom` / `.xml` / `.json` 的 `http(s)` URL 时，提示填入 OPDS 源面板；不会自动添加或联网。
-- 本轮只改前端 UI 与文档，没有改桥接协议、Rust command 或 core schema。
+- 本轮新增 `npm.cmd run smoke:opds` 真实 Tauri 联网冒烟：默认用 Project Gutenberg `https://www.gutenberg.org/ebooks/search.opds/?query=austen`，覆盖添加源、浏览、进入单本详情、下载 EPUB、入库、打开阅读。
+- 本轮只改前端 UI、冒烟脚本与文档，没有改桥接协议、Rust command 或 core schema。
 
 已验证：
 
@@ -25,11 +26,13 @@ git status -sb
 - `npm.cmd run build` 通过。
 - `cargo test --workspace` 通过（reading-core 84 passed）。
 - `git diff --check` 通过；仅有 Windows 换行提示。
+- `npm.cmd run tauri -- build --debug --no-bundle` 通过。
+- `npm.cmd run smoke:opds` 通过；下载并打开 Project Gutenberg《Pride and Prejudice》。
 
 下一步优先级：
 
-1. 真实联网 OPDS 冒烟：用真实 OPDS 目录站点验证“添加源 → 浏览 → 导航 → 下载 EPUB → 入库 → 打开阅读”。
-2. 若冒烟暴露错误信息不清晰，推进结构化错误码；同步 `src/platform/protocol.ts`、Rust serde/command 与 `docs/resource-library-plan/8_桥接协议_v0.1.md`。
+1. 将 PR #23 合并后，在 `main` 上按需复跑 `npm.cmd run smoke:opds`。
+2. 若继续功能开发，优先推进结构化错误码；同步 `src/platform/protocol.ts`、Rust serde/command 与 `docs/resource-library-plan/8_桥接协议_v0.1.md`。
 3. 做协议冻结审计：DTO 预留字段、批量预取语义、结构化错误码、资源通道边界。
 4. 保持版权边界：Bangumi / なろう 只做元数据 + 外链；`library.acquireRemote` 仍只允许青空公共版权条目，OPDS 仅允许开放授权/可获取 EPUB 的条目进入下载入库。
 
