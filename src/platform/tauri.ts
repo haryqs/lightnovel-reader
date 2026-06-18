@@ -9,6 +9,8 @@ import type {
   ImportOutcome,
   LibraryBook,
   LibrarySourceRecord,
+  OpdsFeed,
+  OpdsSource,
   OpenedBook,
   ReaderBridge,
   ReadingProgress,
@@ -52,4 +54,19 @@ export const tauriBridge: ReaderBridge = {
     invoke<ReadingProgress | null>('get_progress', { bookId }),
   resolveFileUrl: (path) => convertFileSrc(path),
   openExternal: (url) => openUrl(url),
+  // ── OPDS v0.6 ──
+  opdsAddSource: (name, url) =>
+    invoke<OpdsSource>('opds_add_source', { name, url }),
+  opdsRemoveSource: (id) =>
+    invoke('opds_remove_source', { id }),
+  opdsListSources: () =>
+    invoke<OpdsSource[]>('opds_list_sources'),
+  opdsBrowseFeed: (url) =>
+    invoke<OpdsFeed>('opds_browse_feed', { url }),
+  opdsSearchFeed: (sourceId, query) =>
+    invoke<OpdsFeed>('opds_search_feed', { sourceId, query }),
+  opdsIngestEntries: (sourceId, feed) =>
+    invoke<LibraryBook[]>('opds_ingest_entries', { sourceId, feed }),
+  opdsDownloadEpub: (editionId, acquisitionUrl) =>
+    invoke<LibraryBook>('opds_download_epub', { editionId, acquisitionUrl }),
 }

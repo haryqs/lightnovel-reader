@@ -41,6 +41,14 @@ const noBridge: ReaderBridge = {
   openExternal: async (url) => {
     window.open(url, '_blank', 'noopener')
   },
+  // OPDS v0.6
+  opdsAddSource: async () => unavailable('opds.addSource'),
+  opdsRemoveSource: async () => unavailable('opds.removeSource'),
+  opdsListSources: async () => unavailable('opds.listSources'),
+  opdsBrowseFeed: async () => unavailable('opds.browseFeed'),
+  opdsSearchFeed: async () => unavailable('opds.searchFeed'),
+  opdsIngestEntries: async () => unavailable('opds.ingestEntries'),
+  opdsDownloadEpub: async () => unavailable('opds.downloadEpub'),
 }
 
 export const bridge: ReaderBridge = isTauriRuntime() ? tauriBridge : noBridge

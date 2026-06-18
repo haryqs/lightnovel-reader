@@ -90,6 +90,42 @@ export interface LibrarySourceRecord {
 
 export type RemoteLibrarySource = 'anilist' | 'bangumi' | 'aozora' | 'narou'
 
+// ── OPDS v0.6 DTO（与 reading-core connectors::opds serde 结构一一对应）──
+
+export interface OpdsLink {
+  rel: string
+  href: string
+  mimeType?: string
+  title?: string
+}
+
+export interface OpdsEntry {
+  id: string
+  title: string
+  author?: string
+  summary?: string
+  links: OpdsLink[]
+  /** 封面图片 URL */
+  coverUrl?: string
+  /** 最佳 EPUB 获取链接 */
+  acquisitionUrl?: string
+  /** 是否为导航条目（指向子 feed）而非出版物 */
+  isNavigation: boolean
+}
+
+export interface OpdsFeed {
+  title: string
+  entries: OpdsEntry[]
+  links: OpdsLink[]
+}
+
+export interface OpdsSource {
+  id: string
+  name: string
+  baseUrl?: string
+  enabled: boolean
+}
+
 export interface ImportOutcome {
   book: LibraryBook
   duplicate: boolean
@@ -179,4 +215,19 @@ export interface ReaderBridge {
   resolveFileUrl(path: string): string
   /** shell.openExternal — 用系统默认浏览器打开外链(远程条目跳官方页) */
   openExternal(url: string): Promise<void>
+  // ── OPDS v0.6 ──
+  /** opds.addSource — 添加一个 OPDS 书源 */
+  opdsAddSource(name: string, url: string): Promise<OpdsSource>
+  /** opds.removeSource — 移除一个 OPDS 书源 */
+  opdsRemoveSource(id: string): Promise<void>
+  /** opds.listSources — 列出所有 OPDS 书源 */
+  opdsListSources(): Promise<OpdsSource[]>
+  /** opds.browseFeed — 抓取一个 OPDS feed 并解析（不做落库） */
+  opdsBrowseFeed(url: string): Promise<OpdsFeed>
+  /** opds.searchFeed — 在指定 OPDS 书源中搜索 */
+  opdsSearchFeed(sourceId: string, query: string): Promise<OpdsFeed>
+  /** opds.ingestEntries — 把 feed 条目落库为远程书库条目 */
+  opdsIngestEntries(sourceId: string, feed: OpdsFeed): Promise<LibraryBook[]>
+  /** opds.downloadEpub — 下载 OPDS open_license EPUB 并转为本地可读资产 */
+  opdsDownloadEpub(editionId: string, acquisitionUrl: string): Promise<LibraryBook>
 }
