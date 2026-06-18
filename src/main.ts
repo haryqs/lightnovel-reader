@@ -557,6 +557,10 @@ const libraryRemoteSourceSelect = $<HTMLSelectElement>('#library-remote-source')
 const librarySourcePanel = $<HTMLDetailsElement>('#library-source-panel')
 // OPDS v0.6
 const libraryOpdsPanel = $<HTMLDetailsElement>('#library-opds-panel')
+const libraryOpdsUrlHint = $<HTMLElement>('#library-opds-url-hint')
+const libraryOpdsUrlText = $<HTMLElement>('#library-opds-url-text')
+const libraryOpdsUseUrlBtn = $<HTMLButtonElement>('#btn-library-opds-use-url')
+const libraryOpdsDismissUrlBtn = $<HTMLButtonElement>('#btn-library-opds-dismiss-url')
 const opdsSourceList = $('#opds-source-list')
 const opdsSourceUrlInput = $<HTMLInputElement>('#opds-source-url')
 const opdsSourceNameInput = $<HTMLInputElement>('#opds-source-name')
@@ -569,6 +573,7 @@ const opdsFeedIngestAllBtn = $<HTMLButtonElement>('#btn-opds-feed-ingest-all')
 // OPDS session state: track current browsing context
 let opdsFeedCache: OpdsFeed | null = null
 let opdsSourceCache: OpdsSource | null = null
+let dismissedOpdsUrlHint = ''
 let libraryBooks: LibraryBook[] = []
 let librarySearchTimer: number | null = null
 const REMOTE_SOURCE_LABEL: Record<RemoteLibrarySource, string> = {
@@ -599,12 +604,88 @@ libraryPathInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') importCalibreLibrary()
 })
 librarySearchInput.addEventListener('input', () => {
+  if (updateOpdsUrlHint()) {
+    if (librarySearchTimer !== null) {
+      window.clearTimeout(librarySearchTimer)
+      librarySearchTimer = null
+    }
+    return
+  }
   if (librarySearchTimer !== null) window.clearTimeout(librarySearchTimer)
   librarySearchTimer = window.setTimeout(() => {
     librarySearchTimer = null
     refreshLibraryBooks()
   }, 180)
 })
+libraryOpdsUseUrlBtn.addEventListener('click', () => useDetectedOpdsUrl())
+libraryOpdsDismissUrlBtn.addEventListener('click', () => dismissDetectedOpdsUrl())
+
+function detectOpdsFeedUrl(value: string): string | null {
+  const raw = value.trim()
+  if (!raw) return null
+  let url: URL
+  try {
+    url = new URL(raw)
+  } catch {
+    return null
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return null
+  const haystack = `${url.hostname}${url.pathname}${url.search}`.toLowerCase()
+  if (
+    haystack.includes('opds') ||
+    haystack.includes('feed') ||
+    haystack.includes('catalog') ||
+    /\.(atom|xml|json)$/i.test(url.pathname)
+  ) {
+    return url.href
+  }
+  return null
+}
+
+function suggestOpdsSourceName(url: string): string {
+  try {
+    const parsed = new URL(url)
+    return parsed.hostname.replace(/^www\./i, '')
+  } catch {
+    return url
+  }
+}
+
+function updateOpdsUrlHint(): boolean {
+  const detectedUrl = detectOpdsFeedUrl(librarySearchInput.value)
+  if (!detectedUrl || detectedUrl === dismissedOpdsUrlHint) {
+    libraryOpdsUrlHint.hidden = true
+    libraryOpdsUrlText.textContent = ''
+    return false
+  }
+  libraryOpdsUrlText.textContent = detectedUrl
+  libraryOpdsUrlHint.hidden = false
+  return true
+}
+
+function useDetectedOpdsUrl() {
+  const detectedUrl = detectOpdsFeedUrl(librarySearchInput.value)
+  if (!detectedUrl) {
+    libraryOpdsUrlHint.hidden = true
+    return
+  }
+  libraryOpdsPanel.open = true
+  opdsSourceUrlInput.value = detectedUrl
+  if (!opdsSourceNameInput.value.trim()) {
+    opdsSourceNameInput.value = suggestOpdsSourceName(detectedUrl)
+  }
+  dismissedOpdsUrlHint = detectedUrl
+  libraryOpdsUrlHint.hidden = true
+  librarySearchInput.value = ''
+  void refreshOpdsSources()
+  void refreshLibraryBooks()
+  opdsSourceNameInput.focus()
+}
+
+function dismissDetectedOpdsUrl() {
+  dismissedOpdsUrlHint = detectOpdsFeedUrl(librarySearchInput.value) || ''
+  libraryOpdsUrlHint.hidden = true
+}
 
 const librarySearchRemoteBtn = $<HTMLButtonElement>('#btn-library-search-remote')
 const libraryBatchLinkBtn = $<HTMLButtonElement>('#btn-library-batch-link')

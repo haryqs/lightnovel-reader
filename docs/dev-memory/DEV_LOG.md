@@ -1,5 +1,36 @@
 # 开发日志
 
+## 2026-06-18：OPDS feed URL 粘贴识别
+
+变更：
+
+- 书架搜索框现在会识别看起来像 OPDS/feed/catalog 的 `http(s)` URL，并显示“填入 OPDS 源”提示。
+- 点击提示后会展开 OPDS 源面板，把 URL 填入源地址，并用域名预填源名称；仍需用户显式点击“添加 OPDS 源”，不自动联网添加。
+- 对 OPDS 源输入框补齐 focus 样式，提示条在窄屏下保持可读。
+
+修改文件：
+
+- `index.html`
+- `src/main.ts`
+- `src/styles.css`
+
+验证：
+
+- `node scripts/check-arch.mjs` 通过。
+- `node scripts/check-dev-memory.mjs` 通过。
+- `npm.cmd run build` 通过。
+- `cargo test --workspace` 通过（reading-core 84 passed）。
+- `git diff --check` 通过；仅有 Windows 换行提示。
+
+未验证：
+
+- 尚未在真实 Tauri 窗口里粘贴真实 OPDS feed URL 走完整添加/浏览流程。
+
+下一步：
+
+- 做真实联网 OPDS 冒烟：添加真实 OPDS 目录站点，验证浏览、导航、下载 EPUB、入库打开。
+- 继续推进结构化错误码与协议冻结审计。
+
 > 每轮开发结束追加。只写会影响未来接手的信息。
 
 ## 2026-06-12：建立项目记忆与开发流程

@@ -170,6 +170,16 @@
             <button id="btn-library-search-remote" class="btn" title="按所选来源在线搜索；青空文库是公共版权经典库，不是轻小说主来源">🌐 在线找书</button>
             <button id="btn-library-batch-link" class="btn btn-subtle" title="对当前远程搜索结果逐条确认关联到本地书" disabled>批量关联</button>
           </div>
+          <div id="library-opds-url-hint" class="library-opds-url-hint" hidden>
+            <div class="library-opds-url-copy">
+              <strong>检测到 OPDS feed URL</strong>
+              <span id="library-opds-url-text"></span>
+            </div>
+            <div class="library-opds-url-actions">
+              <button id="btn-library-opds-use-url" class="btn btn-primary" type="button">填入 OPDS 源</button>
+              <button id="btn-library-opds-dismiss-url" class="btn btn-subtle" type="button">忽略</button>
+            </div>
+          </div>
           <div id="library-grid" class="library-grid"></div>
         </div>
       </section>
