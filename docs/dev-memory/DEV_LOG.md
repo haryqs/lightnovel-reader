@@ -1493,3 +1493,69 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
 未验证/阻塞：
 
 - 尚未执行 PR review/merge；下一步做最终检查后 review 并合并 PR #22。
+
+## 2026-06-18：OPDS v0.6 第一轮介入：完成 Rust core OPDS 1.x Atom XML 解析器（connectors::opds，含 OpdsFeed/OpdsEntry/OpdsLink 结构、parse_opds_1x 快速 XML 事件解析器、to_remote_entry 权利状态映射），5 个单测覆盖解析/导航条目/权利映射/边界/端到端落库。新增 6 个 Tauri 命令（opds_add_source/remove_source/list_sources/browse_feed/search_feed/ingest_entries），扩展协议 DTO 与 bridge 方法，前端新增 OPDS 书源管理面板与 feed 浏览器 UI（源增删/浏览/搜索/子分类导航/条目摄入/全部加入书架），支持 relative URL 解析。测试 79 passed 0 failed，前端 tsc + vite build 通过，check-arch/check-dev-memory 通过。
+
+变更：
+
+- OPDS v0.6 第一轮介入：完成 Rust core OPDS 1.x Atom XML 解析器（connectors::opds，含 OpdsFeed/OpdsEntry/OpdsLink 结构、parse_opds_1x 快速 XML 事件解析器、to_remote_entry 权利状态映射），5 个单测覆盖解析/导航条目/权利映射/边界/端到端落库。新增 6 个 Tauri 命令（opds_add_source/remove_source/list_sources/browse_feed/search_feed/ingest_entries），扩展协议 DTO 与 bridge 方法，前端新增 OPDS 书源管理面板与 feed 浏览器 UI（源增删/浏览/搜索/子分类导航/条目摄入/全部加入书架），支持 relative URL 解析。测试 79 passed 0 failed，前端 tsc + vite build 通过，check-arch/check-dev-memory 通过。
+
+修改文件：
+
+- 待补充
+
+验证：
+
+- cargo test --workspace (79 passed), npm run build (tsc + vite), check-arch, check-dev-memory
+
+未验证/阻塞：
+
+- 无
+
+下一步：
+
+- v0.6 OPDS 第二轮：OPDS 2.0 JSON Feed 支持；实机联网冒烟（真实 OPDS 目录站点）；OPDS EPUB 下载 acquire 管线（open_license 条目的正文获取与本地资产转换）；URL 粘贴识别 OPDS feed；结构化错误码与协议冻结审计。
+
+## 2026-06-18：OPDS v0.6 第二轮：OPDS 2.0 JSON Feed 支持。新增 parse_opds_2x(json) 解析器，支持 RWPM/JSON-LD 格式的 navigation/publications/groups/facets 结构、schema.org 元数据映射（author 字符串/对象、identifier 提取、images 封面优先缩略图、acquisition 链接提取）、group 扁平化前缀归并。修复 to_remote_entry 权利映射：acquisition rel 含 borrow/buy/sample 后缀不再误判为 open_license。Tauri opds_browse_feed/search_feed 新增 application/opds+json Accept header + 自动格式检测（sniff 首字符 { vs <）。新增 5 个 OPDS 2.0 单测（导航 feed、出版 feed 元数据/封面/权利、groups 扁平化、边界、端到端落库）。测试 84 passed 0 failed。
+
+变更：
+
+- OPDS v0.6 第二轮：OPDS 2.0 JSON Feed 支持。新增 parse_opds_2x(json) 解析器，支持 RWPM/JSON-LD 格式的 navigation/publications/groups/facets 结构、schema.org 元数据映射（author 字符串/对象、identifier 提取、images 封面优先缩略图、acquisition 链接提取）、group 扁平化前缀归并。修复 to_remote_entry 权利映射：acquisition rel 含 borrow/buy/sample 后缀不再误判为 open_license。Tauri opds_browse_feed/search_feed 新增 application/opds+json Accept header + 自动格式检测（sniff 首字符 { vs <）。新增 5 个 OPDS 2.0 单测（导航 feed、出版 feed 元数据/封面/权利、groups 扁平化、边界、端到端落库）。测试 84 passed 0 failed。
+
+修改文件：
+
+- 待补充
+
+验证：
+
+- cargo test --workspace (84 passed), npm run build (tsc + vite), check-arch/check-dev-memory OK
+
+未验证/阻塞：
+
+- 无
+
+下一步：
+
+- v0.6 第三轮：OPDS EPUB 下载 acquire 管线（open_license 条目 HTTP 下载 → 本地 asset 转换）；实机联网冒烟；URL 粘贴识别；结构化错误码与协议冻结审计。
+
+## 2026-06-18：v0.6 OPDS 第三轮：EPUB 下载 acquire 管线。新增 library::attach_remote_epub_bytes（直接保存下载的 EPUB 字节为本地 asset，含元数据提取/封面缩略图/DB 写入）、opds_download_epub Tauri 命令（HTTP GET → 校验→ 落库）、协议 bridge 方法 opdsDownloadEpub、前端下载按钮（两步骤：摄入→下载，含状态反馈）。与 aozora acquire 不同：OPDS 直接提供预建 EPUB，无需 HTML→EPUB 合成。
+
+变更：
+
+- v0.6 OPDS 第三轮：EPUB 下载 acquire 管线。新增 library::attach_remote_epub_bytes（直接保存下载的 EPUB 字节为本地 asset，含元数据提取/封面缩略图/DB 写入）、opds_download_epub Tauri 命令（HTTP GET → 校验→ 落库）、协议 bridge 方法 opdsDownloadEpub、前端下载按钮（两步骤：摄入→下载，含状态反馈）。与 aozora acquire 不同：OPDS 直接提供预建 EPUB，无需 HTML→EPUB 合成。
+
+修改文件：
+
+- 待补充
+
+验证：
+
+- cargo test --workspace (84 passed), npm run build (tsc + vite), check-arch, check-dev-memory
+
+未验证/阻塞：
+
+- 无
+
+下一步：
+
+- v0.6 第四轮：实机联网冒烟（真实 OPDS 站点测试完整流程）；URL 粘贴识别 OPDS feed；结构化错误码与协议冻结审计。

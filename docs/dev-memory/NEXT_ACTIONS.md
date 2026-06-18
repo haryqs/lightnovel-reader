@@ -1,58 +1,62 @@
 # 下一步任务队列
 
-## 📌 交接留言（2026-06-18，给实验室电脑 Codex）
+## 📌 交接留言（2026-06-18，v0.6 OPDS 第一轮完成）
 
-先同步 GitHub，并接到当前 PR 分支：
+先同步 GitHub：
 
 ```powershell
 cd E:\workspace\game-cooperative-plan\lightnovel-reader
 git fetch --all --prune
-gh pr checkout 22
-git status -sb
-```
-
-如果实验室电脑没有 `gh` 登录，则用：
-
-```powershell
-git checkout codex/source-record-panel
+git checkout main
 git pull --ff-only
 git status -sb
 ```
 
 当前事实：
 
-- PR #22 已打开：<https://github.com/haryqs/lightnovel-reader/pull/22>，分支 `codex/source-record-panel`，base `main`。
-- PR #22 当前包含 3 个提交：
-  - `5a4b61d reader: show linked source records`
-  - `539cf5a reader: rank remote link candidates`
-  - `700d916 reader: 增加批量人工关联队列`
-- 本轮实验室电脑已在 PR 分支补第 4 个待提交改动：增强 `smoke:remote-link`，覆盖来源面板、候选排序分数/理由、批量队列跳过/关联。
-- 这些改动还没有合并进 `main`；实验室电脑若要验证/继续这条线，请在 PR 分支上做，不要只 checkout `main`。
+- PR #22 已合并进 `main`（`source-record-panel` 分支已删除）。
+- v0.6 OPDS 第一轮已在本机完成（未推送，仍在本地 `main`）。
+- 本轮改动：Rust core + Tauri commands + protocol + 前端 UI。
 
-本轮已完成：
+本轮已完成（v0.6 OPDS 第一轮）：
 
-- `library.listSourceRecords` 只读协议：按本地 `asset.id` 或远程 `edition.id` 列出挂到同一 edition 的来源记录；前端书架卡片新增“来源”按钮。
-- 单条“关联本地”候选排序：合并标题搜索与全量本地候选，按标题、作者、系列、语言、卷号打分，展示匹配理由、低置信/冲突提醒；仍需用户显式确认。
-- 批量人工确认队列：当前远程搜索结果可一键整理为队列，每条展示推荐本地候选、匹配理由和冲突提醒；用户逐条“关联/跳过”，不自动合并。
-- `smoke:remote-link` 已补 UI 回归断言：来源面板可打开；候选排序显示分数/理由且按分数降序；批量确认队列可打开并完成逐条跳过/关联。
-- 版权边界不变：Bangumi / なろう 只做元数据 + 外链，不抓正文；`library.acquireRemote` 仍只允许青空公共版权条目。
+- **Rust core**（`crates/reading-core/src/connectors.rs`）：新增 `connectors::opds` 模块。
+  - `OpdsLink`/`OpdsEntry`/`OpdsFeed` 结构（serde Serialize/Deserialize，camelCase）。
+  - `parse_opds_1x(xml: &str) -> Result<OpdsFeed, String>`：基于 `quick_xml` 的快速 XML 事件解析器，支持 Atom feed、空元素展开、导航子分类识别（`subsection` rel）、封面/获取链接提取（优先缩略图与 EPUB mime type）、权利状态映射（`open_license` / `metadata_only`）。
+  - `OpdsSource` 结构（id/name/base_url/enabled）。
+  - `list_sources(conn)` / `remove_source(conn, id)` / `search_url(base_url, query)` / `urlencoding(s)` 辅助函数。
+  - 5 个单测：采集 feed 解析、导航 feed 解析、权利状态映射、空/垃圾输入边界、端到端落库（`opds_entry_lands_on_shelf_as_remote`）。
+- **Tauri shell**（`src-tauri/src/lib.rs`）：6 个 OPDS 命令。
+  - `opds_add_source(name, url)`：生成 `opds:md5:` source ID，调用 `ensure_source`。
+  - `opds_remove_source(id)` / `opds_list_sources()`。
+  - `opds_browse_feed(url)`：HTTP GET + Accept header → parse_opds_1x。
+  - `opds_search_feed(source_id, query)`：查 base_url → 构造搜索 URL → fetch + parse。已修复 MutexGuard 跨 await 的 Send trait 问题（db 锁在 await 前 scope drop）。
+  - `opds_ingest_entries(source_id, feed)`：过滤导航条目 → ensure_source + ingest → 返回 LibraryBook[]。
+  - 全部注册在 invoke_handler。
+- **协议**（`src/platform/protocol.ts`）：新增 `OpdsLink`/`OpdsEntry`/`OpdsFeed`/`OpdsSource` DTO，6 个 bridge 方法。
+- **平台桥接**（`src/platform/tauri.ts` + `index.ts`）：invoke 包装 + noBridge stub。
+- **前端 UI**（`index.html` / `src/styles.css` / `src/main.ts`）：
+  - 书架视图新增 `<details>` OPDS 面板（源列表 + 添加表单 + feed 浏览器）。
+  - OPDS CSS 样式：源行（名称/URL/操作）、feed 卡片网格（导航卡片 vs 出版物卡片）、标签徽章、空状态。
+  - TypeScript 函数：源管理（增删刷新）、feed 浏览（URL 获取 + relative URL 解析）、feed 搜索、条目摄入（单条 + 全部）、外链打开、导航层级穿透。
 
 已验证：
 
-- `npm.cmd run build` 通过（含 `check-arch`、`tsc`、`vite build`）。
-- `cargo test --workspace` 通过（reading-core 74 passed）。
-- `node scripts/check-dev-memory.mjs` 通过。
-- `git diff --check` 通过（仅 Windows 换行提示）。
-- 本轮新增验证：
-  - `node --check scripts/tauri-remote-link-smoke.mjs` 通过。
-  - `npm.cmd run tauri -- build --debug --no-bundle` 通过。
-  - `npm.cmd run smoke:remote-link -- --tauri-driver C:\Users\41267\.cargo\bin\tauri-driver.exe --native-driver C:\Users\41267\AppData\Local\lightnovel-reader-tools\msedgedriver\149.0.4022.69\msedgedriver.exe` 通过。
+- `cargo test --workspace`：79 passed，0 failed，0 warnings。
+- `npm run build`：tsc + vite build 通过。
+- `node scripts/check-arch.mjs`：通过（@tauri-apps 仅出现在 src/platform/）。
+- `node scripts/check-dev-memory.mjs`：通过。
 
-下一步建议：
+下一步优先级（v0.6 OPDS 第二轮）：
 
-1. 跑最终收工检查（至少 `node scripts/check-arch.mjs`、`node scripts/check-dev-memory.mjs`、`git diff --check`；必要时补 `npm.cmd run build` / `cargo test --workspace`）。
-2. review 并合并 PR #22。
-3. 合并后再从最新 `main` 继续下一个资源书库体验项；不要在 PR #22 上继续堆无关功能。
+1. **OPDS 2.0 JSON Feed 支持**：`parse_opds_2x(json)`，OPDS 2.0 使用 JSON-LD/Z39.87 格式，需独立解析器或复用 serde 结构。
+2. **实机联网冒烟**：用真实 OPDS 目录站点（如 Standard Ebooks、Feedbooks）测试完整的“添加源 → 浏览 → 导航 → 摄入”流程。
+3. **OPDS EPUB 下载 acquire 管线**：`library.acquireRemote` 当前只支持青空文库 XHTML→EPUB 合成；OPDS open_license EPUB 可直接 HTTP 下载后转为本地 asset。
+4. **URL 粘贴识别**：书架搜索框粘贴 OPDS feed URL 时自动识别并提示添加为 OPDS 源。
+5. **结构化错误码**：协议层的 `ErrorCode` 枚举替代原始字符串错误。
+6. **协议冻结审计**：检查桥接协议 8 的 DTO 预留字段是否完整。
+
+或者也可以继续推进 v0.5 遗留项（URL 粘贴识别、结构化错误码、协议冻结），然后切回 v0.6。
 
 ## 📌 交接留言（2026-06-17，给寝室电脑 Codex）
 
