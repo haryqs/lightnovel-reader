@@ -1,5 +1,53 @@
 # 下一步任务队列
 
+## 📌 交接留言（2026-06-18，给实验室电脑 Codex）
+
+先同步 GitHub，并接到当前 PR 分支：
+
+```powershell
+cd E:\workspace\game-cooperative-plan\lightnovel-reader
+git fetch --all --prune
+gh pr checkout 22
+git status -sb
+```
+
+如果实验室电脑没有 `gh` 登录，则用：
+
+```powershell
+git checkout codex/source-record-panel
+git pull --ff-only
+git status -sb
+```
+
+当前事实：
+
+- PR #22 已打开：<https://github.com/haryqs/lightnovel-reader/pull/22>，分支 `codex/source-record-panel`，base `main`。
+- PR #22 当前包含 3 个提交：
+  - `5a4b61d reader: show linked source records`
+  - `539cf5a reader: rank remote link candidates`
+  - `700d916 reader: 增加批量人工关联队列`
+- 这些改动还没有合并进 `main`；实验室电脑若要验证/继续这条线，请在 PR 分支上做，不要只 checkout `main`。
+
+本轮已完成：
+
+- `library.listSourceRecords` 只读协议：按本地 `asset.id` 或远程 `edition.id` 列出挂到同一 edition 的来源记录；前端书架卡片新增“来源”按钮。
+- 单条“关联本地”候选排序：合并标题搜索与全量本地候选，按标题、作者、系列、语言、卷号打分，展示匹配理由、低置信/冲突提醒；仍需用户显式确认。
+- 批量人工确认队列：当前远程搜索结果可一键整理为队列，每条展示推荐本地候选、匹配理由和冲突提醒；用户逐条“关联/跳过”，不自动合并。
+- 版权边界不变：Bangumi / なろう 只做元数据 + 外链，不抓正文；`library.acquireRemote` 仍只允许青空公共版权条目。
+
+已验证：
+
+- `npm.cmd run build` 通过（含 `check-arch`、`tsc`、`vite build`）。
+- `cargo test --workspace` 通过（reading-core 74 passed）。
+- `node scripts/check-dev-memory.mjs` 通过。
+- `git diff --check` 通过（仅 Windows 换行提示）。
+
+下一步建议：
+
+1. 优先给真实 Tauri 窗口 `smoke:remote-link` 补断言：来源面板可打开、候选排序显示分数/理由、批量确认队列可打开并逐条跳过/关联。
+2. 真窗口回归通过后，review 并合并 PR #22。
+3. 合并后再从最新 `main` 继续下一个资源书库体验项；不要在 PR #22 上继续堆无关功能。
+
 ## 📌 交接留言（2026-06-17，给寝室电脑 Codex）
 
 先同步 GitHub：

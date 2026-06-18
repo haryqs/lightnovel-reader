@@ -1434,3 +1434,30 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
 下一步：
 
 - 给 smoke:remote-link 补来源面板、候选排序和批量确认队列的真窗口断言；版权边界不变。
+
+## 2026-06-18：实验室电脑交接整理
+
+变更：
+
+- 在 `NEXT_ACTIONS.md` 顶部新增“给实验室电脑 Codex”的交接留言。
+- 明确当前工作在 PR #22 / `codex/source-record-panel`，尚未合并进 `main`。
+- 汇总 PR #22 的 3 个提交、已完成能力、验证命令和下一步建议。
+- 明确下一步优先做真实 Tauri 窗口 `smoke:remote-link` 回归断言，验证通过后再 review/merge PR #22。
+
+修改文件：
+
+- `docs/dev-memory/NEXT_ACTIONS.md`
+- `docs/dev-memory/DEV_LOG.md`
+
+验证：
+
+- `node scripts/check-dev-memory.mjs` 通过。
+- `git diff --check` 通过（仅 Windows 换行提示）。
+
+未验证/阻塞：
+
+- 无。
+
+下一步：
+
+- 实验室电脑先 checkout PR #22，再补真窗口 smoke 断言；不要只在 `main` 上找这些未合并功能。
