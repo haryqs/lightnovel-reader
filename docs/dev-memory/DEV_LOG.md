@@ -1375,3 +1375,31 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
 下一步：
 
 - 继续做关联候选排序/提示或批量人工确认队列；版权边界不变：Bangumi/なろう 只做元数据和外链，library.acquireRemote 仍只允许青空公共版权条目。
+
+## 2026-06-18：关联候选排序与提示
+
+变更：
+
+- 增强远程条目关联本地书面板：候选合并标题搜索与全量本地书后去重，按标题、作者、系列、语言、卷号打分排序；面板展示匹配分数、命中理由、语言/卷号冲突和低置信提醒；低分关联确认时追加人工核对提示；同时修正 linkRemoteEntry 对 isTauriRuntime 的函数调用。
+
+修改文件：
+
+- `src/main.ts`
+- `src/styles.css`
+- `docs/dev-memory/NEXT_ACTIONS.md`
+- `docs/dev-memory/DEV_LOG.md`
+
+验证：
+
+- npm.cmd run build 通过（含 check-arch、tsc、vite build）。
+- cargo test --workspace 通过（reading-core 74 passed）。
+- node scripts/check-dev-memory.mjs 通过。
+- git diff --check 通过（仅 Windows 换行提示）。
+
+未验证/阻塞：
+
+- 无
+
+下一步：
+
+- 继续做批量人工确认队列，或给真窗口 smoke:remote-link 补来源面板/候选排序断言；版权边界不变，仍不自动合并、不抓正文。

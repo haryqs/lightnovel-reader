@@ -876,7 +876,9 @@ body.statusbar-visible .statusbar,
 }
 .library-link-subtitle,
 .library-link-empty,
-.library-link-candidate-meta {
+.library-link-candidate-meta,
+.library-link-candidate-match,
+.library-link-candidate-warning {
   color: var(--muted);
   font-size: 12px;
   line-height: 1.45;
@@ -912,6 +914,17 @@ body.statusbar-visible .statusbar,
 }
 .library-link-candidate-main {
   min-width: 0;
+}
+.library-link-candidate-match {
+  margin-top: 2px;
+  color: color-mix(in srgb, var(--accent) 68%, var(--fg));
+}
+.library-link-candidate-match-low {
+  color: color-mix(in srgb, var(--muted) 78%, var(--fg));
+}
+.library-link-candidate-warning {
+  margin-top: 2px;
+  color: var(--danger);
 }
 .library-source-records {
   display: grid;
