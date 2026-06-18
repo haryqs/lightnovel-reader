@@ -574,6 +574,651 @@ pub mod aozora {
     }
 }
 
+/// OPDS 连接器：解析 OPDS 1.x / 2.0 目录订阅源。
+///
+/// OPDS（Open Publication Distribution System）是电子出版物目录协议。
+/// OPDS 1.x 基于 Atom XML，OPDS 2.0 基于 JSON-LD。
+///
+/// 本模块只做「XML/JSON 解析 + 条目映射」（纯函数，可测/可 wasm）；
+/// HTTP 传输是平台胶水，放在各壳（Tauri command 等）。
+pub mod opds {
+    use quick_xml::events::Event;
+    use quick_xml::Reader;
+    use serde::{Deserialize, Serialize};
+
+    /// OPDS 1.x link relation URIs
+    const REL_ACQUISITION_PREFIX: &str = "http://opds-spec.org/acquisition";
+    const REL_IMAGE: &str = "http://opds-spec.org/image";
+    const REL_IMAGE_THUMBNAIL: &str = "http://opds-spec.org/image/thumbnail";
+    const REL_ALTERNATE: &str = "alternate";
+    #[allow(dead_code)]
+    const REL_SELF: &str = "self";
+    #[allow(dead_code)]
+    const REL_NEXT: &str = "next";
+    #[allow(dead_code)]
+    const REL_START: &str = "start";
+    const REL_SUBSECTION: &str = "subsection";
+
+    /// An OPDS link extracted from a feed or entry.
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct OpdsLink {
+        pub rel: String,
+        pub href: String,
+        pub mime_type: Option<String>,
+        pub title: Option<String>,
+    }
+
+    /// A single entry (publication or navigation link) from an OPDS feed.
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct OpdsEntry {
+        pub id: String,
+        pub title: String,
+        pub author: Option<String>,
+        pub summary: Option<String>,
+        pub links: Vec<OpdsLink>,
+        /// Cover image URL (best available from links).
+        pub cover_url: Option<String>,
+        /// Best acquisition link for EPUB (if available).
+        pub acquisition_url: Option<String>,
+        /// Whether this entry represents a sub-feed (navigation) rather than a publication.
+        pub is_navigation: bool,
+    }
+
+    /// A parsed OPDS feed.
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct OpdsFeed {
+        pub title: String,
+        pub entries: Vec<OpdsEntry>,
+        pub links: Vec<OpdsLink>,
+    }
+
+    /// An OPDS source stored in the library's source table (kind="opds").
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct OpdsSource {
+        pub id: String,
+        pub name: String,
+        pub base_url: Option<String>,
+        pub enabled: bool,
+    }
+
+    /// List all OPDS sources from the source table.
+    pub fn list_sources(conn: &rusqlite::Connection) -> rusqlite::Result<Vec<OpdsSource>> {
+        let mut stmt = conn.prepare(
+            "SELECT id, name, base_url, enabled FROM source WHERE kind = 'opds' ORDER BY created_at",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(OpdsSource {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                base_url: row.get(2)?,
+                enabled: row.get::<_, i64>(3)? != 0,
+            })
+        })?;
+        let mut sources = Vec::new();
+        for row in rows {
+            sources.push(row?);
+        }
+        Ok(sources)
+    }
+
+    /// Remove an OPDS source by id.
+    pub fn remove_source(conn: &rusqlite::Connection, id: &str) -> rusqlite::Result<()> {
+        conn.execute("DELETE FROM source WHERE id = ?1 AND kind = 'opds'", [id])?;
+        Ok(())
+    }
+
+    /// Construct an OPDS 1.x search URL by appending `?q=...` to the base URL.
+    /// Real implementations should prefer the feed's OpenSearch link (`rel="search"`),
+    /// but this fallback works with many standard OPDS catalogs.
+    pub fn search_url(base_url: &str, query: &str) -> String {
+        if base_url.contains('?') {
+            format!("{}&q={}", base_url, urlencoding(query))
+        } else {
+            format!("{}?q={}", base_url, urlencoding(query))
+        }
+    }
+
+    /// Simple percent-encoding for query parameters. Avoids pulling in a URL crate just for this.
+    fn urlencoding(s: &str) -> String {
+        let mut out = String::with_capacity(s.len() * 3);
+        for byte in s.as_bytes() {
+            match byte {
+                b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                    out.push(*byte as char);
+                }
+                b' ' => out.push('+'),
+                _ => out.push_str(&format!("%{:02X}", byte)),
+            }
+        }
+        out
+    }
+
+    impl OpdsEntry {
+        /// Convert to a RemoteEntry for ingestion via connectors::ingest.
+        pub fn to_remote_entry(&self, source_id: &str) -> super::RemoteEntry {
+            // Derive a remote_id from the entry's id + source
+            let remote_id = format!("{}:{}", source_id, self.id);
+        // Map acquisition link type to rights_status
+        let rights_status = if self
+            .links
+            .iter()
+            .any(|l| l.rel.starts_with(REL_ACQUISITION_PREFIX))
+        {
+            // Has acquisition link → check for free vs restricted
+            let is_free = self.links.iter().any(|l| {
+                l.rel.starts_with(REL_ACQUISITION_PREFIX)
+                    && !l.rel.contains("borrow")
+                    && !l.rel.contains("buy")
+                    && !l.rel.contains("sample")
+                    && l.mime_type
+                        .as_deref()
+                        .is_some_and(|m| m.contains("epub") || m.contains("pdf"))
+            });
+            if is_free {
+                "open_license"
+            } else {
+                "unknown"
+            }
+        } else {
+            "metadata_only"
+        };
+
+            super::RemoteEntry {
+                remote_id,
+                title: self.title.clone(),
+                author: self.author.clone(),
+                description: self.summary.clone(),
+                cover_url: self.cover_url.clone(),
+                language: None,
+                site_url: self
+                    .links
+                    .iter()
+                    .find(|l| l.rel == REL_ALTERNATE)
+                    .map(|l| l.href.clone()),
+                rights_status: rights_status.to_string(),
+            }
+        }
+    }
+
+    /// Parse an OPDS 1.x (Atom XML) feed string into [`OpdsFeed`].
+    ///
+    /// Handles both Navigation feeds (entries link to sub-feeds) and Acquisition feeds
+    /// (entries are publications with download links).
+    pub fn parse_opds_1x(xml: &str) -> Result<OpdsFeed, String> {
+        let mut reader = Reader::from_str(xml);
+        reader.config_mut().trim_text(true);
+        reader.config_mut().expand_empty_elements = true;
+
+        let mut feed_title = String::new();
+        let mut entries: Vec<OpdsEntry> = Vec::new();
+        let mut feed_links: Vec<OpdsLink> = Vec::new();
+
+        // State machine: track which element we're inside
+        let mut in_entry = false;
+        let mut in_author = false;
+        let mut depth: usize = 0;
+
+        // Current entry being built
+        let mut entry_id = String::new();
+        let mut entry_title = String::new();
+        let mut entry_author = String::new();
+        let mut entry_summary = String::new();
+        let mut entry_links: Vec<OpdsLink> = Vec::new();
+        let mut entry_is_nav = false;
+
+        // Track the current XML tag we're inside
+        let mut current_tag = String::new();
+
+        let mut buf = Vec::new();
+        loop {
+            match reader.read_event_into(&mut buf) {
+                Ok(Event::Start(ref e)) => {
+                    depth += 1;
+                    let tag = String::from_utf8_lossy(e.name().as_ref()).to_string();
+                    current_tag = tag.clone();
+
+                    if tag == "entry" {
+                        in_entry = true;
+                        // Begin new entry
+                        entry_id.clear();
+                        entry_title.clear();
+                        entry_author.clear();
+                        entry_summary.clear();
+                        entry_links.clear();
+                        entry_is_nav = false;
+                    } else if tag == "author" {
+                        in_author = true;
+                    }
+
+                    // Extract attributes from link elements
+                    if tag == "link" {
+                        let rel = e
+                            .attributes()
+                            .filter_map(|a| a.ok())
+                            .find(|a| {
+                                String::from_utf8_lossy(a.key.as_ref()).as_ref() == "rel"
+                            })
+                            .and_then(|a| {
+                                String::from_utf8(a.value.to_vec())
+                                    .ok()
+                            });
+                        let href = e
+                            .attributes()
+                            .filter_map(|a| a.ok())
+                            .find(|a| {
+                                String::from_utf8_lossy(a.key.as_ref()).as_ref() == "href"
+                            })
+                            .and_then(|a| {
+                                String::from_utf8(a.value.to_vec())
+                                    .ok()
+                            });
+                        let mime_type = e
+                            .attributes()
+                            .filter_map(|a| a.ok())
+                            .find(|a| {
+                                String::from_utf8_lossy(a.key.as_ref()).as_ref() == "type"
+                            })
+                            .and_then(|a| {
+                                String::from_utf8(a.value.to_vec())
+                                    .ok()
+                            });
+                        let link_title = e
+                            .attributes()
+                            .filter_map(|a| a.ok())
+                            .find(|a| {
+                                String::from_utf8_lossy(a.key.as_ref()).as_ref() == "title"
+                            })
+                            .and_then(|a| {
+                                String::from_utf8(a.value.to_vec())
+                                    .ok()
+                            });
+
+                        if let (Some(rel), Some(href)) = (rel, href) {
+                            let link = OpdsLink {
+                                rel: rel.clone(),
+                                href,
+                                mime_type,
+                                title: link_title,
+                            };
+                            if in_entry {
+                                // Check if this entry is a navigation link
+                                if rel == REL_SUBSECTION
+                                    || (rel.starts_with(REL_ACQUISITION_PREFIX)
+                                        && link
+                                            .mime_type
+                                            .as_deref()
+                                            .is_some_and(|m| m.contains("atom")))
+                                {
+                                    entry_is_nav = true;
+                                }
+                                entry_links.push(link);
+                            } else {
+                                feed_links.push(link);
+                            }
+                        }
+                    }
+                }
+                Ok(Event::End(ref e)) => {
+                    let tag = String::from_utf8_lossy(e.name().as_ref()).to_string();
+                    depth = depth.saturating_sub(1);
+
+                    if tag == "entry" {
+                        in_entry = false;
+                        // Finalize entry
+                        let id = if entry_id.is_empty() {
+                            // Fallback: use first link href as id
+                            entry_links
+                                .first()
+                                .map(|l| l.href.clone())
+                                .unwrap_or_default()
+                        } else {
+                            entry_id.clone()
+                        };
+
+                        // Find best cover image
+                        let cover_url = entry_links
+                            .iter()
+                            .find(|l| {
+                                l.rel == REL_IMAGE_THUMBNAIL || l.rel == REL_IMAGE
+                            })
+                            .or_else(|| {
+                                entry_links
+                                    .iter()
+                                    .find(|l| l.rel == REL_IMAGE_THUMBNAIL)
+                            })
+                            .map(|l| l.href.clone());
+
+                        // Find best acquisition URL (prefer EPUB)
+                        let acquisition_url = entry_links
+                            .iter()
+                            .find(|l| {
+                                l.rel == REL_ACQUISITION_PREFIX
+                                    && l.mime_type
+                                        .as_deref()
+                                        .is_some_and(|m| m.contains("epub"))
+                            })
+                            .or_else(|| {
+                                entry_links
+                                    .iter()
+                                    .find(|l| l.rel.starts_with(REL_ACQUISITION_PREFIX))
+                            })
+                            .map(|l| l.href.clone());
+
+                        entries.push(OpdsEntry {
+                            id,
+                            title: std::mem::take(&mut entry_title),
+                            author: if entry_author.is_empty() {
+                                None
+                            } else {
+                                Some(std::mem::take(&mut entry_author))
+                            },
+                            summary: if entry_summary.is_empty() {
+                                None
+                            } else {
+                                Some(std::mem::take(&mut entry_summary))
+                            },
+                            links: std::mem::take(&mut entry_links),
+                            cover_url,
+                            acquisition_url,
+                            is_navigation: entry_is_nav,
+                        });
+                    } else if tag == "author" {
+                        in_author = false;
+                    }
+                }
+                Ok(Event::Text(ref e)) => {
+                    let text = e.unescape().unwrap_or_default();
+                    if !in_entry {
+                        if current_tag == "title" {
+                            feed_title = text.to_string();
+                        }
+                    } else if in_entry {
+                        match current_tag.as_str() {
+                            "id" => entry_id = text.to_string(),
+                            "title" => entry_title = text.to_string(),
+                            "summary" | "content" => entry_summary = text.to_string(),
+                            "name" if in_author => entry_author = text.to_string(),
+                            _ => {}
+                        }
+                    }
+                }
+                Ok(Event::Eof) => break,
+                Ok(_) => {}
+                Err(e) => {
+                    return Err(format!("OPDS XML parse error at position {}: {e}", reader.buffer_position()));
+                }
+            }
+            buf.clear();
+        }
+
+        Ok(OpdsFeed {
+            title: feed_title,
+            entries,
+            links: feed_links,
+        })
+    }
+
+    /// Parse an OPDS 2.0 (JSON / RWPM) feed string into [`OpdsFeed`].
+    ///
+    /// OPDS 2.0 uses JSON-LD with Readium Web Publication Manifest conventions:
+    /// - `metadata.title` → feed title
+    /// - `navigation[]` → compact collection of link objects → OpdsEntry(is_navigation=true)
+    /// - `publications[]` → publication objects with metadata/links/images → OpdsEntry(is_navigation=false)
+    /// - `groups[]` → nested catalogs, flattened into entries
+    /// - `facets[]` → ignored (used for filtering/sorting, not content)
+    ///
+    /// Metadata uses schema.org vocabulary: `title`, `author` (string or {name}),
+    /// `description`, `identifier`.
+    pub fn parse_opds_2x(json: &str) -> Result<OpdsFeed, String> {
+        let root: serde_json::Value =
+            serde_json::from_str(json).map_err(|e| format!("OPDS 2.0 JSON parse error: {e}"))?;
+
+        let feed_title = root
+            .get("metadata")
+            .and_then(|m| m.get("title"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("Untitled OPDS Feed")
+            .to_string();
+
+        let feed_links = parse_opds2_links(root.get("links"));
+
+        let mut entries: Vec<OpdsEntry> = Vec::new();
+
+        // Navigation links (compact collection)
+        if let Some(nav) = root.get("navigation").and_then(|v| v.as_array()) {
+            for link_val in nav {
+                let entry = opds2_link_to_entry(link_val, true);
+                entries.push(entry);
+            }
+        }
+
+        // Publication entries
+        if let Some(pubs) = root.get("publications").and_then(|v| v.as_array()) {
+            for pub_val in pubs {
+                let entry = opds2_publication_to_entry(pub_val);
+                entries.push(entry);
+            }
+        }
+
+        // Groups: flatten nested navigation/publications
+        if let Some(groups) = root.get("groups").and_then(|v| v.as_array()) {
+            for group_val in groups {
+                let group_title = group_val
+                    .get("metadata")
+                    .and_then(|m| m.get("title"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+
+                // Group navigation
+                if let Some(nav) = group_val.get("navigation").and_then(|v| v.as_array()) {
+                    for link_val in nav {
+                        let mut entry = opds2_link_to_entry(link_val, true);
+                        if !group_title.is_empty() {
+                            entry.title = format!("{} › {}", group_title, entry.title);
+                        }
+                        entries.push(entry);
+                    }
+                }
+
+                // Group publications
+                if let Some(pubs) = group_val.get("publications").and_then(|v| v.as_array()) {
+                    for pub_val in pubs {
+                        let mut entry = opds2_publication_to_entry(pub_val);
+                        if !group_title.is_empty() {
+                            entry.title = format!("{} › {}", group_title, entry.title);
+                        }
+                        entries.push(entry);
+                    }
+                }
+
+                // Group self links as nav entries
+                if let Some(group_links) = group_val.get("links").and_then(|v| v.as_array()) {
+                    for link_val in group_links {
+                        let href = link_val
+                            .get("href")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("");
+                        let lt = link_val
+                            .get("title")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or(group_title);
+                        if !href.is_empty() && lt != group_title {
+                            entries.push(OpdsEntry {
+                                id: href.to_string(),
+                                title: format!("{} › {}", group_title, lt),
+                                author: None,
+                                summary: None,
+                                links: parse_opds2_links(Some(&serde_json::json!([link_val]))),
+                                cover_url: None,
+                                acquisition_url: None,
+                                is_navigation: true,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(OpdsFeed {
+            title: feed_title,
+            entries,
+            links: feed_links,
+        })
+    }
+
+    /// Parse an array of OPDS 2.0 Link Objects into Vec<OpdsLink>.
+    fn parse_opds2_links(links_val: Option<&serde_json::Value>) -> Vec<OpdsLink> {
+        let arr = match links_val.and_then(|v| v.as_array()) {
+            Some(a) => a,
+            None => return Vec::new(),
+        };
+        arr.iter()
+            .filter_map(|link| {
+                let href = link.get("href").and_then(|v| v.as_str())?;
+                let rel = link
+                    .get("rel")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                // OPDS 2.0 allows rel to be a string or array of strings
+                let rel = if rel.is_empty() {
+                    link.get("rel")
+                        .and_then(|v| v.as_array())
+                        .and_then(|arr| arr.first())
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string()
+                } else {
+                    rel
+                };
+                let mime_type = link.get("type").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let title = link.get("title").and_then(|v| v.as_str()).map(|s| s.to_string());
+                Some(OpdsLink {
+                    rel,
+                    href: href.to_string(),
+                    mime_type,
+                    title,
+                })
+            })
+            .collect()
+    }
+
+    /// Convert an OPDS 2.0 Link Object (from navigation or groups) into an OpdsEntry.
+    fn opds2_link_to_entry(link: &serde_json::Value, is_nav: bool) -> OpdsEntry {
+        let href = link
+            .get("href")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let title = link
+            .get("title")
+            .and_then(|v| v.as_str())
+            .unwrap_or(&href)
+            .to_string();
+        let links = parse_opds2_links(Some(&serde_json::json!([link])));
+        OpdsEntry {
+            id: href.clone(),
+            title,
+            author: None,
+            summary: None,
+            links,
+            cover_url: None,
+            acquisition_url: None,
+            is_navigation: is_nav,
+        }
+    }
+
+    /// Convert an OPDS 2.0 Publication object into an OpdsEntry.
+    fn opds2_publication_to_entry(pub_val: &serde_json::Value) -> OpdsEntry {
+        let meta = pub_val.get("metadata");
+        let title = meta
+            .and_then(|m| m.get("title"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("Untitled")
+            .to_string();
+
+        let author = meta.and_then(|m| m.get("author")).and_then(|v| {
+            // author can be a string or object with "name" field
+            v.as_str()
+                .map(|s| s.to_string())
+                .or_else(|| {
+                    v.get("name")
+                        .and_then(|n| n.as_str())
+                        .or_else(|| v.get("en").and_then(|n| n.as_str()))
+                        .map(|s| s.to_string())
+                })
+        });
+
+        let summary = meta
+            .and_then(|m| m.get("description"))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+
+        let entry_id = meta
+            .and_then(|m| m.get("identifier"))
+            .and_then(|v| v.as_str())
+            .unwrap_or(&title)
+            .to_string();
+
+        let links = parse_opds2_links(pub_val.get("links"));
+
+        // Cover from images collection
+        let cover_url = pub_val
+            .get("images")
+            .and_then(|v| v.as_array())
+            .and_then(|imgs| {
+                // Prefer thumbnail, then any cover image
+                imgs.iter()
+                    .find(|img| {
+                        img.get("rel")
+                            .and_then(|r| r.as_str())
+                            .is_some_and(|r| r == "http://opds-spec.org/image/thumbnail" || r == "thumbnail")
+                    })
+                    .or_else(|| {
+                        imgs.iter().find(|img| {
+                            img.get("rel")
+                                .and_then(|r| r.as_str())
+                                .is_some_and(|r| r == "cover" || r == "http://opds-spec.org/image")
+                        })
+                    })
+                    .or_else(|| imgs.first())
+                    .and_then(|img| img.get("href").and_then(|v| v.as_str()))
+                    .map(|s| s.to_string())
+            });
+
+        // Acquisition link (prefer EPUB)
+        let acquisition_url = links
+            .iter()
+            .find(|l| {
+                l.rel.starts_with(REL_ACQUISITION_PREFIX)
+                    && l.mime_type
+                        .as_deref()
+                        .is_some_and(|m| m.contains("epub"))
+            })
+            .or_else(|| {
+                links
+                    .iter()
+                    .find(|l| l.rel.starts_with(REL_ACQUISITION_PREFIX))
+            })
+            .map(|l| l.href.clone());
+
+        OpdsEntry {
+            id: entry_id,
+            title,
+            author,
+            summary,
+            links,
+            cover_url,
+            acquisition_url,
+            is_navigation: false,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1009,6 +1654,464 @@ mod tests {
             r.remote_url.as_deref(),
             Some("https://www.aozora.gr.jp/cards/000879/card127.html")
         );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ── OPDS 1.x parser tests ──
+
+    const OPDS_ACQUISITION_FEED: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom"
+      xmlns:opds="http://opds-spec.org/2010/catalog"
+      xmlns:dcterms="http://purl.org/dc/terms/">
+  <id>urn:uuid:feed-1</id>
+  <title>Public Domain Books</title>
+  <updated>2024-01-01T00:00:00Z</updated>
+  <link rel="self" href="https://example.com/opds/root.xml" type="application/atom+xml;profile=opds-catalog"/>
+  <entry>
+    <id>urn:uuid:book-1</id>
+    <title>Pride and Prejudice</title>
+    <author>
+      <name>Jane Austen</name>
+    </author>
+    <summary>Classic novel about manners and marriage.</summary>
+    <dcterms:language>en</dcterms:language>
+    <link rel="http://opds-spec.org/image/thumbnail" href="https://example.com/covers/pp.jpg" type="image/jpeg"/>
+    <link rel="http://opds-spec.org/image" href="https://example.com/covers/pp-large.jpg" type="image/jpeg"/>
+    <link rel="http://opds-spec.org/acquisition" href="https://example.com/download/pp.epub" type="application/epub+zip"/>
+    <link rel="alternate" href="https://example.com/books/pp.html" type="text/html"/>
+    <link rel="http://opds-spec.org/acquisition/buy" href="https://store.example.com/pp" type="text/html"/>
+  </entry>
+  <entry>
+    <id>urn:uuid:book-2</id>
+    <title>Moby Dick</title>
+    <author>
+      <name>Herman Melville</name>
+    </author>
+    <content type="text">The whale story.</content>
+    <link rel="http://opds-spec.org/acquisition" href="https://example.com/download/md.epub" type="application/epub+zip"/>
+    <link rel="alternate" href="https://example.com/books/md.html" type="text/html"/>
+  </entry>
+  <entry>
+    <id>urn:uuid:book-3</id>
+    <title>Metadata Only</title>
+    <summary>No acquisition link here.</summary>
+    <link rel="http://opds-spec.org/image" href="https://example.com/covers/mo.jpg" type="image/jpeg"/>
+  </entry>
+</feed>"#;
+
+    const OPDS_NAV_FEED: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom"
+      xmlns:opds="http://opds-spec.org/2010/catalog">
+  <id>urn:uuid:nav-1</id>
+  <title>Main Catalog</title>
+  <updated>2024-01-01T00:00:00Z</updated>
+  <link rel="self" href="https://example.com/opds/" type="application/atom+xml;profile=opds-catalog"/>
+  <link rel="start" href="https://example.com/opds/" type="application/atom+xml;profile=opds-catalog"/>
+  <entry>
+    <title>Classic Literature</title>
+    <id>urn:uuid:cat-1</id>
+    <content type="text">Public domain classics.</content>
+    <link rel="subsection" href="https://example.com/opds/classics.xml" type="application/atom+xml;profile=opds-catalog"/>
+  </entry>
+  <entry>
+    <title>Science Fiction</title>
+    <id>urn:uuid:cat-2</id>
+    <link rel="subsection" href="https://example.com/opds/scifi.xml" type="application/atom+xml;profile=opds-catalog"/>
+  </entry>
+</feed>"#;
+
+    #[test]
+    fn opds_parse_acquisition_feed_entries_and_links() {
+        let feed = opds::parse_opds_1x(OPDS_ACQUISITION_FEED).unwrap();
+        assert_eq!(feed.title, "Public Domain Books");
+        assert_eq!(feed.entries.len(), 3);
+
+        // Entry 1: full metadata
+        let e1 = &feed.entries[0];
+        assert_eq!(e1.title, "Pride and Prejudice");
+        assert_eq!(e1.author.as_deref(), Some("Jane Austen"));
+        assert_eq!(
+            e1.summary.as_deref(),
+            Some("Classic novel about manners and marriage.")
+        );
+        assert_eq!(e1.id, "urn:uuid:book-1");
+        assert!(!e1.is_navigation);
+        assert_eq!(
+            e1.cover_url.as_deref(),
+            Some("https://example.com/covers/pp.jpg")
+        );
+        assert_eq!(
+            e1.acquisition_url.as_deref(),
+            Some("https://example.com/download/pp.epub")
+        );
+        assert_eq!(e1.links.len(), 5);
+
+        // Entry 2: minimal metadata, no cover
+        let e2 = &feed.entries[1];
+        assert_eq!(e2.title, "Moby Dick");
+        assert_eq!(e2.author.as_deref(), Some("Herman Melville"));
+        assert_eq!(e2.summary.as_deref(), Some("The whale story."));
+        assert!(e2.cover_url.is_none());
+        assert_eq!(
+            e2.acquisition_url.as_deref(),
+            Some("https://example.com/download/md.epub")
+        );
+
+        // Entry 3: no acquisition link
+        let e3 = &feed.entries[2];
+        assert_eq!(e3.title, "Metadata Only");
+        assert!(e3.acquisition_url.is_none());
+        assert!(e3.cover_url.is_some());
+    }
+
+    #[test]
+    fn opds_parse_navigation_feed_detects_subsections() {
+        let feed = opds::parse_opds_1x(OPDS_NAV_FEED).unwrap();
+        assert_eq!(feed.title, "Main Catalog");
+        assert_eq!(feed.entries.len(), 2);
+
+        let e1 = &feed.entries[0];
+        assert_eq!(e1.title, "Classic Literature");
+        assert!(e1.is_navigation);
+        assert_eq!(e1.links.len(), 1);
+        assert_eq!(
+            e1.links[0].href,
+            "https://example.com/opds/classics.xml"
+        );
+
+        let e2 = &feed.entries[1];
+        assert_eq!(e2.title, "Science Fiction");
+        assert!(e2.is_navigation);
+    }
+
+    #[test]
+    fn opds_to_remote_entry_maps_rights_status() {
+        let feed = opds::parse_opds_1x(OPDS_ACQUISITION_FEED).unwrap();
+        let e1 = &feed.entries[0];
+
+        // Entry with acquisition → open_license if includes EPUB
+        let re1 = e1.to_remote_entry("src:test-opds");
+        assert_eq!(re1.rights_status, "open_license");
+        assert_eq!(re1.title, "Pride and Prejudice");
+        assert_eq!(re1.author.as_deref(), Some("Jane Austen"));
+        assert_eq!(
+            re1.cover_url.as_deref(),
+            Some("https://example.com/covers/pp.jpg")
+        );
+        assert_eq!(
+            re1.site_url.as_deref(),
+            Some("https://example.com/books/pp.html")
+        );
+
+        // Entry without acquisition → metadata_only
+        let e3 = &feed.entries[2];
+        let re3 = e3.to_remote_entry("src:test-opds");
+        assert_eq!(re3.rights_status, "metadata_only");
+    }
+
+    #[test]
+    fn opds_parse_handles_empty_and_garbage() {
+        let empty =
+            opds::parse_opds_1x(r#"<feed xmlns="http://www.w3.org/2005/Atom"><title>Empty</title></feed>"#)
+                .unwrap();
+        assert_eq!(empty.title, "Empty");
+        assert!(empty.entries.is_empty());
+
+        assert!(opds::parse_opds_1x("not xml <").is_err());
+    }
+
+    #[test]
+    fn opds_entry_lands_on_shelf_as_remote() {
+        let (dir, conn) = open_db();
+        let feed = opds::parse_opds_1x(OPDS_ACQUISITION_FEED).unwrap();
+        let source_id = "src:test-opds";
+
+        // Register source
+        ensure_source(
+            &conn,
+            source_id,
+            "Test OPDS",
+            "opds",
+            Some("https://example.com/opds"),
+            1000,
+        )
+        .unwrap();
+
+        // Convert entries to RemoteEntry and ingest
+        let entries: Vec<RemoteEntry> = feed
+            .entries
+            .iter()
+            .map(|e| e.to_remote_entry(source_id))
+            .collect();
+        let ids = ingest(&conn, source_id, &entries, 1000).unwrap();
+        assert_eq!(ids.len(), 3);
+
+        let books = library::list_books(&conn).unwrap();
+        assert_eq!(books.len(), 3);
+
+        let pp = books.iter().find(|b| b.title == "Pride and Prejudice").unwrap();
+        assert_eq!(pp.availability.as_deref(), Some("remote"));
+        assert_eq!(pp.rights_status.as_deref(), Some("open_license"));
+        assert_eq!(pp.author.as_deref(), Some("Jane Austen"));
+        // Remote entry → cover path = URL
+        assert_eq!(
+            pp.cover_path.as_deref(),
+            Some("https://example.com/covers/pp.jpg")
+        );
+        // Alternate URL as site_url
+        assert_eq!(
+            pp.remote_url.as_deref(),
+            Some("https://example.com/books/pp.html")
+        );
+
+        let mo = books
+            .iter()
+            .find(|b| b.title == "Metadata Only")
+            .unwrap();
+        assert_eq!(mo.rights_status.as_deref(), Some("metadata_only"));
+
+        // Verify source_record entries
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM source_record WHERE source_id = ?1",
+                [source_id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 3);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ── OPDS 2.0 JSON tests ──
+
+    const OPDS2_NAV_FEED: &str = r#"{
+      "metadata": {"title": "Catalog Root"},
+      "links": [
+        {"rel": "self", "href": "https://example.com/opds/root.json", "type": "application/opds+json"}
+      ],
+      "navigation": [
+        {"rel": "subsection", "href": "https://example.com/opds/scifi.json", "title": "Science Fiction", "type": "application/opds+json"},
+        {"rel": "subsection", "href": "https://example.com/opds/fantasy.json", "title": "Fantasy", "type": "application/opds+json"}
+      ]
+    }"#;
+
+    const OPDS2_PUB_FEED: &str = r#"{
+      "metadata": {"title": "Science Fiction"},
+      "links": [
+        {"rel": "self", "href": "https://example.com/opds/scifi.json", "type": "application/opds+json"}
+      ],
+      "publications": [
+        {
+          "metadata": {
+            "identifier": "urn:isbn:9780000000001",
+            "title": "Dune",
+            "author": "Frank Herbert",
+            "description": "Set on the desert planet Arrakis."
+          },
+          "links": [
+            {"rel": "self", "href": "https://example.com/pub/dune.json", "type": "application/webpub+json"},
+            {"rel": "http://opds-spec.org/acquisition/open-access", "href": "https://example.com/dune.epub", "type": "application/epub+zip"},
+            {"rel": "alternate", "href": "https://example.com/books/dune.html", "title": "Book Page"}
+          ],
+          "images": [
+            {"rel": "http://opds-spec.org/image", "href": "https://example.com/covers/dune.jpg", "type": "image/jpeg"}
+          ]
+        },
+        {
+          "metadata": {
+            "identifier": "urn:isbn:9780000000002",
+            "title": "Foundation",
+            "author": {"name": "Isaac Asimov"},
+            "description": "A mathematician predicts the fall of the Galactic Empire."
+          },
+          "links": [
+            {"rel": "self", "href": "https://example.com/pub/foundation.json", "type": "application/webpub+json"},
+            {"rel": "http://opds-spec.org/acquisition/borrow", "href": "https://example.com/foundation.epub", "type": "application/epub+zip"},
+            {"rel": "alternate", "href": "https://example.com/books/foundation.html"}
+          ],
+          "images": [
+            {"rel": "http://opds-spec.org/image/thumbnail", "href": "https://example.com/covers/foundation_thumb.jpg", "type": "image/jpeg"},
+            {"rel": "http://opds-spec.org/image", "href": "https://example.com/covers/foundation.jpg", "type": "image/jpeg"}
+          ]
+        },
+        {
+          "metadata": {
+            "title": "Metadata Only Book"
+          },
+          "links": [
+            {"rel": "self", "href": "https://example.com/pub/mo.json", "type": "application/webpub+json"}
+          ]
+        }
+      ]
+    }"#;
+
+    const OPDS2_GROUPS_FEED: &str = r#"{
+      "metadata": {"title": "Library Catalog"},
+      "groups": [
+        {
+          "metadata": {"title": "Fiction"},
+          "publications": [
+            {
+              "metadata": {"title": "1984", "author": "George Orwell"},
+              "links": [
+                {"rel": "self", "href": "https://example.com/pub/1984.json", "type": "application/webpub+json"},
+                {"rel": "http://opds-spec.org/acquisition", "href": "https://example.com/1984.epub", "type": "application/epub+zip"}
+              ]
+            }
+          ]
+        },
+        {
+          "metadata": {"title": "Non-Fiction"},
+          "publications": [
+            {
+              "metadata": {"title": "Sapiens", "author": "Yuval Noah Harari"},
+              "links": [
+                {"rel": "self", "href": "https://example.com/pub/sapiens.json", "type": "application/webpub+json"}
+              ]
+            }
+          ],
+          "navigation": [
+            {"rel": "subsection", "href": "https://example.com/opds/history.json", "title": "History", "type": "application/opds+json"}
+          ]
+        }
+      ]
+    }"#;
+
+    #[test]
+    fn opds2_parse_navigation_feed_maps_entries() {
+        let feed = opds::parse_opds_2x(OPDS2_NAV_FEED).unwrap();
+        assert_eq!(feed.title, "Catalog Root");
+        assert_eq!(feed.links.len(), 1);
+        assert_eq!(feed.links[0].rel, "self");
+        assert_eq!(feed.entries.len(), 2);
+
+        let e0 = &feed.entries[0];
+        assert!(e0.is_navigation);
+        assert_eq!(e0.title, "Science Fiction");
+        assert_eq!(e0.id, "https://example.com/opds/scifi.json");
+
+        let e1 = &feed.entries[1];
+        assert!(e1.is_navigation);
+        assert_eq!(e1.title, "Fantasy");
+    }
+
+    #[test]
+    fn opds2_parse_publication_feed_extracts_metadata_and_links() {
+        let feed = opds::parse_opds_2x(OPDS2_PUB_FEED).unwrap();
+        assert_eq!(feed.title, "Science Fiction");
+        assert_eq!(feed.entries.len(), 3);
+
+        // Dune: full metadata, open-access EPUB, image
+        let dune = &feed.entries[0];
+        assert!(!dune.is_navigation);
+        assert_eq!(dune.title, "Dune");
+        assert_eq!(dune.author.as_deref(), Some("Frank Herbert"));
+        assert!(dune.summary.as_deref().unwrap().contains("Arrakis"));
+        assert_eq!(
+            dune.acquisition_url.as_deref(),
+            Some("https://example.com/dune.epub")
+        );
+        assert_eq!(
+            dune.cover_url.as_deref(),
+            Some("https://example.com/covers/dune.jpg")
+        );
+        // rights: open-access EPUB → open_license
+        let re = dune.to_remote_entry("test-opds2");
+        assert_eq!(re.rights_status, "open_license");
+
+        // Foundation: author as object {name}, thumbnail preferred for cover
+        let found = &feed.entries[1];
+        assert_eq!(found.title, "Foundation");
+        assert_eq!(found.author.as_deref(), Some("Isaac Asimov"));
+        // Thumbnail should be preferred
+        assert_eq!(
+            found.cover_url.as_deref(),
+            Some("https://example.com/covers/foundation_thumb.jpg")
+        );
+        // borrow EPUB → acquisition present, rights mapped to unknown
+        let re = found.to_remote_entry("test-opds2");
+        assert_eq!(re.rights_status, "unknown");
+
+        // Metadata-only entry
+        let mo = &feed.entries[2];
+        assert_eq!(mo.title, "Metadata Only Book");
+        assert_eq!(mo.author, None);
+        assert_eq!(mo.acquisition_url, None);
+        let re = mo.to_remote_entry("test-opds2");
+        assert_eq!(re.rights_status, "metadata_only");
+    }
+
+    #[test]
+    fn opds2_parse_groups_flattens_nested_publications() {
+        let feed = opds::parse_opds_2x(OPDS2_GROUPS_FEED).unwrap();
+        assert_eq!(feed.title, "Library Catalog");
+
+        // Publication entries should have group-prefixed titles
+        let fiction = feed.entries.iter().find(|e| !e.is_navigation && e.title.contains("Fiction")).unwrap();
+        assert_eq!(fiction.title, "Fiction › 1984");
+        assert_eq!(fiction.author.as_deref(), Some("George Orwell"));
+
+        let nonfiction = feed.entries.iter().find(|e| !e.is_navigation && e.title.contains("Non-Fiction")).unwrap();
+        assert_eq!(nonfiction.title, "Non-Fiction › Sapiens");
+
+        // Navigation entry from group
+        let hist = feed.entries.iter().find(|e| e.is_navigation && e.title.contains("History")).unwrap();
+        assert!(hist.title.contains("Non-Fiction"));
+        assert!(hist.title.contains("History"));
+    }
+
+    #[test]
+    fn opds2_parse_handles_empty_and_garbage() {
+        // Empty feed (no navigation or publications)
+        let empty = opds::parse_opds_2x(r#"{"metadata":{"title":"Empty"}}"#).unwrap();
+        assert_eq!(empty.entries.len(), 0);
+        assert_eq!(empty.title, "Empty");
+
+        // Invalid JSON
+        assert!(opds::parse_opds_2x("not json").is_err());
+        // Empty string
+        assert!(opds::parse_opds_2x("").is_err());
+    }
+
+    #[test]
+    fn opds2_entry_lands_on_shelf_as_remote() {
+        use crate::connectors;
+        let (dir, conn) = open_db();
+        let source_id = "opds2:test-land-on-shelf";
+
+        let feed = opds::parse_opds_2x(OPDS2_PUB_FEED).unwrap();
+        connectors::ensure_source(
+            &conn,
+            source_id,
+            "OPDS 2.0 Test Source",
+            "opds",
+            Some("https://example.com/opds/scifi.json"),
+            1000,
+        )
+        .unwrap();
+
+        // Ingest all entries
+        let entries: Vec<RemoteEntry> = feed
+            .entries
+            .iter()
+            .map(|e| e.to_remote_entry(source_id))
+            .collect();
+        let ids = connectors::ingest(&conn, source_id, &entries, 1000).unwrap();
+        assert_eq!(ids.len(), 3);
+
+        let books = library::list_books(&conn).unwrap();
+        assert_eq!(books.len(), 3);
+
+        let dune = books.iter().find(|b| b.title == "Dune").unwrap();
+        assert_eq!(dune.availability.as_deref(), Some("remote"));
+        assert_eq!(dune.rights_status.as_deref(), Some("open_license"));
+        assert_eq!(dune.author.as_deref(), Some("Frank Herbert"));
+        assert_eq!(
+            dune.cover_path.as_deref(),
+            Some("https://example.com/covers/dune.jpg")
+        );
+
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
