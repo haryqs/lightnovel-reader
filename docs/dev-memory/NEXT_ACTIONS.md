@@ -26,6 +26,7 @@ git status -sb
   - `5a4b61d reader: show linked source records`
   - `539cf5a reader: rank remote link candidates`
   - `700d916 reader: 增加批量人工关联队列`
+- 本轮实验室电脑已在 PR 分支补第 4 个待提交改动：增强 `smoke:remote-link`，覆盖来源面板、候选排序分数/理由、批量队列跳过/关联。
 - 这些改动还没有合并进 `main`；实验室电脑若要验证/继续这条线，请在 PR 分支上做，不要只 checkout `main`。
 
 本轮已完成：
@@ -33,6 +34,7 @@ git status -sb
 - `library.listSourceRecords` 只读协议：按本地 `asset.id` 或远程 `edition.id` 列出挂到同一 edition 的来源记录；前端书架卡片新增“来源”按钮。
 - 单条“关联本地”候选排序：合并标题搜索与全量本地候选，按标题、作者、系列、语言、卷号打分，展示匹配理由、低置信/冲突提醒；仍需用户显式确认。
 - 批量人工确认队列：当前远程搜索结果可一键整理为队列，每条展示推荐本地候选、匹配理由和冲突提醒；用户逐条“关联/跳过”，不自动合并。
+- `smoke:remote-link` 已补 UI 回归断言：来源面板可打开；候选排序显示分数/理由且按分数降序；批量确认队列可打开并完成逐条跳过/关联。
 - 版权边界不变：Bangumi / なろう 只做元数据 + 外链，不抓正文；`library.acquireRemote` 仍只允许青空公共版权条目。
 
 已验证：
@@ -41,11 +43,15 @@ git status -sb
 - `cargo test --workspace` 通过（reading-core 74 passed）。
 - `node scripts/check-dev-memory.mjs` 通过。
 - `git diff --check` 通过（仅 Windows 换行提示）。
+- 本轮新增验证：
+  - `node --check scripts/tauri-remote-link-smoke.mjs` 通过。
+  - `npm.cmd run tauri -- build --debug --no-bundle` 通过。
+  - `npm.cmd run smoke:remote-link -- --tauri-driver C:\Users\41267\.cargo\bin\tauri-driver.exe --native-driver C:\Users\41267\AppData\Local\lightnovel-reader-tools\msedgedriver\149.0.4022.69\msedgedriver.exe` 通过。
 
 下一步建议：
 
-1. 优先给真实 Tauri 窗口 `smoke:remote-link` 补断言：来源面板可打开、候选排序显示分数/理由、批量确认队列可打开并逐条跳过/关联。
-2. 真窗口回归通过后，review 并合并 PR #22。
+1. 跑最终收工检查（至少 `node scripts/check-arch.mjs`、`node scripts/check-dev-memory.mjs`、`git diff --check`；必要时补 `npm.cmd run build` / `cargo test --workspace`）。
+2. review 并合并 PR #22。
 3. 合并后再从最新 `main` 继续下一个资源书库体验项；不要在 PR #22 上继续堆无关功能。
 
 ## 📌 交接留言（2026-06-17，给寝室电脑 Codex）

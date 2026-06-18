@@ -1461,3 +1461,35 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
 下一步：
 
 - 实验室电脑先 checkout PR #22，再补真窗口 smoke 断言；不要只在 `main` 上找这些未合并功能。
+
+## 2026-06-18：补强 smoke:remote-link 覆盖来源面板/候选排序/批量队列
+
+变更：
+
+- `scripts/tauri-remote-link-smoke.mjs` 改为先在线搜索真实远程条目，再按该远程标题动态生成一个临时本地 EPUB；这样候选排序面板能稳定显示高置信分数与匹配理由。
+- smoke 新增断言：
+  - 单条“关联本地书”面板显示候选分数、匹配理由，并按分数降序排列。
+  - “批量人工确认”队列可打开，候选下拉显示分数，行内显示匹配分数/理由。
+  - 批量队列可逐条“跳过”，再逐条“关联”；关联后远程空壳消失，本地进度/标注键仍按本地 `asset.id` 命中。
+  - 关联后的本地卡片“来源”面板可打开，能看到 AniList 来源记录、状态信息与外链。
+
+修改文件：
+
+- `scripts/tauri-remote-link-smoke.mjs`
+- `docs/dev-memory/DEV_LOG.md`
+- `docs/dev-memory/NEXT_ACTIONS.md`
+
+验证：
+
+- `node --check scripts/tauri-remote-link-smoke.mjs` 通过。
+- `npm.cmd run tauri -- build --debug --no-bundle` 通过（含 `check-arch`、`tsc`、`vite build`）。
+- `npm.cmd run smoke:remote-link -- --tauri-driver C:\Users\41267\.cargo\bin\tauri-driver.exe --native-driver C:\Users\41267\AppData\Local\lightnovel-reader-tools\msedgedriver\149.0.4022.69\msedgedriver.exe` 通过：AniList `Tanya` → `Youjo Senki`，候选面板显示 `匹配 100 · 标题一致 · 作者一致 · 系列一致 · 语言一致`，批量队列完成跳过/关联，来源面板显示 `AniList`。
+
+环境补充：
+
+- 本机缺少 WebDriver 工具，已通过 `cargo install tauri-driver --locked` 安装 `tauri-driver v2.0.6` 到用户 cargo bin。
+- 本机 Edge 版本为 `149.0.4022.69`，已从官方 `msedgedriver.microsoft.com` 下载匹配的 `msedgedriver.exe` 到 `%LOCALAPPDATA%\lightnovel-reader-tools\msedgedriver\149.0.4022.69\`；下载需走本机系统代理 `127.0.0.1:7890`。
+
+未验证/阻塞：
+
+- 尚未执行 PR review/merge；下一步做最终检查后 review 并合并 PR #22。

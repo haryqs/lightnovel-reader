@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import process from 'node:process'
@@ -79,6 +79,32 @@ function runPowerShell(script, scriptArgs) {
       'powershell',
       ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script, ...scriptArgs],
       { cwd: repoRoot, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true },
+    )
+    let output = ''
+    child.stdout?.on('data', (chunk) => { output += String(chunk) })
+    child.stderr?.on('data', (chunk) => { output += String(chunk) })
+    child.once('error', rejectRun)
+    child.once('exit', (code, signal) => {
+      if (code === 0) resolveRun(output)
+      else rejectRun(new Error(`PowerShell exited with ${code ?? signal}:\n${output.trim()}`))
+    })
+  })
+}
+
+function runPowerShellInline(command, scriptArgs) {
+  return new Promise((resolveRun, rejectRun) => {
+    const env = { ...process.env }
+    let script = command
+    scriptArgs.forEach((arg, index) => {
+      const name = `LNR_SMOKE_PS_ARG_${index}`
+      env[name] = arg
+      script = script.replaceAll(`$args[${index}]`, `$env:${name}`)
+    })
+    const encoded = Buffer.from(script, 'utf16le').toString('base64')
+    const child = spawn(
+      'powershell',
+      ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encoded],
+      { cwd: repoRoot, env, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true },
     )
     let output = ''
     child.stdout?.on('data', (chunk) => { output += String(chunk) })
@@ -209,6 +235,70 @@ function assertCheck(condition, message, details) {
   if (!condition) throw new Error(details ? `${message}: ${JSON.stringify(details)}` : message)
 }
 
+function xmlEscape(value) {
+  return String(value || '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&apos;')
+}
+
+async function createLinkFixture(title, author) {
+  const safeTitle = title?.trim() || 'Remote Link Smoke Match'
+  const safeAuthor = author?.trim() || 'Smoke Tester'
+  const buildDir = join(fixturesDir, '_remote_link_match_build')
+  const target = join(fixturesDir, 'link', 'remote-link-match.epub')
+  rmSync(buildDir, { recursive: true, force: true })
+  rmSync(target, { force: true })
+  mkdirSync(join(buildDir, 'META-INF'), { recursive: true })
+  mkdirSync(join(buildDir, 'OEBPS', 'Text'), { recursive: true })
+  mkdirSync(dirname(target), { recursive: true })
+
+  writeFileSync(join(buildDir, 'mimetype'), 'application/epub+zip')
+  writeFileSync(join(buildDir, 'META-INF', 'container.xml'), `<?xml version="1.0" encoding="UTF-8"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles>
+    <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
+  </rootfiles>
+</container>
+`)
+  writeFileSync(join(buildDir, 'OEBPS', 'content.opf'), `<?xml version="1.0" encoding="UTF-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="bookid">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:identifier id="bookid">remote-link-match-${Date.now()}</dc:identifier>
+    <dc:title>${xmlEscape(safeTitle)}</dc:title>
+    <dc:creator>${xmlEscape(safeAuthor)}</dc:creator>
+    <dc:language>ja</dc:language>
+    <dc:description>Temporary EPUB generated for remote-link smoke candidate ranking.</dc:description>
+    <meta property="belongs-to-collection" id="series">${xmlEscape(safeTitle)}</meta>
+    <meta refines="#series" property="group-position">1</meta>
+  </metadata>
+  <manifest>
+    <item id="chap1" href="Text/chapter1.xhtml" media-type="application/xhtml+xml"/>
+  </manifest>
+  <spine>
+    <itemref idref="chap1"/>
+  </spine>
+</package>
+`)
+  writeFileSync(join(buildDir, 'OEBPS', 'Text', 'chapter1.xhtml'), `<!doctype html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head><title>Chapter 1</title></head>
+  <body>
+    <h1>${xmlEscape(safeTitle)}</h1>
+    <p>This local EPUB intentionally matches a remote metadata result so the smoke test can assert candidate scores and reasons.</p>
+  </body>
+</html>
+`)
+  await runPowerShellInline(
+    "$ErrorActionPreference='Stop'; Add-Type -AssemblyName System.IO.Compression.FileSystem; if (Test-Path -LiteralPath $args[1]) { Remove-Item -LiteralPath $args[1] -Force }; [System.IO.Compression.ZipFile]::CreateFromDirectory($args[0], $args[1])",
+    [buildDir, target],
+  )
+  rmSync(buildDir, { recursive: true, force: true })
+  return target
+}
+
 async function waitForDriver() {
   for (let i = 0; i < 80; i += 1) {
     if (driverExited) {
@@ -273,10 +363,52 @@ async function main() {
     () => execute('return { readyState: document.readyState, hasInvoke: !!(window.__TAURI__?.core?.invoke || window.__TAURI_INTERNALS__?.invoke) }'),
     (value) => value.readyState !== 'loading' && value.hasInvoke,
   )
+  await waitFor(
+    'library controls ready',
+    () => execute(`return {
+      hasLibraryButton: !!document.querySelector('#btn-library'),
+      hasSearchInput: !!document.querySelector('#library-search-input'),
+      hasRemoteSource: !!document.querySelector('#library-remote-source'),
+      hasRemoteSearch: !!document.querySelector('#btn-library-search-remote'),
+    }`),
+    (value) => value.hasLibraryButton && value.hasSearchInput && value.hasRemoteSource && value.hasRemoteSearch,
+  )
 
-  const imported = await invoke('library_import', { path: vol1 })
+  await execute(`
+    document.querySelector('#btn-library')?.click();
+    const input = document.querySelector('#library-search-input');
+    const source = document.querySelector('#library-remote-source');
+    input.value = arguments[0];
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    source.value = arguments[1];
+    source.dispatchEvent(new Event('change', { bubbles: true }));
+    window.confirm = () => true;
+    document.querySelector('#btn-library-search-remote')?.click();
+    return true;
+  `, [remoteQuery, remoteSource])
+
+  const before = await waitFor(
+    'remote search results',
+    () => execute(`
+      return Array.from(document.querySelectorAll('#library-grid .book-card')).map((card) => ({
+        id: card.dataset.bookId,
+        title: card.querySelector('.title')?.textContent || '',
+        author: card.querySelector('.author')?.textContent || '',
+        remote: card.classList.contains('book-card-remote'),
+        hasLink: !!card.querySelector('[data-action="link-remote"]'),
+      }));
+    `),
+    (cards) => cards.some((card) => card.remote && card.hasLink),
+    45_000,
+  )
+  const remoteBefore = before.filter((card) => card.remote)
+  let target = remoteBefore[0]
+  assertCheck(target?.id, 'remote card is missing data-book-id', before)
+
+  const linkFixture = await createLinkFixture(target.title, target.author)
+  const imported = await invoke('library_import', { path: linkFixture })
   const local = imported.book
-  assertCheck(local?.id && local?.filePath, 'local smoke EPUB did not import as a readable asset', imported)
+  assertCheck(local?.id && local?.filePath, 'local matching EPUB did not import as a readable asset', imported)
 
   const now = Date.now()
   const annotationId = `remote-link-smoke-${now}`
@@ -301,45 +433,15 @@ async function main() {
         anchor: {
           start: 0,
           end: 5,
-          exact: 'Smoke',
+          exact: 'This ',
           prefix: '',
-          suffix: ' Test Light Novel',
+          suffix: 'local EPUB',
         },
       },
       createdAt: now,
       updatedAt: now,
     },
   })
-
-  await execute(`
-    document.querySelector('#btn-library')?.click();
-    const input = document.querySelector('#library-search-input');
-    const source = document.querySelector('#library-remote-source');
-    input.value = arguments[0];
-    input.dispatchEvent(new Event('input', { bubbles: true }));
-    source.value = arguments[1];
-    source.dispatchEvent(new Event('change', { bubbles: true }));
-    window.confirm = () => true;
-    document.querySelector('#btn-library-search-remote')?.click();
-    return true;
-  `, [remoteQuery, remoteSource])
-
-  const before = await waitFor(
-    'remote search results',
-    () => execute(`
-      return Array.from(document.querySelectorAll('#library-grid .book-card')).map((card) => ({
-        id: card.dataset.bookId,
-        title: card.querySelector('.title')?.textContent || '',
-        remote: card.classList.contains('book-card-remote'),
-        hasLink: !!card.querySelector('[data-action="link-remote"]'),
-      }));
-    `),
-    (cards) => cards.some((card) => card.remote && card.hasLink),
-    45_000,
-  )
-  const remoteBefore = before.filter((card) => card.remote)
-  const target = remoteBefore[0]
-  assertCheck(target?.id, 'remote card is missing data-book-id', before)
 
   await execute(`
     const button = document.querySelector('#library-grid .book-card-remote [data-action="link-remote"]');
@@ -351,10 +453,122 @@ async function main() {
     () => execute('return document.querySelectorAll(".library-link-candidate").length'),
     (count) => count >= 1,
   )
+  const candidatePanel = await execute(`
+    const matches = Array.from(document.querySelectorAll('.library-link-candidate-match')).map((el) => el.textContent || '');
+    const scores = matches.map((text) => Number((text.match(/匹配\\s*(\\d+)/) || [])[1])).filter((n) => Number.isFinite(n));
+    return {
+      title: document.querySelector('.library-link-title')?.textContent || '',
+      subtitle: document.querySelector('.library-link-subtitle')?.textContent || '',
+      matches,
+      scores,
+      warnings: Array.from(document.querySelectorAll('.library-link-candidate-warning')).map((el) => el.textContent || ''),
+    };
+  `)
+  assertCheck(candidatePanel.title === '关联本地书', 'local link candidate panel title mismatch', candidatePanel)
+  assertCheck(candidatePanel.scores.length >= 1, 'candidate panel did not show match scores', candidatePanel)
+  assertCheck(candidatePanel.matches.some((text) => /匹配\s*\d+\s*·/.test(text)), 'candidate panel did not show match reasons', candidatePanel)
+  assertCheck(
+    candidatePanel.scores.every((score, index, scores) => index === 0 || scores[index - 1] >= score),
+    'candidate scores are not sorted descending',
+    candidatePanel,
+  )
   await execute(`
-    const button = document.querySelector('.library-link-candidate .btn-primary');
+    document.querySelector('.library-link-panel .icon-btn')?.click();
+    return !document.querySelector('.library-link-panel');
+  `)
+
+  await execute(`
+    const button = document.querySelector('#btn-library-batch-link');
     button?.click();
-    return !!button;
+    return { clicked: !!button, disabled: button?.disabled };
+  `)
+  const batchPanel = await waitFor(
+    'batch link panel',
+    () => execute(`
+      const rows = Array.from(document.querySelectorAll('.library-batch-row')).map((row) => ({
+        title: row.querySelector('.library-batch-remote-title')?.textContent || '',
+        status: row.className,
+        selected: row.querySelector('.library-batch-select option:checked')?.textContent || '',
+        match: row.querySelector('.library-link-candidate-match')?.textContent || '',
+        warning: row.querySelector('.library-link-candidate-warning')?.textContent || '',
+      }));
+      return {
+        title: document.querySelector('.library-batch-panel .library-link-title')?.textContent || '',
+        subtitle: document.querySelector('.library-batch-panel .library-link-subtitle')?.textContent || '',
+        rows,
+      };
+    `),
+    (value) => value.title === '批量人工确认' && value.rows.length >= 1,
+  )
+  assertCheck(batchPanel.rows.some((row) => /^\d+\s*·/.test(row.selected)), 'batch queue did not show candidate score in selector', batchPanel)
+  assertCheck(batchPanel.rows.some((row) => /匹配\s*\d+/.test(row.match)), 'batch queue did not show candidate match score', batchPanel)
+  assertCheck(batchPanel.rows.some((row) => /·/.test(row.match)), 'batch queue did not show candidate match reason', batchPanel)
+
+  await execute(`
+    const row = document.querySelector('.library-batch-row');
+    const button = row?.querySelector('.library-batch-actions .btn-subtle');
+    button?.click();
+    return { clicked: !!button, title: row?.querySelector('.library-batch-remote-title')?.textContent || '' };
+  `)
+  await waitFor(
+    'batch skip row',
+    () => execute(`
+      return {
+        subtitle: document.querySelector('.library-batch-panel .library-link-subtitle')?.textContent || '',
+        skipped: Array.from(document.querySelectorAll('.library-batch-row-skipped .library-batch-status')).map((el) => el.textContent || ''),
+        pending: document.querySelectorAll('.library-batch-row:not(.library-batch-row-skipped):not(.library-batch-row-linked)').length,
+      };
+    `),
+    (value) => value.skipped.some((text) => text.includes('已跳过')) && value.subtitle.includes('已跳过'),
+  )
+
+  let linkedTitle = await execute(`
+    const row = document.querySelector('.library-batch-row:not(.library-batch-row-skipped):not(.library-batch-row-linked)');
+    const title = row?.querySelector('.library-batch-remote-title')?.textContent || '';
+    const button = row?.querySelector('.library-batch-actions .btn-primary');
+    button?.click();
+    return title;
+  `)
+  if (!linkedTitle) {
+    await execute(`
+      document.querySelector('.library-batch-panel .icon-btn')?.click();
+      document.querySelector('#btn-library-batch-link')?.click();
+      return true;
+    `)
+    await waitFor(
+      'batch link panel reopened',
+      () => execute('return document.querySelectorAll(".library-batch-row").length'),
+      (count) => count >= 1,
+    )
+    linkedTitle = await execute(`
+      const row = document.querySelector('.library-batch-row');
+      const title = row?.querySelector('.library-batch-remote-title')?.textContent || '';
+      const button = row?.querySelector('.library-batch-actions .btn-primary');
+      button?.click();
+      return title;
+    `)
+  }
+  target = remoteBefore.find((card) => card.title === linkedTitle) || target
+
+  const batchLinked = await waitFor(
+    'batch link row',
+    () => execute(`
+      return {
+        linked: Array.from(document.querySelectorAll('.library-batch-row-linked .library-batch-status')).map((el) => el.textContent || ''),
+        cards: Array.from(document.querySelectorAll('#library-grid .book-card')).map((card) => ({
+          id: card.dataset.bookId,
+          title: card.querySelector('.title')?.textContent || '',
+          remote: card.classList.contains('book-card-remote'),
+        })),
+      };
+    `),
+    (value) => value.linked.some((text) => text.includes('已关联')) && !value.cards.some((card) => card.id === target.id),
+    20_000,
+  )
+
+  await execute(`
+    document.querySelector('.library-batch-footer .btn')?.click();
+    return true;
   `)
 
   const after = await waitFor(
@@ -369,9 +583,33 @@ async function main() {
         })),
       };
     `),
-    (value) => value.summary.includes('已关联') && value.cards.some((card) => card.id === local.id) && !value.cards.some((card) => card.id === target.id),
+    (value) => value.cards.some((card) => card.id === local.id) && !value.cards.some((card) => card.id === target.id),
     20_000,
   )
+
+  await execute(`
+    const card = Array.from(document.querySelectorAll('#library-grid .book-card')).find((item) => item.dataset.bookId === arguments[0]);
+    const button = card?.querySelector('[data-action="show-sources"]');
+    button?.click();
+    return !!button;
+  `, [local.id])
+  const sourcePanel = await waitFor(
+    'source record panel',
+    () => execute(`
+      return {
+        title: document.querySelector('.library-source-panel .library-link-title')?.textContent || '',
+        subtitle: document.querySelector('.library-source-panel .library-link-subtitle')?.textContent || '',
+        records: Array.from(document.querySelectorAll('.library-source-record')).map((row) => ({
+          name: row.querySelector('.library-source-record-title')?.textContent || '',
+          meta: row.querySelector('.library-source-record-meta')?.textContent || '',
+          url: row.querySelector('.library-source-record-url')?.textContent || '',
+        })),
+      };
+    `),
+    (value) => value.title === '来源记录' && value.records.length >= 1,
+  )
+  assertCheck(sourcePanel.subtitle.includes(local.title), 'source panel did not open for linked local book', sourcePanel)
+  assertCheck(sourcePanel.records.some((record) => record.name && record.meta && record.url.startsWith('http')), 'source panel did not show source metadata and URL', sourcePanel)
 
   const listAfterLink = await invoke('library_list')
   assertCheck(listAfterLink.some((book) => book.id === local.id), 'local book missing after link', listAfterLink)
@@ -412,6 +650,9 @@ async function main() {
     query: remoteQuery,
     local: { id: local.id, title: local.title },
     linkedRemote: target,
+    candidatePanel: { scores: candidatePanel.scores, matches: candidatePanel.matches.slice(0, 3) },
+    batchLinked: batchLinked.linked,
+    sourceRecords: sourcePanel.records.map((record) => record.name),
     cardsAfterLink: after.cards.length,
     annotations: annotations.length,
   }, null, 2))
