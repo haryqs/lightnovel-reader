@@ -1337,3 +1337,41 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
 下一步：
 
 - 若要对外分发测试版，使用当前机器生成的 `dist-beta/lightnovel-reader-v0.1.0-release-windows-x64.zip` 作为候选；正式发出前可再做一次人工下载/解压/启动抽检。
+
+## 2026-06-18：来源记录只读面板
+
+变更：
+
+- 新增 `library.listSourceRecords` 只读协议：reading-core 可按本地 `asset.id` 或远程 `edition.id` 查询同一 edition 的 `source_record`。
+- Tauri command 与 TypeScript bridge 同步，前端仍只经 `src/platform/` 访问平台壳。
+- 书架卡片新增“来源”按钮，展示来源名称、类型、授权/可用状态、remote id、外链和最近检查时间；该面板不下载正文、不自动合并。
+- `library.linkRemoteToLocal` 单测补充来源记录迁移前后查询：远程记录迁到本地 edition 后，本地 asset id 与 edition id 均可查到，远程空壳不再返回。
+
+修改文件：
+
+- `crates/reading-core/src/library.rs`
+- `src-tauri/src/lib.rs`
+- `src/platform/protocol.ts`
+- `src/platform/tauri.ts`
+- `src/platform/index.ts`
+- `src/main.ts`
+- `src/styles.css`
+- `docs/resource-library-plan/8_桥接协议_v0.1.md`
+- `docs/dev-memory/NEXT_ACTIONS.md`
+- `docs/dev-memory/DEV_LOG.md`
+
+验证：
+
+- cargo test -p reading-core 通过（74 passed）；npm.cmd run build 通过（含 check-arch、tsc、vite build）。
+- cargo test --workspace 通过（reading-core 74 passed）。
+- node scripts/check-arch.mjs 通过。
+- node scripts/check-dev-memory.mjs 通过。
+- git diff --check 通过（仅 Windows 换行提示）。
+
+未验证/阻塞：
+
+- 无
+
+下一步：
+
+- 继续做关联候选排序/提示或批量人工确认队列；版权边界不变：Bangumi/なろう 只做元数据和外链，library.acquireRemote 仍只允许青空公共版权条目。

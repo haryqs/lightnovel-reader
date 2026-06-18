@@ -288,6 +288,15 @@ fn library_search(
 }
 
 #[tauri::command]
+fn library_source_records(
+    state: tauri::State<AppState>,
+    book_id: String,
+) -> Result<Vec<library::LibrarySourceRecord>, String> {
+    let db = state.library_db.lock().map_err(|e| e.to_string())?;
+    library::list_source_records(&db, &book_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn library_link_remote_to_local(
     state: tauri::State<AppState>,
     remote_id: String,
@@ -822,6 +831,7 @@ pub fn run() {
             library_import_bytes,
             library_list,
             library_search,
+            library_source_records,
             library_link_remote_to_local,
             library_search_remote,
             library_search_remote_source,

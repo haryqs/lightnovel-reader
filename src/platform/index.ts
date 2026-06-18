@@ -25,6 +25,7 @@ const noBridge: ReaderBridge = {
   importLibraryBookFromBytes: async () => unavailable('library.importBytes'),
   listLibraryBooks: async () => unavailable('library.list'),
   searchLibraryBooks: async () => unavailable('library.search'),
+  listLibrarySourceRecords: async () => unavailable('library.listSourceRecords'),
   searchRemoteLibraryBooks: async () => unavailable('library.searchRemote'),
   searchRemoteLibraryBooksFromSource: async () => unavailable('library.searchRemoteSource'),
   acquireRemoteLibraryBook: async () => unavailable('library.acquireRemote'),

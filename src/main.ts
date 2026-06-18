@@ -1,5 +1,5 @@
 import { ReaderCore, type PageMode, type ReaderLayoutSettings, type TocItem } from './reader-core'
-import { bridge, hasNativeBridge, type LibraryBook, type RemoteLibrarySource } from './platform'
+import { bridge, hasNativeBridge, type LibraryBook, type LibrarySourceRecord, type RemoteLibrarySource } from './platform'
 import type { ThemeName } from './themes'
 
 const reader = new ReaderCore()
@@ -858,6 +858,16 @@ function renderLibraryBooks() {
       : lastRead
     const actions = document.createElement('div')
     actions.className = 'book-card-actions'
+    const sourcesBtn = document.createElement('button')
+    sourcesBtn.type = 'button'
+    sourcesBtn.className = 'btn btn-subtle'
+    sourcesBtn.dataset.action = 'show-sources'
+    sourcesBtn.textContent = '来源'
+    sourcesBtn.addEventListener('click', (event) => {
+      event.stopPropagation()
+      void showBookSourcePanel(b)
+    })
+    actions.appendChild(sourcesBtn)
     if (isRemote) {
       const linkBtn = document.createElement('button')
       linkBtn.type = 'button'
@@ -1039,6 +1049,149 @@ function showRemoteLinkPanel(remote: LibraryBook, candidates: LibraryBook[]) {
   }
 
   libraryGrid.prepend(panel)
+}
+
+async function showBookSourcePanel(book: LibraryBook) {
+  libraryGrid.querySelector('.library-source-panel')?.remove()
+
+  try {
+    const records = await bridge.listLibrarySourceRecords(book.id)
+    renderBookSourcePanel(book, records)
+  } catch (e: any) {
+    showError(`读取来源记录失败：${e?.message || e}`)
+  }
+}
+
+function renderBookSourcePanel(book: LibraryBook, records: LibrarySourceRecord[]) {
+  libraryGrid.querySelector('.library-source-panel')?.remove()
+
+  const panel = document.createElement('div')
+  panel.className = 'library-source-panel'
+
+  const header = document.createElement('div')
+  header.className = 'library-link-header'
+  const title = document.createElement('div')
+  title.className = 'library-link-title'
+  title.textContent = '来源记录'
+  const close = document.createElement('button')
+  close.type = 'button'
+  close.className = 'icon-btn'
+  close.textContent = '×'
+  close.title = '关闭'
+  close.addEventListener('click', () => panel.remove())
+  header.append(title, close)
+
+  const subtitle = document.createElement('div')
+  subtitle.className = 'library-link-subtitle'
+  subtitle.textContent = book.title || '未命名'
+  panel.append(header, subtitle)
+
+  if (records.length === 0) {
+    const empty = document.createElement('div')
+    empty.className = 'library-link-empty'
+    empty.textContent = book.remoteUrl
+      ? '该条目还没有独立来源记录，可先通过在线找书或手动关联补齐。'
+      : '该本地书尚未关联在线来源。'
+    panel.appendChild(empty)
+  } else {
+    const list = document.createElement('div')
+    list.className = 'library-source-records'
+    for (const record of records) {
+      const row = document.createElement('div')
+      row.className = 'library-source-record'
+
+      const main = document.createElement('div')
+      main.className = 'library-source-record-main'
+      const name = document.createElement('div')
+      name.className = 'library-source-record-title'
+      name.textContent = record.sourceName || record.sourceId
+
+      const meta = document.createElement('div')
+      meta.className = 'library-source-record-meta'
+      meta.textContent = [
+        sourceKindLabel(record.sourceKind),
+        sourceRightsLabel(record.rightsStatus),
+        sourceAvailabilityLabel(record.availability),
+        record.remoteId ? `ID ${record.remoteId}` : '',
+        record.lastCheckedAt ? `检查 ${new Date(record.lastCheckedAt).toLocaleDateString('zh-CN')}` : '',
+      ].filter(Boolean).join(' · ')
+
+      main.append(name, meta)
+      if (record.remoteUrl) {
+        const url = document.createElement('div')
+        url.className = 'library-source-record-url'
+        url.textContent = record.remoteUrl
+        main.appendChild(url)
+      }
+
+      if (record.remoteUrl) {
+        const button = document.createElement('button')
+        button.type = 'button'
+        button.className = 'btn btn-subtle'
+        button.textContent = '外链'
+        button.addEventListener('click', async () => {
+          button.disabled = true
+          try {
+            await bridge.openExternal(record.remoteUrl!)
+          } catch (e: any) {
+            showError(`打开来源外链失败：${e?.message || e}`)
+          } finally {
+            button.disabled = false
+          }
+        })
+        row.append(main, button)
+      } else {
+        row.appendChild(main)
+      }
+      list.appendChild(row)
+    }
+    panel.appendChild(list)
+  }
+
+  libraryGrid.prepend(panel)
+}
+
+function sourceKindLabel(kind?: string): string {
+  switch (kind) {
+    case 'metadata':
+      return '元数据'
+    case 'catalog':
+      return '目录'
+    case 'public_domain':
+      return '公共版权'
+    default:
+      return kind || '来源'
+  }
+}
+
+function sourceRightsLabel(status?: string): string {
+  switch (status) {
+    case 'public_domain':
+      return '公共版权'
+    case 'official_free':
+      return '官方免费'
+    case 'official_purchase':
+      return '官方购买'
+    case 'user_owned':
+      return '自有资产'
+    default:
+      return status || '授权未知'
+  }
+}
+
+function sourceAvailabilityLabel(availability?: string): string {
+  switch (availability) {
+    case 'local':
+      return '本地可读'
+    case 'cached':
+      return '已缓存'
+    case 'remote':
+      return '远程条目'
+    case 'missing':
+      return '缺失'
+    default:
+      return availability || ''
+  }
 }
 
 function prependLibraryLinkSummary(remote: LibraryBook, linked: LibraryBook) {

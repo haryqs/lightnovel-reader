@@ -28,12 +28,13 @@ git status -sb
 - `library.linkRemoteToLocal` 已实现第一版：core 移动 `source_record` 到本地 `edition`，保留本地 `asset.id`，隐藏无 asset/无 source_record 的远程空壳；前端远程卡片提供“关联本地”动作，由用户显式确认。
 - `npm.cmd run smoke:remote-link` 已新增并通过：真实 Tauri 窗口里导入本地 smoke EPUB、在线搜 AniList `Tanya`、把 `Youjo Senki` 远程卡片关联到本地书，验证远程空壳消失、进度/标注键不变、重复在线搜索不反弹。
 - PR #18/#19 合并后，`npm.cmd run package:beta` 已在当前机器重新通过；zip 解压后用 release `reader.exe` 跑 `tauri-webdriver-smoke` 启动冒烟通过。
+- `library.listSourceRecords` 已实现第一版：core 可按本地 `asset.id` 或远程 `edition.id` 只读列出挂到同一 edition 的来源记录；书架卡片新增“来源”按钮，展示 AniList/Bangumi/なろう/青空等来源名称、类型、授权/可用状态、remote id 和外链，不下载正文、不自动合并。
 
 下一步优先级：
 
 1. 若要发便携测试版，可以使用当前 `dist-beta/lightnovel-reader-v0.1.0-release-windows-x64.zip` 作为候选；正式发出前再做一次人工下载/解压/启动抽检即可。
-2. 若继续功能开发，下一项建议做“本地条目详情/来源记录可视化”：在书库卡片或详情面板展示已关联的来源（AniList/Bangumi/なろう/青空）和外链，仍不自动合并、不抓正文。
-3. 后续若继续关联体验，只能做候选排序/提示/批量人工确认，不要自动合并；继续遵守版权边界：Bangumi / なろう 只做元数据 + 外链，不做正文抓取；`library.acquireRemote` 仍只允许青空公共版权条目。
+2. 若继续功能开发，下一项建议做“关联候选排序/提示”：按标题、作者、系列、语言、source kind 给人工关联候选排序和风险提示；仍由用户显式确认，不做自动合并。
+3. 后续可做批量人工确认队列和来源详情更丰富的只读面板；继续遵守版权边界：Bangumi / なろう 只做元数据 + 外链，不做正文抓取；`library.acquireRemote` 仍只允许青空公共版权条目。
 
 ## 📌 交接留言（2026-06-17，v0.5-h catalog_fts）
 

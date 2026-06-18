@@ -53,6 +53,20 @@ pub struct LibraryBook {
     pub remote_url: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LibrarySourceRecord {
+    pub id: String,
+    pub source_id: String,
+    pub source_name: String,
+    pub source_kind: String,
+    pub remote_id: Option<String>,
+    pub remote_url: Option<String>,
+    pub rights_status: String,
+    pub availability: Option<String>,
+    pub last_checked_at: Option<i64>,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct RemoteAcquisition {
     pub edition_id: String,
@@ -633,6 +647,57 @@ pub fn list_books(conn: &Connection) -> rusqlite::Result<Vec<LibraryBook>> {
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt.query_map([], row_to_book)?;
     rows.collect()
+}
+
+pub fn list_source_records(
+    conn: &Connection,
+    book_id: &str,
+) -> rusqlite::Result<Vec<LibrarySourceRecord>> {
+    let Some(edition_id) = source_record_edition_id(conn, book_id)? else {
+        return Ok(Vec::new());
+    };
+    let mut stmt = conn.prepare(
+        "SELECT sr.id,
+                sr.source_id,
+                COALESCE(src.name, sr.source_id) AS source_name,
+                COALESCE(src.kind, '') AS source_kind,
+                sr.remote_id,
+                sr.remote_url,
+                sr.rights_status,
+                sr.availability,
+                sr.last_checked_at
+           FROM source_record sr
+           LEFT JOIN source src ON src.id = sr.source_id
+          WHERE sr.entity_type = 'edition'
+            AND sr.entity_id = ?1
+          ORDER BY source_name COLLATE NOCASE, sr.source_id, sr.remote_id",
+    )?;
+    let rows = stmt.query_map([edition_id], |row| {
+        Ok(LibrarySourceRecord {
+            id: row.get(0)?,
+            source_id: row.get(1)?,
+            source_name: row.get(2)?,
+            source_kind: row.get(3)?,
+            remote_id: row.get(4)?,
+            remote_url: row.get(5)?,
+            rights_status: row.get(6)?,
+            availability: row.get(7)?,
+            last_checked_at: row.get(8)?,
+        })
+    })?;
+    rows.collect()
+}
+
+fn source_record_edition_id(conn: &Connection, id: &str) -> rusqlite::Result<Option<String>> {
+    let mut stmt = conn.prepare(
+        "SELECT e.id
+           FROM edition e
+           LEFT JOIN asset a ON a.edition_id = e.id
+          WHERE e.id = ?1 OR a.id = ?1
+          LIMIT 1",
+    )?;
+    let mut rows = stmt.query_map([id], |row| row.get(0))?;
+    rows.next().transpose()
 }
 
 pub fn link_remote_to_local(
@@ -1590,6 +1655,17 @@ mod tests {
         );
         assert_eq!(search_books(&conn, "Remote").unwrap().len(), 1);
 
+        let remote_records = list_source_records(&conn, "ed:remote-link").unwrap();
+        assert_eq!(remote_records.len(), 1);
+        assert_eq!(remote_records[0].source_id, "src:test");
+        assert_eq!(remote_records[0].source_name, "Test Source");
+        assert_eq!(remote_records[0].source_kind, "metadata");
+        assert_eq!(
+            remote_records[0].remote_url.as_deref(),
+            Some("https://example.test/remote")
+        );
+        assert_eq!(remote_records[0].remote_id.as_deref(), Some("remote-1"));
+
         let linked = link_remote_to_local(&conn, "ed:remote-link", &local.book.id, 2000).unwrap();
         assert_eq!(linked.id, local.book.id);
         assert_eq!(linked.edition_id.as_deref(), Some(local_edition_id.as_str()));
@@ -1609,6 +1685,19 @@ mod tests {
             )
             .unwrap();
         assert_eq!(moved_entity, local_edition_id);
+
+        assert!(list_source_records(&conn, "ed:remote-link")
+            .unwrap()
+            .is_empty());
+        let local_records = list_source_records(&conn, &local.book.id).unwrap();
+        assert_eq!(local_records.len(), 1);
+        assert_eq!(local_records[0].source_id, "src:test");
+        assert_eq!(local_records[0].rights_status, "official_purchase");
+        assert_eq!(local_records[0].last_checked_at, Some(2000));
+        let local_records_by_edition =
+            list_source_records(&conn, linked.edition_id.as_deref().unwrap()).unwrap();
+        assert_eq!(local_records_by_edition.len(), 1);
+        assert_eq!(local_records_by_edition[0].id, "sr:remote-link");
 
         // 模拟同一远程搜索再次写出 edition 空壳，但 source_record 已经归到本地 edition。
         // 这种无 asset 且无 source_record 的空壳不应重新出现在书架或搜索结果里。
