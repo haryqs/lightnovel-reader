@@ -1,5 +1,33 @@
 # 下一步任务队列
 
+## 📌 交接留言（2026-06-19，结构化错误码第一批）
+
+本轮把先前草拟为死代码的 `BridgeError` 正式接线（NEXT_ACTIONS 结构化错误码项的第一批）。
+
+当前事实：
+
+- `src-tauri/src/lib.rs` 的 `BridgeError`（`code/message/details`，camelCase serde）已接线，共 7 个错误码：
+  `invalidArgument / storageError / parseError / networkError / httpStatus / notFound / forbidden`。
+- v0.6 OPDS 网络/存储面 7 个命令已从 `Result<_, String>` 迁到 `Result<_, BridgeError>`：
+  `opds_add_source / opds_remove_source / opds_list_sources / opds_browse_feed /
+  opds_search_feed / opds_ingest_entries / opds_download_epub`。
+- 协议已同步：`src/platform/protocol.ts`（`BridgeError` / `BridgeErrorCode` / `isBridgeError`）、
+  文档 8 新增「结构化错误码」一节并把冻结清单第 3 项标记「进行中」。`tauri.ts` 无需改动。
+- 其余命令（library.*/annotation.*/reading.*/book.*）仍返回字符串，本轮未迁移（非破坏性，可后续逐步迁）。
+
+已验证：
+
+- `node scripts/check-arch.mjs` 通过。
+- `node scripts/check-dev-memory.mjs` 通过。
+- `npm.cmd run build` 通过。
+- `cargo test --workspace` 通过。
+
+下一步优先级：
+
+1. 按价值把其余命令逐步迁移到 `BridgeError`（统一 reject 形态），迁完后定稿协议冻结的错误码范围。
+2. 给前端按 `code` 分流的实际消费点（如网络错误可重试提示）补一处使用，验证 `isBridgeError` 链路。
+3. 继续协议冻结审计其余三项（DTO 预留字段、批量预取语义、资源通道边界）。
+
 ## 📌 交接留言（2026-06-18，v0.6 OPDS 当前状态）
 
 先同步 GitHub：

@@ -44,6 +44,64 @@ struct AppState {
     cache_dir: std::path::PathBuf, // 持久化解析缓存根目录
 }
 
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BridgeError {
+    code: &'static str,
+    message: String,
+    details: Option<String>,
+}
+
+impl BridgeError {
+    fn new(code: &'static str, message: impl Into<String>) -> Self {
+        Self {
+            code,
+            message: message.into(),
+            details: None,
+        }
+    }
+
+    fn with_details(
+        code: &'static str,
+        message: impl Into<String>,
+        details: impl Into<String>,
+    ) -> Self {
+        Self {
+            code,
+            message: message.into(),
+            details: Some(details.into()),
+        }
+    }
+
+    fn invalid_argument(message: impl Into<String>) -> Self {
+        Self::new("invalidArgument", message)
+    }
+
+    fn storage(message: impl Into<String>) -> Self {
+        Self::new("storageError", message)
+    }
+
+    fn parse(message: impl Into<String>) -> Self {
+        Self::new("parseError", message)
+    }
+
+    fn network(message: impl Into<String>) -> Self {
+        Self::new("networkError", message)
+    }
+
+    fn http_status(status: reqwest::StatusCode) -> Self {
+        Self::with_details("httpStatus", "OPDS 服务器返回错误状态", status.to_string())
+    }
+
+    fn not_found(message: impl Into<String>) -> Self {
+        Self::new("notFound", message)
+    }
+
+    fn forbidden(message: impl Into<String>) -> Self {
+        Self::new("forbidden", message)
+    }
+}
+
 fn now_ms() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -780,13 +838,13 @@ async fn opds_add_source(
     state: tauri::State<'_, AppState>,
     name: String,
     url: String,
-) -> Result<connectors::opds::OpdsSource, String> {
+) -> Result<connectors::opds::OpdsSource, BridgeError> {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
 
     let url = url.trim().to_string();
     if url.is_empty() {
-        return Err("URL is required".into());
+        return Err(BridgeError::invalid_argument("URL is required"));
     }
 
     let mut hasher = DefaultHasher::new();
@@ -794,9 +852,12 @@ async fn opds_add_source(
     let source_id = format!("opds-{:x}", hasher.finish());
 
     let now = now_ms();
-    let db = state.library_db.lock().map_err(|e| e.to_string())?;
+    let db = state
+        .library_db
+        .lock()
+        .map_err(|e| BridgeError::storage(e.to_string()))?;
     connectors::ensure_source(&db, &source_id, &name, "opds", Some(&url), now)
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| BridgeError::storage(e.to_string()))?;
 
     Ok(connectors::opds::OpdsSource {
         id: source_id,
@@ -811,18 +872,24 @@ async fn opds_add_source(
 async fn opds_remove_source(
     state: tauri::State<'_, AppState>,
     id: String,
-) -> Result<(), String> {
-    let db = state.library_db.lock().map_err(|e| e.to_string())?;
-    connectors::opds::remove_source(&db, &id).map_err(|e| e.to_string())
+) -> Result<(), BridgeError> {
+    let db = state
+        .library_db
+        .lock()
+        .map_err(|e| BridgeError::storage(e.to_string()))?;
+    connectors::opds::remove_source(&db, &id).map_err(|e| BridgeError::storage(e.to_string()))
 }
 
 /// 列出所有已添加的 OPDS 书源。
 #[tauri::command]
 async fn opds_list_sources(
     state: tauri::State<'_, AppState>,
-) -> Result<Vec<connectors::opds::OpdsSource>, String> {
-    let db = state.library_db.lock().map_err(|e| e.to_string())?;
-    connectors::opds::list_sources(&db).map_err(|e| e.to_string())
+) -> Result<Vec<connectors::opds::OpdsSource>, BridgeError> {
+    let db = state
+        .library_db
+        .lock()
+        .map_err(|e| BridgeError::storage(e.to_string()))?;
+    connectors::opds::list_sources(&db).map_err(|e| BridgeError::storage(e.to_string()))
 }
 
 /// 抓取并解析一个 OPDS feed（导航或获取），不做落库。
@@ -830,10 +897,10 @@ async fn opds_list_sources(
 #[tauri::command]
 async fn opds_browse_feed(
     url: String,
-) -> Result<connectors::opds::OpdsFeed, String> {
+) -> Result<connectors::opds::OpdsFeed, BridgeError> {
     let url = url.trim();
     if url.is_empty() {
-        return Err("URL is required".into());
+        return Err(BridgeError::invalid_argument("URL is required"));
     }
 
     let client = reqwest::Client::new();
@@ -846,26 +913,26 @@ async fn opds_browse_feed(
         )
         .send()
         .await
-        .map_err(|e| format!("OPDS request failed: {e}"))?;
+        .map_err(|e| BridgeError::network(format!("OPDS request failed: {e}")))?;
 
     if !resp.status().is_success() {
-        return Err(format!("OPDS server returned HTTP {}", resp.status()));
+        return Err(BridgeError::http_status(resp.status()));
     }
 
     let body = resp
         .text()
         .await
-        .map_err(|e| format!("read response: {e}"))?;
+        .map_err(|e| BridgeError::network(format!("read response: {e}")))?;
     opds_parse_body(&body)
 }
 
 /// Auto-detect OPDS format (1.x XML vs 2.0 JSON) and parse.
-fn opds_parse_body(body: &str) -> Result<connectors::opds::OpdsFeed, String> {
+fn opds_parse_body(body: &str) -> Result<connectors::opds::OpdsFeed, BridgeError> {
     let trimmed = body.trim_start();
     if trimmed.starts_with('{') {
-        connectors::opds::parse_opds_2x(body)
+        connectors::opds::parse_opds_2x(body).map_err(BridgeError::parse)
     } else {
-        connectors::opds::parse_opds_1x(body)
+        connectors::opds::parse_opds_1x(body).map_err(BridgeError::parse)
     }
 }
 
@@ -875,21 +942,24 @@ async fn opds_search_feed(
     state: tauri::State<'_, AppState>,
     source_id: String,
     query: String,
-) -> Result<connectors::opds::OpdsFeed, String> {
+) -> Result<connectors::opds::OpdsFeed, BridgeError> {
     let q = query.trim();
     if q.is_empty() {
-        return Err("search query is empty".into());
+        return Err(BridgeError::invalid_argument("search query is empty"));
     }
 
     // 在 await 之前取出 base_url 并释放 db 锁（MutexGuard 不能跨 await）。
     let base_url: String = {
-        let db = state.library_db.lock().map_err(|e| e.to_string())?;
+        let db = state
+            .library_db
+            .lock()
+            .map_err(|e| BridgeError::storage(e.to_string()))?;
         db.query_row(
             "SELECT base_url FROM source WHERE id = ?1 AND kind = 'opds'",
             [&source_id],
             |row| row.get(0),
         )
-        .map_err(|e| format!("source not found: {e}"))?
+        .map_err(|e| BridgeError::not_found(format!("source not found: {e}")))?
     };
 
     let search_url = connectors::opds::search_url(&base_url, q);
@@ -904,16 +974,16 @@ async fn opds_search_feed(
         )
         .send()
         .await
-        .map_err(|e| format!("OPDS search request failed: {e}"))?;
+        .map_err(|e| BridgeError::network(format!("OPDS search request failed: {e}")))?;
 
     if !resp.status().is_success() {
-        return Err(format!("OPDS server returned HTTP {}", resp.status()));
+        return Err(BridgeError::http_status(resp.status()));
     }
 
     let body = resp
         .text()
         .await
-        .map_err(|e| format!("read search response: {e}"))?;
+        .map_err(|e| BridgeError::network(format!("read search response: {e}")))?;
     opds_parse_body(&body)
 }
 
@@ -923,7 +993,7 @@ async fn opds_ingest_entries(
     state: tauri::State<'_, AppState>,
     source_id: String,
     feed: connectors::opds::OpdsFeed,
-) -> Result<Vec<library::LibraryBook>, String> {
+) -> Result<Vec<library::LibraryBook>, BridgeError> {
     let now = now_ms();
     let entries: Vec<connectors::RemoteEntry> = feed
         .entries
@@ -936,16 +1006,21 @@ async fn opds_ingest_entries(
         return Ok(Vec::new());
     }
 
-    let db = state.library_db.lock().map_err(|e| e.to_string())?;
+    let db = state
+        .library_db
+        .lock()
+        .map_err(|e| BridgeError::storage(e.to_string()))?;
     // 确保来源存在（幂等）
     connectors::ensure_source(&db, &source_id, &source_id, "opds", None, now)
-        .map_err(|e| e.to_string())?;
-    let ids =
-        connectors::ingest(&db, &source_id, &entries, now).map_err(|e| e.to_string())?;
+        .map_err(|e| BridgeError::storage(e.to_string()))?;
+    let ids = connectors::ingest(&db, &source_id, &entries, now)
+        .map_err(|e| BridgeError::storage(e.to_string()))?;
 
     let mut out = Vec::with_capacity(ids.len());
     for id in ids {
-        if let Some(b) = library::get_book(&db, &id).map_err(|e| e.to_string())? {
+        if let Some(b) =
+            library::get_book(&db, &id).map_err(|e| BridgeError::storage(e.to_string()))?
+        {
             out.push(b);
         }
     }
@@ -959,19 +1034,23 @@ async fn opds_download_epub(
     state: tauri::State<'_, AppState>,
     edition_id: String,
     acquisition_url: String,
-) -> Result<library::LibraryBook, String> {
+) -> Result<library::LibraryBook, BridgeError> {
     // 1) 验证条目存在且为 open_license。
     let acquisition = {
-        let db = state.library_db.lock().map_err(|e| e.to_string())?;
-        let Some(info) = library::remote_acquisition(&db, &edition_id).map_err(|e| e.to_string())?
+        let db = state
+            .library_db
+            .lock()
+            .map_err(|e| BridgeError::storage(e.to_string()))?;
+        let Some(info) = library::remote_acquisition(&db, &edition_id)
+            .map_err(|e| BridgeError::storage(e.to_string()))?
         else {
-            return Err("找不到该条目".to_string());
+            return Err(BridgeError::not_found("找不到该条目"));
         };
         if info.rights_status != "open_license" {
-            return Err(format!(
+            return Err(BridgeError::forbidden(format!(
                 "该条目授权状态为 {}，不支持下载正文",
                 info.rights_status
-            ));
+            )));
         }
         info
     };
@@ -986,18 +1065,21 @@ async fn opds_download_epub(
         )
         .send()
         .await
-        .map_err(|e| format!("下载 EPUB 失败: {e}"))?;
+        .map_err(|e| BridgeError::network(format!("下载 EPUB 失败: {e}")))?;
     if !resp.status().is_success() {
-        return Err(format!("下载 EPUB 失败: HTTP {}", resp.status()));
+        return Err(BridgeError::http_status(resp.status()));
     }
     let epub_bytes = resp
         .bytes()
         .await
-        .map_err(|e| format!("读取 EPUB 响应失败: {e}"))?;
+        .map_err(|e| BridgeError::network(format!("读取 EPUB 响应失败: {e}")))?;
 
     // 3) 落库（core）。
     let now = now_ms();
-    let db = state.library_db.lock().map_err(|e| e.to_string())?;
+    let db = state
+        .library_db
+        .lock()
+        .map_err(|e| BridgeError::storage(e.to_string()))?;
     library::attach_remote_epub_bytes(
         &db,
         &state.library_dir,
@@ -1005,6 +1087,7 @@ async fn opds_download_epub(
         &epub_bytes,
         now,
     )
+    .map_err(BridgeError::storage)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
