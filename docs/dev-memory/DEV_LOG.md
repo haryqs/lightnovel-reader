@@ -1,5 +1,39 @@
 # 开发日志
 
+## 2026-06-21：library.* 结构化错误码与 README 更新
+
+变更：
+
+- 合并 PR #24 到 `main`：OPDS 第一批 `BridgeError` 已进入主线。
+- 从最新 `main` 新建 `codex/library-bridge-errors`，继续迁移 `library.*` 命令到结构化
+  `BridgeError { code, message, details? }`。
+- `src-tauri/src/lib.rs`：
+  - `library.listCalibre`、`library.import`、`library.importBytes`、`library.list`、`library.search`、
+    `library.listSourceRecords`、`library.linkRemoteToLocal`、`library.searchRemote`、
+    `library.searchRemoteSource`、`library.acquireRemote`、`library.open`、`library.touchLastRead`
+    已从 `Result<_, String>` 迁到 `Result<_, BridgeError>`。
+  - 远程搜索按场景映射到 `networkError`、`httpStatus`、`parseError`、`storageError`；
+    青空 acquire 的非公共版权/非官方 URL 走 `forbidden`，缺条目/缺正文 URL 走 `notFound`。
+- `src/main.ts`：书库相关错误展示改为走 `formatError(e)`，可以展示结构化 `code/details`。
+- `src/platform/protocol.ts` 与 `docs/resource-library-plan/8_桥接协议_v0.1.md`：
+  更新结构化错误码已覆盖 `opds.*` 与 `library.*` 的说明。
+- 根 `README.md` 从早期 EPUB reader 说明更新为当前项目入口，覆盖能力、合规边界、架构、开发命令、
+  冒烟/打包命令和当前开发线。
+
+已验证：
+
+- `node scripts/check-arch.mjs` 通过。
+- `node scripts/check-dev-memory.mjs` 通过。
+- `npm.cmd run build` 通过。
+- `cargo check --workspace` 通过。
+- `cargo test --workspace` 通过（reading-core 84 passed）。
+- `git diff --check` 通过；仅有 Windows 换行提示。
+
+下一步：
+
+- 提交并推送 `codex/library-bridge-errors`，开 PR。
+- 后续继续迁移 `book.*`、`annotation.*`、`reading.*`，再收口协议冻结审计。
+
 ## 2026-06-21：从 GitHub 同步并补齐 BridgeError 前端消费
 
 变更：
