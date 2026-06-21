@@ -41,6 +41,7 @@ const noBridge: ReaderBridge = {
   openExternal: async (url) => {
     window.open(url, '_blank', 'noopener')
   },
+  openPathExternal: async () => unavailable('shell.openPathExternal'),
   // OPDS v0.6
   opdsAddSource: async () => unavailable('opds.addSource'),
   opdsRemoveSource: async () => unavailable('opds.removeSource'),

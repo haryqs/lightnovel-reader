@@ -1,5 +1,27 @@
 # 下一步任务队列
 
+## 📌 交接留言（2026-06-21，阅读方式选择第一版已完成）
+
+当前分支：
+
+- `codex/reading-action-model`，已合并 PR #26（平台定位升级）后的最新 `main` 上创建。
+
+本轮已完成：
+
+- 书架卡片新增第一版阅读方式动作模型：
+  - 本地 / cached asset：`内置` 打开内置阅读器；有 `filePath` 时可点 `外部` 交给系统默认本地阅读器。
+  - 远程 metadata-only：有 `remoteUrl` 时点 `浏览器` 跳官方入口。
+  - `public_domain` 远程条目：点 `获取` 走 `library.acquireRemote`，获取后用内置阅读器打开。
+  - `official_free` / `official_purchase` / `unknown` 不进入正文抓取，仍只跳官方入口。
+- 协议新增 `shell.openPathExternal`，Tauri 适配层用 `@tauri-apps/plugin-opener` 的 `openPath` 实现；前端业务仍只通过 `src/platform/ReaderBridge` 调用。
+
+已验证：
+
+- `npm.cmd run build` 通过（含 `check-arch`、`tsc`、`vite build`）。
+- `node scripts/check-dev-memory.mjs` 通过。
+- `cargo test --workspace` 通过（reading-core 84 passed）。
+- `git diff --check` 通过（仅 Windows 换行提示）。
+
 ## 📌 交接留言（2026-06-21，定位升级为轻小说平台）
 
 当前分支：

@@ -931,6 +931,14 @@ interface BatchLinkQueueEntry {
   message?: string
 }
 
+interface LibraryReadAction {
+  key: 'builtin' | 'external' | 'browser' | 'acquire'
+  label: string
+  title: string
+  primary?: boolean
+  run: () => Promise<void>
+}
+
 function renderLibraryBooks() {
   const books = libraryBooks
   updateBatchLinkButton(books)
@@ -1011,6 +1019,20 @@ function renderLibraryBooks() {
       })
       actions.appendChild(linkBtn)
     }
+    const readActions = getLibraryReadActions(b)
+    for (const readAction of readActions) {
+      const readBtn = document.createElement('button')
+      readBtn.type = 'button'
+      readBtn.className = readAction.primary ? 'btn btn-primary' : 'btn btn-subtle'
+      readBtn.dataset.action = `read-${readAction.key}`
+      readBtn.textContent = readAction.label
+      readBtn.title = readAction.title
+      readBtn.addEventListener('click', (event) => {
+        event.stopPropagation()
+        void readAction.run()
+      })
+      actions.appendChild(readBtn)
+    }
     card.title = [b.title, b.author, series, language, b.description]
       .filter(Boolean)
       .join('\n')
@@ -1018,7 +1040,7 @@ function renderLibraryBooks() {
     if (tags.childElementCount > 0) card.appendChild(tags)
     card.appendChild(meta)
     if (actions.childElementCount > 0) card.appendChild(actions)
-    card.addEventListener('click', () => (isRemote ? openRemoteEntry(b) : openLibraryBook(b)))
+    card.addEventListener('click', () => void (isRemote ? openRemoteEntry(b) : openDefaultLibraryBookAction(b)))
     libraryGrid.appendChild(card)
   }
 }
@@ -1702,6 +1724,106 @@ function prependLibraryLinkSummary(remote: LibraryBook, linked: LibraryBook) {
 }
 
 // 远程条目无本地正文：按版权红线只跳官方/来源外链，不在站内呈现正文。
+function canAcquireForBuiltInReader(book: LibraryBook): boolean {
+  return book.rightsStatus === 'public_domain' && isRemoteLibraryBook(book)
+}
+
+function getLibraryReadActions(book: LibraryBook): LibraryReadAction[] {
+  const actions: LibraryReadAction[] = []
+  const isRemote = isRemoteLibraryBook(book)
+  const isReadableAsset = !isRemote && book.availability !== 'missing'
+
+  if (isReadableAsset) {
+    actions.push({
+      key: 'builtin',
+      label: '内置',
+      title: '用内置阅读器打开',
+      primary: true,
+      run: () => openLibraryBook(book),
+    })
+  }
+
+  if (book.filePath && book.availability !== 'remote') {
+    actions.push({
+      key: 'external',
+      label: '外部',
+      title: '用系统默认本地阅读器打开',
+      run: () => openExternalLibraryBook(book),
+    })
+  }
+
+  if (canAcquireForBuiltInReader(book)) {
+    actions.push({
+      key: 'acquire',
+      label: '获取',
+      title: '获取公共版权正文并用内置阅读器打开',
+      primary: actions.length === 0,
+      run: () => acquireAndOpenRemoteBook(book),
+    })
+  }
+
+  if (book.remoteUrl) {
+    actions.push({
+      key: 'browser',
+      label: '浏览器',
+      title: '打开官方页面',
+      primary: actions.length === 0,
+      run: () => openRemoteOfficialPage(book),
+    })
+  }
+
+  return actions
+}
+
+async function openDefaultLibraryBookAction(book: LibraryBook) {
+  const actions = getLibraryReadActions(book)
+  const action = actions.find((item) => item.primary) ?? actions[0]
+  if (!action) {
+    showError('该条目还没有可用的阅读方式')
+    return
+  }
+  await action.run()
+}
+
+async function openRemoteOfficialPage(book: LibraryBook) {
+  if (!book.remoteUrl) {
+    showError('该条目没有可跳转的官方链接')
+    return
+  }
+  try {
+    await bridge.openExternal(book.remoteUrl)
+  } catch (e: any) {
+    showError(`打开官方链接失败：${formatError(e)}`)
+  }
+}
+
+async function openExternalLibraryBook(book: LibraryBook) {
+  if (!book.filePath) {
+    showError('该条目没有可交给外部阅读器的本地文件')
+    return
+  }
+  try {
+    await bridge.openPathExternal(book.filePath)
+  } catch (e: any) {
+    showError(`打开外部阅读器失败：${formatError(e)}`)
+  }
+}
+
+async function acquireAndOpenRemoteBook(book: LibraryBook) {
+  libraryGrid.innerHTML = `<div class="library-state">正在获取《${book.title || '未命名'}》正文…</div>`
+  try {
+    const acquired = await bridge.acquireRemoteLibraryBook(book.id)
+    libraryBooks = libraryBooks.map((item) =>
+      item.id === book.id || item.editionId === book.editionId ? acquired : item,
+    )
+    renderLibraryBooks()
+    await openLibraryBook(acquired)
+  } catch (e: any) {
+    renderLibraryBooks()
+    showError(`获取公共版权正文失败：${formatError(e)}`)
+  }
+}
+
 async function openRemoteEntry(book: LibraryBook) {
   if (book.rightsStatus === 'public_domain') {
     libraryGrid.innerHTML = `<div class="library-state">正在获取《${book.title || '未命名'}》正文…</div>`
