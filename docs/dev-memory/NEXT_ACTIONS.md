@@ -1,5 +1,32 @@
 # 下一步任务队列
 
+## 📌 交接留言（2026-06-21，OPDS 获取并阅读冒烟已通过）
+
+当前分支：
+
+- `codex/opds-acquire-smoke`，从已合并 PR #29 后的最新 `main` 创建。
+
+本轮已完成：
+
+- 更新 `scripts/tauri-opds-smoke.mjs`：兼容新的“获取并阅读”按钮，同时保留旧 `EPUB` 文本兼容。
+- 冒烟新增阅读态断言：获取 OPDS EPUB 后必须进入 `reading-active`，书库层必须隐藏，状态栏可见，标题匹配已打开作品。
+- 修复真实冒烟发现的问题：OPDS 获取后先打开阅读器、再 `refreshLibraryBooks()` 会把书库层重新显示出来；现在先刷新书库，再按偏好打开获取后的本地 asset。
+
+已验证：
+
+- `node --check scripts/tauri-opds-smoke.mjs` 通过。
+- `npm.cmd run tauri -- build --debug --no-bundle` 通过。
+- `npm.cmd run smoke:opds -- --tauri-driver C:\Users\Administrator\.cargo\bin\tauri-driver.exe --native-driver C:\Users\Administrator\AppData\Local\lightnovel-reader-tools\msedgedriver\149.0.4022.62\msedgedriver.exe` 通过。
+  - source: `https://www.gutenberg.org/ebooks/search.opds/?query=austen`
+  - downloaded: `Pride and Prejudice`
+  - reader UI: `libraryHidden=true`, `readingActive=true`, `statusbarHidden=false`
+
+下一步优先级：
+
+1. 若继续 OPDS 平台化：设计并落地 acquisition URL 持久化，让书架远程 OPDS 条目也能直接“获取并阅读”（不要复用 `remoteUrl`）。
+2. 若继续协议内功：迁移 `book.*` / `annotation.*` / `reading.*` 到结构化 `BridgeError`。
+3. 若准备分发：重跑 `npm.cmd run package:beta` 并做解压/启动检查。
+
 ## 📌 交接留言（2026-06-21，统一合法资源获取后阅读第一步）
 
 当前分支：

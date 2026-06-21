@@ -49,6 +49,8 @@
   书库标题栏可选择默认阅读方式，偏好写入 `localStorage`，卡片点击和主按钮按可用动作自动回退。
 - 2026-06-21：合法资源获取后的打开动作已统一第一步：青空 `public_domain` 与 OPDS `open_license`
   EPUB 获取完成后都会按默认阅读方式在内置/外部阅读器间选择；OPDS feed 面板按钮改为“获取并阅读”。
+- 2026-06-21：`npm.cmd run smoke:opds` 已补验“获取并阅读”真实链路：Gutenberg OPDS → Pride and
+  Prejudice → 下载入库 → 进入阅读态；同时修复 OPDS 获取后刷新书库覆盖阅读器的问题。
 - 单本/多本 EPUB 直接导入到书库已完成。
 - 本地文件夹 EPUB 批量导入入口已完成。
 - 封面提取与 `books.cover_path` 回填已完成。

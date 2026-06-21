@@ -2159,8 +2159,8 @@ function renderOpdsFeedView(feed: OpdsFeed, sourceId: string, sourceName: string
             dlBtn.textContent = '已获取 ✓'
             addBtn.disabled = true
             addBtn.textContent = '已在书架'
-            if (acquired) await openAcquiredLibraryBook(acquired)
             await refreshLibraryBooks()
+            if (acquired) await openAcquiredLibraryBook(acquired)
           } catch (e: any) {
             dlBtn.textContent = '获取失败'
             showError(`获取 EPUB 失败：${formatError(e)}`)

@@ -352,13 +352,16 @@ async function main() {
         cards: [...document.querySelectorAll('.opds-feed-card')].map((card) => ({
           title: card.querySelector('.opds-feed-card-title')?.textContent || '',
           text: card.textContent || '',
-          hasEpubButton: [...card.querySelectorAll('button')].some((button) => (button.textContent || '').includes('EPUB')),
+          hasAcquireButton: [...card.querySelectorAll('button')].some((button) => {
+            const text = button.textContent || ''
+            return text.includes('获取并阅读') || text.includes('EPUB')
+          }),
         })),
       };
     `),
     (value) =>
       value.title.includes(expectedTitle) &&
-      value.cards.some((card) => card.title.includes(expectedTitle) && card.hasEpubButton),
+      value.cards.some((card) => card.title.includes(expectedTitle) && card.hasAcquireButton),
     60_000,
   )
 
@@ -368,7 +371,7 @@ async function main() {
       (item.querySelector('.opds-feed-card-title')?.textContent || '').includes(arguments[0])
     );
     const button = [...(card?.querySelectorAll('button') || [])].find((item) =>
-      (item.textContent || '').includes('EPUB')
+      (item.textContent || '').includes('获取并阅读') || (item.textContent || '').includes('EPUB')
     );
     button?.click();
     return { clicked: !!button, text: card?.textContent || '' };
@@ -386,6 +389,18 @@ async function main() {
     },
     Boolean,
     120_000,
+  )
+
+  const readerUi = await waitFor(
+    'OPDS acquired book opened in reader UI',
+    () => execute(`return {
+      readingActive: document.body.classList.contains('reading-active'),
+      libraryHidden: document.querySelector('#library-view')?.hidden === true,
+      statusbarHidden: document.querySelector('#statusbar')?.hidden === true,
+      title: document.querySelector('#book-title')?.textContent || '',
+    }`),
+    (value) => value.readingActive && value.libraryHidden && value.statusbarHidden === false,
+    30_000,
   )
 
   const opened = await invoke('library_open', { id: downloaded.id })
@@ -418,6 +433,7 @@ async function main() {
   console.log('tauri-opds-smoke: OK')
   console.log(`tauri-opds-smoke: source=${opdsUrl}`)
   console.log(`tauri-opds-smoke: downloaded=${downloaded.title} (${downloaded.id})`)
+  console.log(`tauri-opds-smoke: readerUi=${JSON.stringify(readerUi)}`)
 }
 
 try {
