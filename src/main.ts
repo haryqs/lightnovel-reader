@@ -1,5 +1,5 @@
 import { ReaderCore, type PageMode, type ReaderLayoutSettings, type TocItem } from './reader-core'
-import { bridge, hasNativeBridge, type LibraryBook, type LibrarySourceRecord, type OpdsFeed, type OpdsSource, type RemoteLibrarySource } from './platform'
+import { bridge, hasNativeBridge, isBridgeError, type LibraryBook, type LibrarySourceRecord, type OpdsFeed, type OpdsSource, type RemoteLibrarySource } from './platform'
 import type { ThemeName } from './themes'
 
 const reader = new ReaderCore()
@@ -828,6 +828,11 @@ async function importEpubFiles(files: File[], sourceLabel: string) {
 }
 
 function formatError(err: unknown): string {
+  if (isBridgeError(err)) {
+    return err.details
+      ? `${err.message}（${err.code}: ${err.details}）`
+      : `${err.message}（${err.code}）`
+  }
   if (err instanceof Error) return err.message
   if (typeof err === 'string') return err
   return String(err)
@@ -1766,7 +1771,7 @@ async function refreshOpdsSources() {
     const sources = await bridge.opdsListSources()
     renderOpdsSourceList(sources)
   } catch (e: any) {
-    opdsSourceList.innerHTML = `<div class="opds-feed-empty">读取 OPDS 源列表失败：${e?.message || e}</div>`
+    opdsSourceList.innerHTML = `<div class="opds-feed-empty">读取 OPDS 源列表失败：${formatError(e)}</div>`
   }
 }
 
@@ -1836,7 +1841,7 @@ async function addOpdsSource() {
     opdsSourceNameInput.value = ''
     await refreshOpdsSources()
   } catch (e: any) {
-    showError(`添加 OPDS 源失败：${e?.message || e}`)
+    showError(`添加 OPDS 源失败：${formatError(e)}`)
   } finally {
     opdsAddSourceBtn.disabled = false
     opdsAddSourceBtn.textContent = '添加 OPDS 源'
@@ -1849,7 +1854,7 @@ async function removeOpdsSource(id: string) {
     hideOpdsFeedView()
     await refreshOpdsSources()
   } catch (e: any) {
-    showError(`移除失败：${e?.message || e}`)
+    showError(`移除失败：${formatError(e)}`)
   }
 }
 
@@ -1863,7 +1868,7 @@ async function browseOpdsFeed(url: string, sourceId: string, sourceName: string)
     opdsSourceCache = { id: sourceId, name: sourceName, enabled: true, baseUrl: url }
     renderOpdsFeedView(feed, sourceId, sourceName, url)
   } catch (e: any) {
-    opdsFeedGrid.innerHTML = `<div class="opds-feed-empty" style="color:var(--error)">加载失败：${e?.message || e}</div>`
+    opdsFeedGrid.innerHTML = `<div class="opds-feed-empty" style="color:var(--error)">加载失败：${formatError(e)}</div>`
   }
 }
 
@@ -1877,7 +1882,7 @@ async function searchOpdsFeed(sourceId: string, query: string, sourceName: strin
     opdsFeedCache = feed
     renderOpdsFeedView(feed, sourceId, sourceName, '')
   } catch (e: any) {
-    opdsFeedGrid.innerHTML = `<div class="opds-feed-empty" style="color:var(--error)">搜索失败：${e?.message || e}</div>`
+    opdsFeedGrid.innerHTML = `<div class="opds-feed-empty" style="color:var(--error)">搜索失败：${formatError(e)}</div>`
   }
 }
 
@@ -1994,7 +1999,7 @@ function renderOpdsFeedView(feed: OpdsFeed, sourceId: string, sourceName: string
           }
         } catch (e: any) {
           addBtn.textContent = '失败'
-          showError(`加入书架失败：${e?.message || e}`)
+          showError(`加入书架失败：${formatError(e)}`)
         } finally {
           addBtn.disabled = true
         }
@@ -2026,7 +2031,7 @@ function renderOpdsFeedView(feed: OpdsFeed, sourceId: string, sourceName: string
             await refreshLibraryBooks()
           } catch (e: any) {
             dlBtn.textContent = '下载失败'
-            showError(`下载 EPUB 失败：${e?.message || e}`)
+            showError(`下载 EPUB 失败：${formatError(e)}`)
           } finally {
             dlBtn.disabled = true
           }
@@ -2069,7 +2074,7 @@ async function ingestOpdsEntries(sourceId: string, feed: OpdsFeed) {
       await refreshLibraryBooks()
     }
   } catch (e: any) {
-    showError(`加入书架失败：${e?.message || e}`)
+    showError(`加入书架失败：${formatError(e)}`)
     opdsFeedIngestAllBtn.disabled = false
     opdsFeedIngestAllBtn.textContent = '全部加入书架'
   }

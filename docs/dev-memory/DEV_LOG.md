@@ -1,5 +1,82 @@
 # 开发日志
 
+## 2026-06-21：从 GitHub 同步并补齐 BridgeError 前端消费
+
+变更：
+
+- 按用户要求从 GitHub 同步：`git fetch --all --prune`、`git checkout main`、`git pull --ff-only`
+  后确认 `main` 已是最新；随后切回/继续 `codex/structured-opds-errors`，该分支以最新 `main` 为祖先。
+- 在 2026-06-19 的 OPDS 结构化错误码第一批基础上，补齐前端真实消费点：
+  `src/main.ts` 从 `src/platform` 引入 `isBridgeError`，统一 `formatError(err)` 在识别
+  `BridgeError` 时展示 `message`，并附带稳定 `code` 与可选 `details`。
+- OPDS 源列表、添加/移除源、浏览/搜索 feed、单条加入书架、下载 EPUB、批量加入书架等错误展示点
+  已改为走 `formatError(e)`，不再直接使用 `e?.message || e`。
+- `docs/resource-library-plan/8_桥接协议_v0.1.md` 补充：TS 侧 `isBridgeError` 已被
+  `src/main.ts::formatError` 消费，当前 OPDS UI 会显示结构化错误码信息。
+
+修改文件：
+
+- `src/main.ts`
+- `docs/resource-library-plan/8_桥接协议_v0.1.md`
+- `docs/dev-memory/DEV_LOG.md`
+- `docs/dev-memory/NEXT_ACTIONS.md`
+
+验证：
+
+- `node scripts/check-arch.mjs` 通过。
+- `node scripts/check-dev-memory.mjs` 通过。
+- `git diff --check` 通过；仅有 Windows 换行提示。
+- `npm.cmd run build` 通过。
+- `cargo test --workspace` 通过（reading-core 84 passed）。
+
+下一步：
+
+- 提交并推送 `codex/structured-opds-errors`，打开/更新 PR。
+- 后续继续按价值迁移其余命令到 `BridgeError`，或在 UI 里基于 `code` 做更细的重试/授权/参数错误提示。
+
+## 2026-06-19：结构化错误码（第一批：OPDS 命令）
+
+变更：
+
+- 把先前作为死代码草拟的 `BridgeError`（`src-tauri/src/lib.rs`，`code/message/details`，
+  `#[serde(rename_all = "camelCase")]`）正式接线，新增 `forbidden` 构造器，错误码共 7 个：
+  `invalidArgument / storageError / parseError / networkError / httpStatus / notFound / forbidden`。
+- 把 v0.6 OPDS 网络/存储面 7 个命令的返回类型从 `Result<_, String>` 改为 `Result<_, BridgeError>`，
+  按场景映射到对应构造器：`opds_add_source` / `opds_remove_source` / `opds_list_sources` /
+  `opds_browse_feed` / `opds_search_feed` / `opds_ingest_entries` / `opds_download_epub`
+  （含共享的 `opds_parse_body`）。HTTP 非 2xx 走 `http_status`（details 带状态码），
+  reqwest 失败走 `network`，SQLite/锁失败走 `storage`，解析失败走 `parse`，
+  空 URL/空查询走 `invalid_argument`，找不到源/条目走 `not_found`，非 open_license 下载走 `forbidden`。
+- 其余命令暂保持字符串返回，后续逐步迁移（非破坏性：reject 形态从字符串扩为对象，`message` 仍在）。
+
+协议同步：
+
+- `src/platform/protocol.ts`：新增 `BridgeErrorCode` 联合类型、`BridgeError` 接口、`isBridgeError` 守卫。
+  `src/platform/tauri.ts` 无需改动——Tauri `invoke` 直接把序列化错误对象作为 rejection 值，
+  前端既有 `e?.message || e` 兼容；要按类别处理可用 `isBridgeError`。
+- `docs/resource-library-plan/8_桥接协议_v0.1.md`：原则 4 改写、新增「结构化错误码」一节（错误码清单 +
+  已迁移命令列表）、冻结前检查清单第 3 项标记「进行中」。
+
+修改文件：
+
+- `src-tauri/src/lib.rs`
+- `src/platform/protocol.ts`
+- `docs/resource-library-plan/8_桥接协议_v0.1.md`
+- `docs/dev-memory/DEV_LOG.md`
+- `docs/dev-memory/NEXT_ACTIONS.md`
+
+验证：
+
+- `node scripts/check-arch.mjs` 通过。
+- `node scripts/check-dev-memory.mjs` 通过。
+- `npm.cmd run build` 通过（tsc + vite build）。
+- `cargo test --workspace` 通过（reading-core 全过）。
+
+下一步：
+
+- 按价值把其余命令（library.*、annotation.*、reading.*、book.*）逐步迁移到 `BridgeError`，
+  迁移完成后再定稿协议冻结的错误码范围。
+
 ## 2026-06-18：真实 OPDS 联网冒烟脚本
 
 变更：

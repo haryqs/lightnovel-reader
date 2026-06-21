@@ -5,6 +5,41 @@
 
 export const PROTOCOL_VERSION = '0.1'
 
+// ---- 结构化错误码 ----
+// 部分桥接方法（v0.6 起的 opds.* 网络/存储类命令）拒绝时，rejection 值是一个结构化
+// BridgeError 对象而非裸字符串，便于引擎据 code 分流（如网络错误可重试、httpStatus 可显示状态）。
+// 仍兼容旧的"以字符串消息返回"约定：BridgeError 总带 message，引擎 `e?.message || e` 一律可读。
+// 与 reading-core 侧 src-tauri 的 serde 结构（camelCase）一一对应。
+
+/** 结构化错误码枚举。新增 code 必须同步 Rust 侧 BridgeError 构造器与文档 8。 */
+export type BridgeErrorCode =
+  | 'invalidArgument'
+  | 'storageError'
+  | 'parseError'
+  | 'networkError'
+  | 'httpStatus'
+  | 'notFound'
+  | 'forbidden'
+
+export interface BridgeError {
+  /** 错误分类，供引擎分流（见 BridgeErrorCode）。 */
+  code: BridgeErrorCode
+  /** 人类可读消息（中文/英文混合，可直接展示）。 */
+  message: string
+  /** 可选附加细节（如 HTTP 状态码字符串）。 */
+  details?: string
+}
+
+/** 运行时判定一个 rejection 是否为结构化 BridgeError（而非裸字符串）。 */
+export function isBridgeError(value: unknown): value is BridgeError {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as BridgeError).code === 'string' &&
+    typeof (value as BridgeError).message === 'string'
+  )
+}
+
 // ---- 数据传输对象(与 reading-core 的 serde 结构一一对应)----
 
 export interface BookInfo {

@@ -1,5 +1,75 @@
 # 下一步任务队列
 
+## 📌 交接留言（2026-06-21，结构化错误码前端消费补齐）
+
+先同步 GitHub：
+
+```powershell
+cd E:\workspace\game-cooperative-plan\lightnovel-reader
+git fetch --all --prune
+git checkout main
+git pull --ff-only
+git status -sb
+```
+
+当前分支：
+
+- `codex/structured-opds-errors`，以最新 `main` 为祖先；`main` 已包含 PR #23（OPDS URL 粘贴识别 +
+  `npm.cmd run smoke:opds` 真实 Tauri 联网冒烟脚本）。
+
+当前事实：
+
+- 2026-06-19 第一批已经把 v0.6 OPDS 网络/存储面命令迁到结构化 `BridgeError`
+  （`invalidArgument / storageError / parseError / networkError / httpStatus / notFound / forbidden`）。
+- 本轮补齐前端真实消费：`src/main.ts` 引入 `isBridgeError`，`formatError(err)` 识别
+  `BridgeError` 后显示 `message` + `code` + 可选 `details`。
+- OPDS 源列表、添加/移除源、浏览/搜索 feed、加入书架、下载 EPUB、批量加入书架的错误展示都已走
+  `formatError(e)`；这使 `src/platform/protocol.ts` 的 `isBridgeError` 链路不再只是类型守卫。
+- 协议文档 8 已同步说明当前 UI 消费方式；`tauri.ts` 仍无需改动。
+
+已验证：
+
+- `node scripts/check-arch.mjs` 通过。
+- `node scripts/check-dev-memory.mjs` 通过。
+- `git diff --check` 通过；仅有 Windows 换行提示。
+- `npm.cmd run build` 通过。
+- `cargo test --workspace` 通过（reading-core 84 passed）。
+
+下一步优先级：
+
+1. 提交并推送 `codex/structured-opds-errors`，打开/更新 PR。
+2. 若继续同一方向，按价值迁移其余命令（`library.*` / `annotation.*` / `reading.*` / `book.*`）
+   到 `BridgeError`，迁移后再定稿协议冻结的错误码范围。
+3. 若做体验增强，可基于 `BridgeError.code` 给网络错误、HTTP 状态、版权拒绝分别做更具体的 UI 提示或重试入口。
+
+## 📌 交接留言（2026-06-19，结构化错误码第一批）
+
+本轮把先前草拟为死代码的 `BridgeError` 正式接线（NEXT_ACTIONS 结构化错误码项的第一批）。
+
+当前事实：
+
+- `src-tauri/src/lib.rs` 的 `BridgeError`（`code/message/details`，camelCase serde）已接线，共 7 个错误码：
+  `invalidArgument / storageError / parseError / networkError / httpStatus / notFound / forbidden`。
+- v0.6 OPDS 网络/存储面 7 个命令已从 `Result<_, String>` 迁到 `Result<_, BridgeError>`：
+  `opds_add_source / opds_remove_source / opds_list_sources / opds_browse_feed /
+  opds_search_feed / opds_ingest_entries / opds_download_epub`。
+- 协议已同步：`src/platform/protocol.ts`（`BridgeError` / `BridgeErrorCode` / `isBridgeError`）、
+  文档 8 新增「结构化错误码」一节并把冻结清单第 3 项标记「进行中」。`tauri.ts` 无需改动。
+- 其余命令（library.*/annotation.*/reading.*/book.*）仍返回字符串，本轮未迁移（非破坏性，可后续逐步迁）。
+
+已验证：
+
+- `node scripts/check-arch.mjs` 通过。
+- `node scripts/check-dev-memory.mjs` 通过。
+- `npm.cmd run build` 通过。
+- `cargo test --workspace` 通过。
+
+下一步优先级：
+
+1. 按价值把其余命令逐步迁移到 `BridgeError`（统一 reject 形态），迁完后定稿协议冻结的错误码范围。
+2. 给前端按 `code` 分流的实际消费点（如网络错误可重试提示）补一处使用，验证 `isBridgeError` 链路。
+3. 继续协议冻结审计其余三项（DTO 预留字段、批量预取语义、资源通道边界）。
+
 ## 📌 交接留言（2026-06-18，v0.6 OPDS 当前状态）
 
 先同步 GitHub：
