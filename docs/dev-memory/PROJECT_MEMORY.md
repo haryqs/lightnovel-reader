@@ -51,6 +51,11 @@
   EPUB 获取完成后都会按默认阅读方式在内置/外部阅读器间选择；OPDS feed 面板按钮改为“获取并阅读”。
 - 2026-06-21：`npm.cmd run smoke:opds` 已补验“获取并阅读”真实链路：Gutenberg OPDS → Pride and
   Prejudice → 下载入库 → 进入阅读态；同时修复 OPDS 获取后刷新书库覆盖阅读器的问题。
+- 2026-06-21：OPDS `open_license` 条目已持久化独立 `acquisitionUrl`（`source_record.acquisition_url`），
+  与 `remoteUrl` 官方/来源页面外链分离；书架远程 OPDS 条目可直接“获取”并按阅读偏好打开，命令层仍强制
+  `rightsStatus=open_license`。
+- 2026-06-21：`npm.cmd run smoke:opds` 已扩展并通过“加入书架 → 持久化 acquisitionUrl → 从书架卡片获取并阅读”
+  的真实链路，样例为 Gutenberg / Pride and Prejudice。
 - 单本/多本 EPUB 直接导入到书库已完成。
 - 本地文件夹 EPUB 批量导入入口已完成。
 - 封面提取与 `books.cover_path` 回填已完成。

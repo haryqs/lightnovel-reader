@@ -1927,3 +1927,50 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
 下一步：
 
 - 提交并推送 codex/opds-acquire-smoke，打开 PR；后续可设计 acquisition URL 持久化，支持从书架远程 OPDS 条目直接获取并阅读。
+
+## 2026-06-21：OPDS acquisition URL 持久化
+
+变更：
+
+- `source_record` 新增迁移 v6：`acquisition_url TEXT`，用于保存合法开放正文获取链接；`remote_url` 继续只表示官方/来源页面外链。
+- `RemoteEntry` / `connectors::ingest` / `LibraryBook` / `LibrarySourceRecord` / `RemoteAcquisition` 已贯通 `acquisitionUrl`。
+- OPDS feed 入库前会解析相对链接，开放授权条目的 `acquisitionUrl` 会随来源记录持久化。
+- `opds.downloadEpub(editionId, acquisitionUrl?)` 第二参数改为可选；未传时从库内 `source_record.acquisition_url` 回读，并继续强制 `rightsStatus=open_license`。
+- 书架远程 OPDS `open_license` 条目现在可直接显示“获取”动作，获取后按阅读偏好打开。
+- README、桥接协议文档、schema 草案已同步。
+
+修改文件：
+
+- `crates/reading-core/src/connectors.rs`
+- `crates/reading-core/src/library.rs`
+- `src-tauri/src/lib.rs`
+- `src/platform/protocol.ts`
+- `src/main.ts`
+- `scripts/tauri-opds-smoke.mjs`
+- `README.md`
+- `docs/resource-library-plan/8_桥接协议_v0.1.md`
+- `docs/resource-library-plan/10_书库实体模型_v0.5_schema草案.md`
+- `docs/current-project/发布与测试.md`
+- `docs/dev-memory/PROJECT_MEMORY.md`
+- `docs/dev-memory/NEXT_ACTIONS.md`
+- `docs/dev-memory/DEV_LOG.md`
+
+验证：
+
+- `cargo check --workspace` 通过。
+- `npm.cmd run build` 通过。
+- `node --check scripts/tauri-opds-smoke.mjs` 通过。
+- `cargo test --workspace` 通过（reading-core 84 passed）。
+- `npm.cmd run tauri -- build --debug --no-bundle` 通过。
+- `npm.cmd run smoke:opds -- --tauri-driver C:\Users\Administrator\.cargo\bin\tauri-driver.exe --native-driver C:\Users\Administrator\AppData\Local\lightnovel-reader-tools\msedgedriver\149.0.4022.62\msedgedriver.exe` 通过：Gutenberg OPDS → Pride and Prejudice → 加入书架（`acquisitionUrl=https://www.gutenberg.org/ebooks/1342.epub.noimages`）→ 从书架卡片获取并阅读 → 进入阅读态。
+- `node scripts/check-arch.mjs` 通过。
+- `node scripts/check-dev-memory.mjs` 通过。
+- `git diff --check` 通过（仅 Windows 换行提示）。
+
+未验证/阻塞：
+
+- 无。
+
+下一步：
+
+- 继续迁移 `book.*` / `annotation.*` / `reading.*` 到结构化 `BridgeError`；若准备分发，重跑 `package:beta` 并做解压/启动检查。

@@ -370,9 +370,62 @@ async function main() {
     const card = cards.find((item) =>
       (item.querySelector('.opds-feed-card-title')?.textContent || '').includes(arguments[0])
     );
-    const button = [...(card?.querySelectorAll('button') || [])].find((item) =>
-      (item.textContent || '').includes('获取并阅读') || (item.textContent || '').includes('EPUB')
+    const button = card?.querySelector('button');
+    button?.click();
+    return { clicked: !!button, text: card?.textContent || '' };
+  `, [expectedTitle])
+
+  const remoteEntry = await waitFor(
+    'OPDS entry added with persisted acquisition URL',
+    async () => {
+      const books = await invoke('library_list')
+      return books.find((book) =>
+        (book.title || '').includes(expectedTitle) &&
+        book.availability === 'remote' &&
+        book.rightsStatus === 'open_license' &&
+        !!book.acquisitionUrl,
+      ) || null
+    },
+    Boolean,
+    60_000,
+  )
+
+  await execute(`
+    document.querySelector('#btn-opds-feed-back')?.click();
+    const input = document.querySelector('#library-search-input');
+    if (input) {
+      input.value = '';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+    return true;
+  `)
+
+  await waitFor(
+    'OPDS remote shelf card exposes acquire action',
+    () => execute(`
+      const cards = [...document.querySelectorAll('.book-card')];
+      return cards.map((card) => ({
+        title: card.querySelector('.title')?.textContent || '',
+        bookId: card.dataset.bookId || '',
+        editionId: card.dataset.editionId || '',
+        availability: card.dataset.availability || '',
+        hasAcquire: !!card.querySelector('button[data-action="read-acquire"]'),
+      }));
+    `),
+    (cards) => cards.some((card) =>
+      card.title.includes(expectedTitle) &&
+      card.availability === 'remote' &&
+      card.hasAcquire
+    ),
+    30_000,
+  )
+
+  await execute(`
+    const cards = [...document.querySelectorAll('.book-card')];
+    const card = cards.find((item) =>
+      (item.querySelector('.title')?.textContent || '').includes(arguments[0])
     );
+    const button = card?.querySelector('button[data-action="read-acquire"]');
     button?.click();
     return { clicked: !!button, text: card?.textContent || '' };
   `, [expectedTitle])
@@ -432,6 +485,7 @@ async function main() {
 
   console.log('tauri-opds-smoke: OK')
   console.log(`tauri-opds-smoke: source=${opdsUrl}`)
+  console.log(`tauri-opds-smoke: remote=${remoteEntry.title} (${remoteEntry.id}) acquisitionUrl=${remoteEntry.acquisitionUrl}`)
   console.log(`tauri-opds-smoke: downloaded=${downloaded.title} (${downloaded.id})`)
   console.log(`tauri-opds-smoke: readerUi=${JSON.stringify(readerUi)}`)
 }

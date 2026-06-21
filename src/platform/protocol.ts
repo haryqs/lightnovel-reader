@@ -109,6 +109,7 @@ export interface LibraryBook {
   rightsStatus?: string
   /** 来源外链：受版权/远程条目点击后跳官方页。本地条目缺省。 */
   remoteUrl?: string
+  acquisitionUrl?: string
 }
 
 export interface LibrarySourceRecord {
@@ -118,6 +119,7 @@ export interface LibrarySourceRecord {
   sourceKind: string
   remoteId?: string
   remoteUrl?: string
+  acquisitionUrl?: string
   rightsStatus: string
   availability?: string
   lastCheckedAt?: number
@@ -266,5 +268,5 @@ export interface ReaderBridge {
   /** opds.ingestEntries — 把 feed 条目落库为远程书库条目 */
   opdsIngestEntries(sourceId: string, feed: OpdsFeed): Promise<LibraryBook[]>
   /** opds.downloadEpub — 下载 OPDS open_license EPUB 并转为本地可读资产 */
-  opdsDownloadEpub(editionId: string, acquisitionUrl: string): Promise<LibraryBook>
+  opdsDownloadEpub(editionId: string, acquisitionUrl?: string): Promise<LibraryBook>
 }
