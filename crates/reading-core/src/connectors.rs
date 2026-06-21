@@ -25,6 +25,7 @@ pub struct RemoteEntry {
     pub language: Option<String>,
     /// 官方/来源页外链——受版权条目点击后跳这里。
     pub site_url: Option<String>,
+    pub acquisition_url: Option<String>,
     /// 授权状态（public_domain/open_license/official_free/official_purchase/unknown…）。
     pub rights_status: String,
 }
@@ -96,16 +97,27 @@ pub fn ingest(
             params![edition_id, volume_id, e.language, e.rights_status, now_ms],
         )?;
         conn.execute(
-            "INSERT INTO source_record(id, source_id, entity_type, entity_id, remote_url, remote_id, rights_status, availability, last_checked_at)
-             VALUES (?1, ?2, 'edition', ?3, ?4, ?5, ?6, 'remote', ?7)
+            "INSERT INTO source_record(id, source_id, entity_type, entity_id, remote_url, acquisition_url, remote_id, rights_status, availability, last_checked_at)
+             VALUES (?1, ?2, 'edition', ?3, ?4, ?5, ?6, ?7, 'remote', ?8)
              ON CONFLICT(id) DO UPDATE SET
-               remote_url = excluded.remote_url, rights_status = excluded.rights_status,
+               remote_url = excluded.remote_url,
+               acquisition_url = excluded.acquisition_url,
+               rights_status = excluded.rights_status,
                availability = CASE
                  WHEN source_record.availability = 'cached' THEN source_record.availability
                  ELSE excluded.availability
                END,
                last_checked_at = excluded.last_checked_at",
-            params![record_id, source_id, edition_id, e.site_url, e.remote_id, e.rights_status, now_ms],
+            params![
+                record_id,
+                source_id,
+                edition_id,
+                e.site_url,
+                e.acquisition_url,
+                e.remote_id,
+                e.rights_status,
+                now_ms
+            ],
         )?;
 
         edition_ids.push(edition_id);
@@ -223,6 +235,7 @@ pub mod anilist {
                 cover_url: m.cover_image.and_then(|c| c.large),
                 language: m.country_of_origin.as_deref().and_then(country_to_lang),
                 site_url: m.site_url,
+                acquisition_url: None,
                 // AniList 收录的是商业出版物 → 默认须官方购买；站内只展示 + 外链。
                 rights_status: "official_purchase".into(),
             });
@@ -323,6 +336,7 @@ pub mod bangumi {
                 cover_url: s.images.and_then(best_image),
                 language: None,
                 site_url: Some(format!("{SUBJECT_BASE_URL}/{}", s.id)),
+                acquisition_url: None,
                 // Bangumi 是社区/目录型元数据源，不代表正文授权或购买入口，保守标为 unknown。
                 rights_status: "unknown".into(),
             });
@@ -388,6 +402,7 @@ pub mod narou {
                 cover_url: None,
                 language: Some("ja".into()),
                 site_url: Some(format!("{READER_BASE_URL}/{reader_code}/")),
+                acquisition_url: None,
                 rights_status: "official_free".into(),
             });
         }
@@ -538,6 +553,7 @@ pub mod aozora {
                 cover_url: None,
                 language: Some("ja".into()),
                 site_url: work.card_url,
+                acquisition_url: None,
                 rights_status: work.rights_status,
             });
             if out.len() >= limit {
@@ -739,6 +755,7 @@ pub mod opds {
                     .iter()
                     .find(|l| l.rel == REL_ALTERNATE)
                     .map(|l| l.href.clone()),
+                acquisition_url: self.acquisition_url.clone(),
                 rights_status: rights_status.to_string(),
             }
         }
@@ -1862,6 +1879,10 @@ mod tests {
         assert_eq!(
             pp.remote_url.as_deref(),
             Some("https://example.com/books/pp.html")
+        );
+        assert_eq!(
+            pp.acquisition_url.as_deref(),
+            Some("https://example.com/download/pp.epub")
         );
 
         let mo = books

@@ -104,4 +104,4 @@ npm.cmd run tauri build
 
 ## 当前开发线
 
-当前主线在 v0.6：OPDS、结构化错误码和平台化书库能力收口中。`opds.*` 与 `library.*` 命令已返回结构化 `BridgeError { code, message, details? }`，前端通过 `formatError` 统一展示。下一步重点是 OPDS `open_license` 与公共版权 acquire 体验的实机冒烟、从书架远程 OPDS 条目直接获取所需的 acquisition URL 持久化，以及继续迁移 `book.*`、`annotation.*`、`reading.*`。
+当前主线在 v0.6：OPDS、结构化错误码和平台化书库能力收口中。`opds.*` 与 `library.*` 命令已返回结构化 `BridgeError { code, message, details? }`，前端通过 `formatError` 统一展示。OPDS `open_license` 条目已把 `acquisitionUrl` 持久化到来源记录，书架远程 OPDS 条目可直接获取并按阅读偏好打开。下一步重点是继续跑实机冒烟，并迁移 `book.*`、`annotation.*`、`reading.*`。

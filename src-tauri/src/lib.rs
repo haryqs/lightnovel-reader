@@ -1169,7 +1169,7 @@ async fn opds_ingest_entries(
 async fn opds_download_epub(
     state: tauri::State<'_, AppState>,
     edition_id: String,
-    acquisition_url: String,
+    acquisition_url: Option<String>,
 ) -> Result<library::LibraryBook, BridgeError> {
     // 1) 验证条目存在且为 open_license。
     let acquisition = {
@@ -1190,6 +1190,10 @@ async fn opds_download_epub(
         }
         info
     };
+
+    let acquisition_url = acquisition_url
+        .or(acquisition.acquisition_url.clone())
+        .ok_or_else(|| BridgeError::not_found("OPDS acquisition URL not found"))?;
 
     // 2) 下载 EPUB 字节。
     let client = reqwest::Client::new();

@@ -51,6 +51,7 @@ pub struct LibraryBook {
     pub rights_status: Option<String>,
     /// 来源外链（受版权/远程条目点击后跳官方页）。本地条目为 None。
     pub remote_url: Option<String>,
+    pub acquisition_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -62,6 +63,7 @@ pub struct LibrarySourceRecord {
     pub source_kind: String,
     pub remote_id: Option<String>,
     pub remote_url: Option<String>,
+    pub acquisition_url: Option<String>,
     pub rights_status: String,
     pub availability: Option<String>,
     pub last_checked_at: Option<i64>,
@@ -77,6 +79,7 @@ pub struct RemoteAcquisition {
     pub author: Option<String>,
     pub language: Option<String>,
     pub existing_asset_id: Option<String>,
+    pub acquisition_url: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -322,6 +325,9 @@ CREATE TRIGGER IF NOT EXISTS catalog_fts_series_au AFTER UPDATE OF title, author
 END;
 "#;
 
+const SOURCE_RECORD_ACQUISITION_V6: &str =
+    "ALTER TABLE source_record ADD COLUMN acquisition_url TEXT;";
+
 const MIGRATIONS: &[Migration] = &[
     Migration {
         version: 1,
@@ -346,6 +352,11 @@ const MIGRATIONS: &[Migration] = &[
     Migration {
         version: 5,
         sql: CATALOG_FTS_V5,
+    },
+    // v6: keep the legal acquisition URL separate from remote_url, which remains the official/source page.
+    Migration {
+        version: 6,
+        sql: SOURCE_RECORD_ACQUISITION_V6,
     },
 ];
 
@@ -426,6 +437,7 @@ pub fn import_epub_bytes(
         availability: None,
         rights_status: Some("user_owned".to_string()),
         remote_url: None,
+        acquisition_url: None,
     };
     // 与 v3 回填/双写同口径填充实体字段，使 ImportOutcome.book 即刻带上它们。
     book.series_id = Some(series_id_of(&book));
@@ -589,7 +601,9 @@ const SELECT_ENTRY: &str = "\
     COALESCE(a.availability, 'remote') AS availability, \
     e.rights_status, \
     (SELECT remote_url FROM source_record \
-       WHERE entity_type = 'edition' AND entity_id = e.id LIMIT 1) AS remote_url";
+       WHERE entity_type = 'edition' AND entity_id = e.id LIMIT 1) AS remote_url, \
+    (SELECT acquisition_url FROM source_record \
+       WHERE entity_type = 'edition' AND entity_id = e.id LIMIT 1) AS acquisition_url";
 
 const FROM_ENTRY: &str = "\
     FROM edition e \
@@ -625,6 +639,7 @@ fn row_to_book(row: &rusqlite::Row<'_>) -> rusqlite::Result<LibraryBook> {
         availability: row.get(16)?,
         rights_status: row.get(17)?,
         remote_url: row.get(18)?,
+        acquisition_url: row.get(19)?,
     })
 }
 
@@ -663,6 +678,7 @@ pub fn list_source_records(
                 COALESCE(src.kind, '') AS source_kind,
                 sr.remote_id,
                 sr.remote_url,
+                sr.acquisition_url,
                 sr.rights_status,
                 sr.availability,
                 sr.last_checked_at
@@ -680,9 +696,10 @@ pub fn list_source_records(
             source_kind: row.get(3)?,
             remote_id: row.get(4)?,
             remote_url: row.get(5)?,
-            rights_status: row.get(6)?,
-            availability: row.get(7)?,
-            last_checked_at: row.get(8)?,
+            acquisition_url: row.get(6)?,
+            rights_status: row.get(7)?,
+            availability: row.get(8)?,
+            last_checked_at: row.get(9)?,
         })
     })?;
     rows.collect()
@@ -806,7 +823,7 @@ pub fn remote_acquisition(
 ) -> rusqlite::Result<Option<RemoteAcquisition>> {
     let mut stmt = conn.prepare(
         "SELECT e.id, sr.source_id, sr.remote_id, e.rights_status,
-                v.title, s.author, e.language, a.id
+                v.title, s.author, e.language, a.id, sr.acquisition_url
            FROM edition e
            JOIN volume v ON v.id = e.volume_id
            JOIN series s ON s.id = v.series_id
@@ -825,6 +842,7 @@ pub fn remote_acquisition(
             author: row.get(5)?,
             language: row.get(6)?,
             existing_asset_id: row.get(7)?,
+            acquisition_url: row.get(8)?,
         })
     })?;
     rows.next().transpose()
@@ -1392,12 +1410,12 @@ mod tests {
         let path = dir.join("library.sqlite");
 
         let conn = open_library(&path).unwrap();
-        assert_eq!(crate::migrations::current_version(&conn).unwrap(), 5);
+        assert_eq!(crate::migrations::current_version(&conn).unwrap(), 6);
         drop(conn);
 
         // 重开已有库：迁移幂等跳过，版本不变、数据仍在。
         let conn = open_library(&path).unwrap();
-        assert_eq!(crate::migrations::current_version(&conn).unwrap(), 5);
+        assert_eq!(crate::migrations::current_version(&conn).unwrap(), 6);
 
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -1500,7 +1518,7 @@ mod tests {
 
         // 重开 → 跑 v3-v5，回填实体链并建立 catalog_fts。
         let conn = open_library(&path).unwrap();
-        assert_eq!(migrations::current_version(&conn).unwrap(), 5);
+        assert_eq!(migrations::current_version(&conn).unwrap(), 6);
 
         let asset_id: String = conn
             .query_row("SELECT id FROM asset WHERE id = 'hash123'", [], |r| {
@@ -1552,7 +1570,7 @@ mod tests {
         }
 
         let conn = open_library(&path).unwrap();
-        assert_eq!(migrations::current_version(&conn).unwrap(), 5);
+        assert_eq!(migrations::current_version(&conn).unwrap(), 6);
         let hit = search_books(&conn, "旧远程标题").unwrap();
         assert_eq!(hit.len(), 1);
         assert_eq!(hit[0].id, "ed:remote-old");

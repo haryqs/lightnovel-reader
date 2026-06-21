@@ -913,6 +913,8 @@ function remoteStatusLabel(book: LibraryBook): string {
   switch (book.rightsStatus) {
     case 'public_domain':
       return '公共版权经典 · 可站内读'
+    case 'open_license':
+      return '开放授权 · 可获取阅读'
     case 'official_free':
       return '官方免费 · 外链'
     case 'official_purchase':
@@ -1666,6 +1668,12 @@ function renderBookSourcePanel(book: LibraryBook, records: LibrarySourceRecord[]
         url.textContent = record.remoteUrl
         main.appendChild(url)
       }
+      if (record.acquisitionUrl) {
+        const acq = document.createElement('div')
+        acq.className = 'library-source-record-url'
+        acq.textContent = `获取：${record.acquisitionUrl}`
+        main.appendChild(acq)
+      }
 
       if (record.remoteUrl) {
         const button = document.createElement('button')
@@ -1746,7 +1754,11 @@ function prependLibraryLinkSummary(remote: LibraryBook, linked: LibraryBook) {
 
 // 远程条目无本地正文：按版权红线只跳官方/来源外链，不在站内呈现正文。
 function canAcquireForBuiltInReader(book: LibraryBook): boolean {
-  return book.rightsStatus === 'public_domain' && isRemoteLibraryBook(book)
+  return (
+    isRemoteLibraryBook(book) &&
+    (book.rightsStatus === 'public_domain' ||
+      (book.rightsStatus === 'open_license' && !!book.acquisitionUrl))
+  )
 }
 
 function getLibraryReadActions(book: LibraryBook): LibraryReadAction[] {
@@ -1849,7 +1861,10 @@ async function openExternalLibraryBook(book: LibraryBook) {
 async function acquireAndOpenRemoteBook(book: LibraryBook) {
   libraryGrid.innerHTML = `<div class="library-state">正在获取《${book.title || '未命名'}》正文…</div>`
   try {
-    const acquired = await bridge.acquireRemoteLibraryBook(book.id)
+    const acquired =
+      book.rightsStatus === 'open_license'
+        ? await bridge.opdsDownloadEpub(book.editionId || book.id, book.acquisitionUrl)
+        : await bridge.acquireRemoteLibraryBook(book.id)
     libraryBooks = libraryBooks.map((item) =>
       item.id === book.id || item.editionId === book.editionId ? acquired : item,
     )
@@ -2032,6 +2047,23 @@ function hideOpdsFeedView() {
   opdsFeedGrid.innerHTML = ''
 }
 
+function resolveOpdsEntryUrls(entry: OpdsEntry, resolveUrl: (href: string) => string): OpdsEntry {
+  return {
+    ...entry,
+    coverUrl: entry.coverUrl ? resolveUrl(entry.coverUrl) : entry.coverUrl,
+    acquisitionUrl: entry.acquisitionUrl ? resolveUrl(entry.acquisitionUrl) : entry.acquisitionUrl,
+    links: entry.links.map((link) => ({ ...link, href: resolveUrl(link.href) })),
+  }
+}
+
+function resolveOpdsFeedUrls(feed: OpdsFeed, resolveUrl: (href: string) => string): OpdsFeed {
+  return {
+    ...feed,
+    links: feed.links.map((link) => ({ ...link, href: resolveUrl(link.href) })),
+    entries: feed.entries.map((entry) => resolveOpdsEntryUrls(entry, resolveUrl)),
+  }
+}
+
 function renderOpdsFeedView(feed: OpdsFeed, sourceId: string, sourceName: string, feedUrl: string) {
   opdsFeedTitle.textContent = `${sourceName} · ${feed.title || 'OPDS Feed'}`
   opdsFeedGrid.innerHTML = ''
@@ -2041,16 +2073,18 @@ function renderOpdsFeedView(feed: OpdsFeed, sourceId: string, sourceName: string
     if (!feedUrl || /^https?:\/\//i.test(href)) return href
     try { return new URL(href, feedUrl).href } catch { return href }
   }
+  const resolvedFeed = resolveOpdsFeedUrls(feed, resolveUrl)
+  opdsFeedCache = resolvedFeed
 
-  const pubCount = feed.entries.filter((e) => !e.isNavigation).length
-  const navCount = feed.entries.filter((e) => e.isNavigation).length
+  const pubCount = resolvedFeed.entries.filter((e) => !e.isNavigation).length
+  const navCount = resolvedFeed.entries.filter((e) => e.isNavigation).length
 
   if (pubCount === 0 && navCount === 0) {
     opdsFeedGrid.innerHTML = '<div class="opds-feed-empty">该 feed 没有条目。</div>'
     return
   }
 
-  for (const entry of feed.entries) {
+  for (const entry of resolvedFeed.entries) {
     const card = document.createElement('div')
     card.className = entry.isNavigation ? 'opds-feed-card opds-feed-card-nav' : 'opds-feed-card'
 

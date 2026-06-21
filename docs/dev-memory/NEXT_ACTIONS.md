@@ -1,5 +1,38 @@
 # 下一步任务队列
 
+## 📌 交接留言（2026-06-21，OPDS acquisition URL 持久化已落地）
+
+当前分支：
+
+- `codex/opds-acquisition-url`，从已合并 PR #30 后的最新 `main` 创建。
+
+本轮已完成：
+
+- `source_record` 新增迁移 v6：`acquisition_url TEXT`，用于保存合法开放正文获取链接；`remote_url` 继续只表示官方/来源页面外链。
+- `RemoteEntry` / `connectors::ingest` / `LibraryBook` / `LibrarySourceRecord` / `RemoteAcquisition` 已贯通 `acquisitionUrl`。
+- OPDS feed 入库前会解析相对链接，开放授权条目的 `acquisitionUrl` 会随来源记录持久化。
+- `opds.downloadEpub(editionId, acquisitionUrl?)` 第二参数改为可选；未传时从库内 `source_record.acquisition_url` 回读，并继续强制 `rightsStatus=open_license`。
+- 书架远程 OPDS `open_license` 条目现在可直接显示“获取”动作，获取后按阅读偏好打开。
+- `scripts/tauri-opds-smoke.mjs` 已扩展：先加入书架，确认 `acquisitionUrl` 持久化，再从书架卡片获取并阅读。
+- README、桥接协议文档、schema 草案已同步。
+
+已验证：
+
+- `node --check scripts/tauri-opds-smoke.mjs` 通过。
+- `npm.cmd run build` 通过。
+- `cargo test --workspace` 通过（reading-core 84 passed）。
+- `npm.cmd run tauri -- build --debug --no-bundle` 通过。
+- `npm.cmd run smoke:opds -- --tauri-driver C:\Users\Administrator\.cargo\bin\tauri-driver.exe --native-driver C:\Users\Administrator\AppData\Local\lightnovel-reader-tools\msedgedriver\149.0.4022.62\msedgedriver.exe` 通过。
+  - source: `https://www.gutenberg.org/ebooks/search.opds/?query=austen`
+  - remote: `Pride and Prejudice`
+  - acquisitionUrl: `https://www.gutenberg.org/ebooks/1342.epub.noimages`
+  - reader UI: `libraryHidden=true`, `readingActive=true`, `statusbarHidden=false`
+
+下一步优先级：
+
+1. 继续迁移 `book.*` / `annotation.*` / `reading.*` 到结构化 `BridgeError`。
+2. 若准备分发，重跑 `npm.cmd run package:beta` 并做解压/启动检查。
+
 ## 📌 交接留言（2026-06-21，OPDS 获取并阅读冒烟已通过）
 
 当前分支：
