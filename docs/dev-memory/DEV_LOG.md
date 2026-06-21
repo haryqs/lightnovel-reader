@@ -1802,3 +1802,47 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
 下一步：
 
 - 提交并推送 codex/reading-action-model，打开 PR；后续做阅读方式偏好持久化、OPDS open_license 与公共版权 acquire 的统一动作入口。
+
+## 2026-06-21：阅读方式偏好持久化：书库标题栏新增默认阅读方式选择（自动/内置/浏览器/外部），偏好写入 localStorage；书架卡片主按钮与卡片点击按偏好选择可用动作并自动回退。
+
+变更：
+
+- 阅读方式偏好持久化：书库标题栏新增默认阅读方式选择（自动/内置/浏览器/外部），偏好写入 localStorage；书架卡片主按钮与卡片点击按偏好选择可用动作并自动回退。
+
+修改文件：
+
+- 待补充
+
+验证：
+
+- npm.cmd run build 通过（含 check-arch、tsc、vite build）。
+
+未验证/阻塞：
+
+- 无
+
+下一步：
+
+- 跑 check-dev-memory、cargo test --workspace、git diff --check；后续优先统一 OPDS open_license 与青空 public_domain acquire/open 动作入口，或继续迁移 book/annotation/reading 到 BridgeError。
+
+## 2026-06-21：阅读方式偏好收工补记：功能差异保持不变，PROJECT_MEMORY / README / NEXT_ACTIONS 已同步当前状态。
+
+变更：
+
+- 阅读方式偏好收工补记：功能差异保持不变，PROJECT_MEMORY / README / NEXT_ACTIONS 已同步当前状态。
+
+修改文件：
+
+- 待补充
+
+验证：
+
+- node scripts/check-dev-memory.mjs 通过；cargo test --workspace 通过（reading-core 84 passed）；git diff --check 通过（仅 Windows 换行提示）；此前 npm.cmd run build 已通过。
+
+未验证/阻塞：
+
+- 无
+
+下一步：
+
+- 提交并推送 codex/reading-preference，打开 PR；后续优先统一 OPDS open_license 与青空 public_domain acquire/open 动作入口，或继续迁移 book/annotation/reading 到 BridgeError。

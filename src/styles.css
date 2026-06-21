@@ -570,6 +570,17 @@ body.statusbar-visible .statusbar,
   gap: 8px;
   flex-shrink: 0;
 }
+.library-read-preference {
+  height: 28px;
+  min-width: 78px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--fg);
+  font: inherit;
+  font-size: 12px;
+}
 .library-badge {
   height: 28px;
   display: inline-flex;
@@ -665,6 +676,7 @@ body.statusbar-visible .statusbar,
 }
 .library-search input:focus,
 .library-search select:focus,
+.library-read-preference:focus,
 .library-path input:focus,
 .opds-source-add input:focus {
   outline: none;
