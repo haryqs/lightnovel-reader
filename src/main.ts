@@ -1,5 +1,5 @@
 import { ReaderCore, type PageMode, type ReaderLayoutSettings, type TocItem } from './reader-core'
-import { bridge, hasNativeBridge, isBridgeError, type LibraryBook, type LibrarySourceRecord, type OpdsFeed, type OpdsSource, type RemoteLibrarySource } from './platform'
+import { bridge, hasNativeBridge, isBridgeError, type LibraryBook, type LibrarySourceRecord, type OpdsEntry, type OpdsFeed, type OpdsSource, type RemoteLibrarySource } from './platform'
 import type { ThemeName } from './themes'
 
 const reader = new ReaderCore()
@@ -1854,11 +1854,19 @@ async function acquireAndOpenRemoteBook(book: LibraryBook) {
       item.id === book.id || item.editionId === book.editionId ? acquired : item,
     )
     renderLibraryBooks()
-    await openLibraryBook(acquired)
+    await openAcquiredLibraryBook(acquired)
   } catch (e: any) {
     renderLibraryBooks()
     showError(`获取公共版权正文失败：${formatError(e)}`)
   }
+}
+
+async function openAcquiredLibraryBook(book: LibraryBook) {
+  if (readLibraryReadPreference() === 'external' && book.filePath) {
+    await openExternalLibraryBook(book)
+    return
+  }
+  await openLibraryBook(book)
 }
 
 async function openLibraryBook(book: LibraryBook) {
@@ -2142,27 +2150,20 @@ function renderOpdsFeedView(feed: OpdsFeed, sourceId: string, sourceName: string
       if (acqUrl) {
         const dlBtn = document.createElement('button') as HTMLButtonElement
         dlBtn.className = 'btn btn-primary'
-        dlBtn.textContent = '下载 EPUB'
+        dlBtn.textContent = '获取并阅读'
         dlBtn.addEventListener('click', async () => {
           dlBtn.disabled = true
-          dlBtn.textContent = '下载中…'
+          dlBtn.textContent = '获取中…'
           try {
-            // 1) Ingest entry to get edition ID
-            const singleFeed: OpdsFeed = { title: entry.title, entries: [entry], links: [] }
-            const books = await bridge.opdsIngestEntries(sourceId, { ...singleFeed })
-            if (books.length === 0) throw new Error('落库失败')
-            const editionId = books[0].editionId || books[0].id
-            if (!editionId) throw new Error('无法获取 edition ID')
-
-            // 2) Download the EPUB and attach to edition
-            await bridge.opdsDownloadEpub(editionId, acqUrl)
-            dlBtn.textContent = '下载完成 ✓'
+            const acquired = await acquireOpdsEntry(sourceId, entry, resolveUrl(acqUrl))
+            dlBtn.textContent = '已获取 ✓'
             addBtn.disabled = true
             addBtn.textContent = '已在书架'
+            if (acquired) await openAcquiredLibraryBook(acquired)
             await refreshLibraryBooks()
           } catch (e: any) {
-            dlBtn.textContent = '下载失败'
-            showError(`下载 EPUB 失败：${formatError(e)}`)
+            dlBtn.textContent = '获取失败'
+            showError(`获取 EPUB 失败：${formatError(e)}`)
           } finally {
             dlBtn.disabled = true
           }
@@ -2209,4 +2210,17 @@ async function ingestOpdsEntries(sourceId: string, feed: OpdsFeed) {
     opdsFeedIngestAllBtn.disabled = false
     opdsFeedIngestAllBtn.textContent = '全部加入书架'
   }
+}
+
+async function acquireOpdsEntry(
+  sourceId: string,
+  entry: OpdsEntry,
+  acquisitionUrl: string,
+): Promise<LibraryBook> {
+  const singleFeed: OpdsFeed = { title: entry.title, entries: [entry], links: [] }
+  const books = await bridge.opdsIngestEntries(sourceId, { ...singleFeed })
+  if (books.length === 0) throw new Error('落库失败')
+  const editionId = books[0].editionId || books[0].id
+  if (!editionId) throw new Error('无法获取 edition ID')
+  return bridge.opdsDownloadEpub(editionId, acquisitionUrl)
 }

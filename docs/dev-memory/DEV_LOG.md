@@ -1846,3 +1846,47 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
 下一步：
 
 - 提交并推送 codex/reading-preference，打开 PR；后续优先统一 OPDS open_license 与青空 public_domain acquire/open 动作入口，或继续迁移 book/annotation/reading 到 BridgeError。
+
+## 2026-06-21：统一合法资源获取后阅读第一步：青空 public_domain 获取后改走 openAcquiredLibraryBook，按默认阅读方式在内置/外部间打开；OPDS open_license 按钮从下载 EPUB 改为获取并阅读，落库、下载 attach 后复用同一打开动作。
+
+变更：
+
+- 统一合法资源获取后阅读第一步：青空 public_domain 获取后改走 openAcquiredLibraryBook，按默认阅读方式在内置/外部间打开；OPDS open_license 按钮从下载 EPUB 改为获取并阅读，落库、下载 attach 后复用同一打开动作。
+
+修改文件：
+
+- 待补充
+
+验证：
+
+- npm.cmd run build 通过（含 check-arch、tsc、vite build）。
+
+未验证/阻塞：
+
+- 无
+
+下一步：
+
+- 跑 check-dev-memory、cargo test --workspace、git diff --check；后续做真实 Tauri/OPDS 冒烟，并评估 acquisition URL 持久化以支持从书架远程 OPDS 条目直接获取。
+
+## 2026-06-21：统一合法资源获取后阅读收工补记：功能差异保持不变，README / PROJECT_MEMORY / NEXT_ACTIONS 已同步。
+
+变更：
+
+- 统一合法资源获取后阅读收工补记：功能差异保持不变，README / PROJECT_MEMORY / NEXT_ACTIONS 已同步。
+
+修改文件：
+
+- 待补充
+
+验证：
+
+- node scripts/check-dev-memory.mjs 通过；cargo test --workspace 通过（reading-core 84 passed）；git diff --check 通过（仅 Windows 换行提示）；此前 npm.cmd run build 已通过。
+
+未验证/阻塞：
+
+- 无
+
+下一步：
+
+- 提交并推送 codex/unified-acquire-open，打开 PR；后续做真实 Tauri/OPDS 冒烟，并设计 acquisition URL 持久化以支持书架远程 OPDS 条目直接获取。
