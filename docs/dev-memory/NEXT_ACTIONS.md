@@ -1,5 +1,30 @@
 # 下一步任务队列
 
+## 📌 交接留言（2026-06-21，阅读方式偏好已完成）
+
+当前分支：
+
+- `codex/reading-preference`，从已合并 PR #27 后的最新 `main` 创建。
+
+本轮已完成：
+
+- 书库标题栏新增默认阅读方式选择：`自动 / 内置 / 浏览器 / 外部`。
+- 偏好写入 `localStorage` 的 `reader.libraryReadPreference`，与主题、版式、单双页同类，暂不引入 DB schema。
+- 书架卡片仍展示全部可用动作；主按钮高亮和卡片点击会按偏好选择动作，不可用时自动回退。
+- 合规边界不变：`public_domain` 可走获取后内置阅读；`official_free` / `official_purchase` / `unknown` 不抓正文，只跳官方入口。
+
+已验证：
+
+- `npm.cmd run build` 通过（含 `check-arch`、`tsc`、`vite build`）。
+- `node scripts/check-dev-memory.mjs` 通过。
+- `cargo test --workspace` 通过（reading-core 84 passed）。
+- `git diff --check` 通过（仅 Windows 换行提示）。
+
+下一步优先级：
+
+1. 若继续平台化体验，优先做 OPDS `open_license` 与青空 `public_domain` 的统一 acquire/open 动作入口。
+2. 若继续协议内功，迁移 `book.*` / `annotation.*` / `reading.*` 到结构化 `BridgeError`，为协议冻结审计做准备。
+
 ## 📌 交接留言（2026-06-21，阅读方式选择第一版已完成）
 
 当前分支：

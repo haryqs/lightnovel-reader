@@ -554,6 +554,7 @@ const libraryImportInput = $<HTMLInputElement>('#library-import-input')
 const libraryFolderInput = $<HTMLInputElement>('#library-folder-input')
 const librarySearchInput = $<HTMLInputElement>('#library-search-input')
 const libraryRemoteSourceSelect = $<HTMLSelectElement>('#library-remote-source')
+const libraryReadPreferenceSelect = $<HTMLSelectElement>('#library-read-preference')
 const librarySourcePanel = $<HTMLDetailsElement>('#library-source-panel')
 // OPDS v0.6
 const libraryOpdsPanel = $<HTMLDetailsElement>('#library-opds-panel')
@@ -576,6 +577,9 @@ let opdsSourceCache: OpdsSource | null = null
 let dismissedOpdsUrlHint = ''
 let libraryBooks: LibraryBook[] = []
 let librarySearchTimer: number | null = null
+type LibraryReadPreference = 'auto' | 'builtin' | 'browser' | 'external'
+const LIBRARY_READ_PREFERENCE_KEY = 'reader.libraryReadPreference'
+const LIBRARY_READ_PREFERENCES = new Set<LibraryReadPreference>(['auto', 'builtin', 'browser', 'external'])
 const REMOTE_SOURCE_LABEL: Record<RemoteLibrarySource, string> = {
   anilist: 'AniList',
   bangumi: 'Bangumi（中文/ACG 元数据）',
@@ -584,12 +588,29 @@ const REMOTE_SOURCE_LABEL: Record<RemoteLibrarySource, string> = {
 }
 libraryPathInput.value = localStorage.getItem(LIBRARY_PATH_KEY) || DEFAULT_CALIBRE_LIBRARY
 
+function readLibraryReadPreference(): LibraryReadPreference {
+  const value = localStorage.getItem(LIBRARY_READ_PREFERENCE_KEY) as LibraryReadPreference | null
+  return value && LIBRARY_READ_PREFERENCES.has(value) ? value : 'auto'
+}
+
+function applyLibraryReadPreference(value: LibraryReadPreference) {
+  const preference = LIBRARY_READ_PREFERENCES.has(value) ? value : 'auto'
+  localStorage.setItem(LIBRARY_READ_PREFERENCE_KEY, preference)
+  libraryReadPreferenceSelect.value = preference
+}
+
+applyLibraryReadPreference(readLibraryReadPreference())
+
 $('#btn-library')?.addEventListener('click', openLibrary)
 $('#btn-library-close')?.addEventListener('click', () => { libraryView.hidden = true })
 $('#btn-library-refresh')?.addEventListener('click', refreshLibraryBooks)
 $('#btn-library-import-epub')?.addEventListener('click', () => libraryImportInput.click())
 $('#btn-library-import-folder')?.addEventListener('click', () => libraryFolderInput.click())
 $('#btn-library-import-calibre')?.addEventListener('click', importCalibreLibrary)
+libraryReadPreferenceSelect.addEventListener('change', () => {
+  applyLibraryReadPreference(libraryReadPreferenceSelect.value as LibraryReadPreference)
+  if (!libraryView.hidden) renderLibraryBooks()
+})
 libraryImportInput.addEventListener('change', async () => {
   const files = collectEpubFiles(Array.from(libraryImportInput.files || []))
   libraryImportInput.value = ''
@@ -1040,7 +1061,7 @@ function renderLibraryBooks() {
     if (tags.childElementCount > 0) card.appendChild(tags)
     card.appendChild(meta)
     if (actions.childElementCount > 0) card.appendChild(actions)
-    card.addEventListener('click', () => void (isRemote ? openRemoteEntry(b) : openDefaultLibraryBookAction(b)))
+    card.addEventListener('click', () => void openDefaultLibraryBookAction(b))
     libraryGrid.appendChild(card)
   }
 }
@@ -1738,7 +1759,6 @@ function getLibraryReadActions(book: LibraryBook): LibraryReadAction[] {
       key: 'builtin',
       label: '内置',
       title: '用内置阅读器打开',
-      primary: true,
       run: () => openLibraryBook(book),
     })
   }
@@ -1757,7 +1777,6 @@ function getLibraryReadActions(book: LibraryBook): LibraryReadAction[] {
       key: 'acquire',
       label: '获取',
       title: '获取公共版权正文并用内置阅读器打开',
-      primary: actions.length === 0,
       run: () => acquireAndOpenRemoteBook(book),
     })
   }
@@ -1767,17 +1786,35 @@ function getLibraryReadActions(book: LibraryBook): LibraryReadAction[] {
       key: 'browser',
       label: '浏览器',
       title: '打开官方页面',
-      primary: actions.length === 0,
       run: () => openRemoteOfficialPage(book),
     })
   }
 
+  const primary = selectPreferredLibraryReadAction(actions)
+  for (const action of actions) {
+    action.primary = action === primary
+  }
   return actions
+}
+
+function selectPreferredLibraryReadAction(actions: LibraryReadAction[]): LibraryReadAction | undefined {
+  if (actions.length === 0) return undefined
+  const preference = readLibraryReadPreference()
+  if (preference === 'builtin') {
+    return actions.find((item) => item.key === 'builtin' || item.key === 'acquire') ?? actions[0]
+  }
+  if (preference === 'browser') {
+    return actions.find((item) => item.key === 'browser') ?? actions[0]
+  }
+  if (preference === 'external') {
+    return actions.find((item) => item.key === 'external') ?? actions[0]
+  }
+  return actions.find((item) => item.key === 'builtin' || item.key === 'acquire' || item.key === 'browser') ?? actions[0]
 }
 
 async function openDefaultLibraryBookAction(book: LibraryBook) {
   const actions = getLibraryReadActions(book)
-  const action = actions.find((item) => item.primary) ?? actions[0]
+  const action = actions.find((item) => item.primary) ?? selectPreferredLibraryReadAction(actions)
   if (!action) {
     showError('该条目还没有可用的阅读方式')
     return
@@ -1821,34 +1858,6 @@ async function acquireAndOpenRemoteBook(book: LibraryBook) {
   } catch (e: any) {
     renderLibraryBooks()
     showError(`获取公共版权正文失败：${formatError(e)}`)
-  }
-}
-
-async function openRemoteEntry(book: LibraryBook) {
-  if (book.rightsStatus === 'public_domain') {
-    libraryGrid.innerHTML = `<div class="library-state">正在获取《${book.title || '未命名'}》正文…</div>`
-    try {
-      const acquired = await bridge.acquireRemoteLibraryBook(book.id)
-      libraryBooks = libraryBooks.map((item) =>
-        item.id === book.id || item.editionId === book.editionId ? acquired : item,
-      )
-      renderLibraryBooks()
-      await openLibraryBook(acquired)
-    } catch (e: any) {
-      renderLibraryBooks()
-      showError(`获取公共版权正文失败：${formatError(e)}`)
-    }
-    return
-  }
-
-  if (!book.remoteUrl) {
-    showError('该条目没有可跳转的官方链接')
-    return
-  }
-  try {
-    await bridge.openExternal(book.remoteUrl)
-  } catch (e: any) {
-    showError(`打开官方链接失败：${formatError(e)}`)
   }
 }
 
