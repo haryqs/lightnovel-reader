@@ -1,5 +1,46 @@
 # 下一步任务队列
 
+## 📌 交接留言（2026-06-21，library.* 结构化错误码进行中）
+
+先同步 GitHub：
+
+```powershell
+cd E:\workspace\game-cooperative-plan\lightnovel-reader
+git fetch --all --prune
+git checkout main
+git pull --ff-only
+git status -sb
+```
+
+当前分支：
+
+- `codex/library-bridge-errors`，从已合并 PR #24 后的最新 `main` 创建。
+
+当前事实：
+
+- PR #24 已合并到 `main`，OPDS 第一批结构化错误码已进入主线。
+- 本轮继续迁移 `library.*`：
+  `listCalibre / import / importBytes / list / search / listSourceRecords / searchRemote /
+  searchRemoteSource / acquireRemote / linkRemoteToLocal / open / touchLastRead`
+  已改为返回 `BridgeError`。
+- 远程搜索与正文获取按 `networkError`、`httpStatus`、`parseError`、`storageError`、`notFound`、
+  `forbidden` 分类；前端书库错误展示已走 `formatError(e)`。
+- 根 `README.md` 已更新为当前项目入口，覆盖能力、架构、合规边界、开发/验证/打包命令。
+
+已验证：
+
+- `node scripts/check-arch.mjs` 通过。
+- `node scripts/check-dev-memory.mjs` 通过。
+- `npm.cmd run build` 通过。
+- `cargo check --workspace` 通过。
+- `cargo test --workspace` 通过（reading-core 84 passed）。
+- `git diff --check` 通过；仅有 Windows 换行提示。
+
+下一步优先级：
+
+1. 提交并推送 `codex/library-bridge-errors`，开 PR。
+2. 后续继续迁移 `book.*`、`annotation.*`、`reading.*` 到 `BridgeError`，最后做协议冻结审计。
+
 ## 📌 交接留言（2026-06-21，结构化错误码前端消费补齐）
 
 先同步 GitHub：

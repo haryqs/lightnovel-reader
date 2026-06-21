@@ -716,7 +716,7 @@ async function searchRemoteBooks() {
     libraryBooks = await bridge.searchRemoteLibraryBooksFromSource(source, query)
     renderLibraryBooks()
   } catch (e: any) {
-    libraryGrid.innerHTML = `<div class="library-state library-state-error">在线搜索失败：${e?.message || e}</div>`
+    libraryGrid.innerHTML = `<div class="library-state library-state-error">在线搜索失败：${formatError(e)}</div>`
   } finally {
     librarySearchRemoteBtn.disabled = false
     librarySearchRemoteBtn.textContent = original
@@ -742,7 +742,7 @@ async function refreshLibraryBooks() {
       : await bridge.listLibraryBooks()
     renderLibraryBooks()
   } catch (e: any) {
-    libraryGrid.innerHTML = `<div class="library-state library-state-error">读取书库失败：${e?.message || e}</div>`
+    libraryGrid.innerHTML = `<div class="library-state library-state-error">读取书库失败：${formatError(e)}</div>`
   }
 }
 
@@ -780,7 +780,7 @@ async function importCalibreLibrary() {
     await refreshLibraryBooks()
     prependLibraryImportSummary(imported, duplicate, failedItems)
   } catch (e: any) {
-    libraryGrid.innerHTML = `<div class="library-state library-state-error">导入失败：${e?.message || e}</div>`
+    libraryGrid.innerHTML = `<div class="library-state library-state-error">导入失败：${formatError(e)}</div>`
   }
 }
 
@@ -1095,7 +1095,7 @@ async function linkRemoteEntry(remote: LibraryBook) {
 
     showRemoteLinkPanel(remote, ranked, remoteRecords)
   } catch (e: any) {
-    showError(`查找本地候选失败：${e?.message || e}`)
+    showError(`查找本地候选失败：${formatError(e)}`)
   }
 }
 
@@ -1132,7 +1132,7 @@ async function showBatchLinkQueue() {
     }))
     renderBatchLinkPanel(entries)
   } catch (e: any) {
-    showError(`整理批量关联候选失败：${e?.message || e}`)
+    showError(`整理批量关联候选失败：${formatError(e)}`)
   } finally {
     updateBatchLinkButton()
     if (!libraryBatchLinkBtn.disabled) libraryBatchLinkBtn.textContent = original || libraryBatchLinkBtn.textContent
@@ -1280,7 +1280,7 @@ function renderBatchLinkPanel(entries: BatchLinkQueueEntry[]) {
         entry.message = `已关联到《${linkedBook.title || selected.book.title || '本地书'}》`
       } catch (e: any) {
         entry.status = 'error'
-        entry.message = `关联失败：${e?.message || e}`
+        entry.message = `关联失败：${formatError(e)}`
       }
       updateBatchLinkButton()
       renderBatchLinkPanel(entries)
@@ -1538,7 +1538,7 @@ function showRemoteLinkPanel(
           prependLibraryLinkSummary(remote, linked)
         } catch (e: any) {
           button.disabled = false
-          showError(`关联失败：${e?.message || e}`)
+          showError(`关联失败：${formatError(e)}`)
         }
       })
 
@@ -1558,7 +1558,7 @@ async function showBookSourcePanel(book: LibraryBook) {
     const records = await bridge.listLibrarySourceRecords(book.id)
     renderBookSourcePanel(book, records)
   } catch (e: any) {
-    showError(`读取来源记录失败：${e?.message || e}`)
+    showError(`读取来源记录失败：${formatError(e)}`)
   }
 }
 
@@ -1634,7 +1634,7 @@ function renderBookSourcePanel(book: LibraryBook, records: LibrarySourceRecord[]
           try {
             await bridge.openExternal(record.remoteUrl!)
           } catch (e: any) {
-            showError(`打开来源外链失败：${e?.message || e}`)
+            showError(`打开来源外链失败：${formatError(e)}`)
           } finally {
             button.disabled = false
           }
@@ -1714,7 +1714,7 @@ async function openRemoteEntry(book: LibraryBook) {
       await openLibraryBook(acquired)
     } catch (e: any) {
       renderLibraryBooks()
-      showError(`获取公共版权正文失败：${e?.message || e}`)
+      showError(`获取公共版权正文失败：${formatError(e)}`)
     }
     return
   }
@@ -1726,7 +1726,7 @@ async function openRemoteEntry(book: LibraryBook) {
   try {
     await bridge.openExternal(book.remoteUrl)
   } catch (e: any) {
-    showError(`打开官方链接失败：${e?.message || e}`)
+    showError(`打开官方链接失败：${formatError(e)}`)
   }
 }
 
@@ -1741,7 +1741,7 @@ async function openLibraryBook(book: LibraryBook) {
     $('#next-zone').hidden = false
     document.body.classList.add('reading-active')
   } catch (e: any) {
-    showError(`打开失败：${e?.message || e}`)
+    showError(`打开失败：${formatError(e)}`)
   }
 }
 

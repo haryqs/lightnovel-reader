@@ -5,8 +5,8 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use reading_core::epub_parser::{self, BookInfo};
 use reading_core::connectors;
+use reading_core::epub_parser::{self, BookInfo};
 use reading_core::{compute_book_id, library, parse_cache, rusqlite, storage};
 use tauri::Manager;
 
@@ -91,6 +91,10 @@ impl BridgeError {
 
     fn http_status(status: reqwest::StatusCode) -> Self {
         Self::with_details("httpStatus", "OPDS 服务器返回错误状态", status.to_string())
+    }
+
+    fn http_status_for(label: impl Into<String>, status: reqwest::StatusCode) -> Self {
+        Self::with_details("httpStatus", label.into(), status.to_string())
     }
 
     fn not_found(message: impl Into<String>) -> Self {
@@ -256,11 +260,16 @@ struct CalibreBook {
 
 // 读取 Calibre 库的 metadata.db，列出全部 EPUB 书（标题/作者/文件路径）。
 #[tauri::command]
-async fn list_calibre_books(library: String) -> Result<Vec<CalibreBook>, String> {
+async fn list_calibre_books(library: String) -> Result<Vec<CalibreBook>, BridgeError> {
+    if library.trim().is_empty() {
+        return Err(BridgeError::invalid_argument(
+            "Calibre library path is required",
+        ));
+    }
     let db_path = std::path::Path::new(&library).join("metadata.db");
     let conn =
         rusqlite::Connection::open_with_flags(&db_path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
-            .map_err(|e| format!("打开 Calibre 库失败: {}", e))?;
+            .map_err(|e| BridgeError::storage(format!("打开 Calibre 库失败: {}", e)))?;
 
     let mut stmt = conn
         .prepare(
@@ -272,7 +281,7 @@ async fn list_calibre_books(library: String) -> Result<Vec<CalibreBook>, String>
              JOIN data d ON d.book = b.id AND d.format = 'EPUB'
              ORDER BY b.author_sort, b.sort",
         )
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| BridgeError::storage(e.to_string()))?;
 
     let lib = library.clone();
     let rows = stmt
@@ -298,10 +307,10 @@ async fn list_calibre_books(library: String) -> Result<Vec<CalibreBook>, String>
                 },
             })
         })
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| BridgeError::storage(e.to_string()))?;
 
     rows.collect::<Result<Vec<_>, _>>()
-        .map_err(|e| e.to_string())
+        .map_err(|e| BridgeError::storage(e.to_string()))
 }
 
 // —— 自有书库命令 ——
@@ -310,9 +319,16 @@ async fn list_calibre_books(library: String) -> Result<Vec<CalibreBook>, String>
 fn library_import(
     state: tauri::State<AppState>,
     path: String,
-) -> Result<library::ImportOutcome, String> {
-    let db = state.library_db.lock().map_err(|e| e.to_string())?;
+) -> Result<library::ImportOutcome, BridgeError> {
+    if path.trim().is_empty() {
+        return Err(BridgeError::invalid_argument("EPUB path is required"));
+    }
+    let db = state
+        .library_db
+        .lock()
+        .map_err(|e| BridgeError::storage(e.to_string()))?;
     library::import_epub(&db, &state.library_dir, Path::new(&path), now_ms())
+        .map_err(BridgeError::storage)
 }
 
 #[tauri::command]
@@ -320,8 +336,14 @@ fn library_import_bytes(
     state: tauri::State<AppState>,
     data: Vec<u8>,
     file_name: Option<String>,
-) -> Result<library::ImportOutcome, String> {
-    let db = state.library_db.lock().map_err(|e| e.to_string())?;
+) -> Result<library::ImportOutcome, BridgeError> {
+    if data.is_empty() {
+        return Err(BridgeError::invalid_argument("EPUB data is empty"));
+    }
+    let db = state
+        .library_db
+        .lock()
+        .map_err(|e| BridgeError::storage(e.to_string()))?;
     library::import_epub_bytes(
         &db,
         &state.library_dir,
@@ -329,30 +351,43 @@ fn library_import_bytes(
         file_name.as_deref(),
         now_ms(),
     )
+    .map_err(BridgeError::storage)
 }
 
 #[tauri::command]
-fn library_list(state: tauri::State<AppState>) -> Result<Vec<library::LibraryBook>, String> {
-    let db = state.library_db.lock().map_err(|e| e.to_string())?;
-    library::list_books(&db).map_err(|e| e.to_string())
+fn library_list(state: tauri::State<AppState>) -> Result<Vec<library::LibraryBook>, BridgeError> {
+    let db = state
+        .library_db
+        .lock()
+        .map_err(|e| BridgeError::storage(e.to_string()))?;
+    library::list_books(&db).map_err(|e| BridgeError::storage(e.to_string()))
 }
 
 #[tauri::command]
 fn library_search(
     state: tauri::State<AppState>,
     query: String,
-) -> Result<Vec<library::LibraryBook>, String> {
-    let db = state.library_db.lock().map_err(|e| e.to_string())?;
-    library::search_books(&db, &query).map_err(|e| e.to_string())
+) -> Result<Vec<library::LibraryBook>, BridgeError> {
+    let db = state
+        .library_db
+        .lock()
+        .map_err(|e| BridgeError::storage(e.to_string()))?;
+    library::search_books(&db, &query).map_err(|e| BridgeError::storage(e.to_string()))
 }
 
 #[tauri::command]
 fn library_source_records(
     state: tauri::State<AppState>,
     book_id: String,
-) -> Result<Vec<library::LibrarySourceRecord>, String> {
-    let db = state.library_db.lock().map_err(|e| e.to_string())?;
-    library::list_source_records(&db, &book_id).map_err(|e| e.to_string())
+) -> Result<Vec<library::LibrarySourceRecord>, BridgeError> {
+    if book_id.trim().is_empty() {
+        return Err(BridgeError::invalid_argument("bookId is required"));
+    }
+    let db = state
+        .library_db
+        .lock()
+        .map_err(|e| BridgeError::storage(e.to_string()))?;
+    library::list_source_records(&db, &book_id).map_err(|e| BridgeError::storage(e.to_string()))
 }
 
 #[tauri::command]
@@ -360,9 +395,18 @@ fn library_link_remote_to_local(
     state: tauri::State<AppState>,
     remote_id: String,
     local_id: String,
-) -> Result<library::LibraryBook, String> {
-    let db = state.library_db.lock().map_err(|e| e.to_string())?;
+) -> Result<library::LibraryBook, BridgeError> {
+    if remote_id.trim().is_empty() || local_id.trim().is_empty() {
+        return Err(BridgeError::invalid_argument(
+            "remoteId and localId are required",
+        ));
+    }
+    let db = state
+        .library_db
+        .lock()
+        .map_err(|e| BridgeError::storage(e.to_string()))?;
     library::link_remote_to_local(&db, &remote_id, &local_id, now_ms())
+        .map_err(|e| BridgeError::storage(e.to_string()))
 }
 
 /// 在线元数据搜索（AniList）：拉索引/封面/简介 → 落库为远程条目（availability=remote）→
@@ -372,7 +416,7 @@ fn library_link_remote_to_local(
 async fn library_search_remote(
     state: tauri::State<'_, AppState>,
     query: String,
-) -> Result<Vec<library::LibraryBook>, String> {
+) -> Result<Vec<library::LibraryBook>, BridgeError> {
     search_remote_source(&state, "anilist", &query).await
 }
 
@@ -382,7 +426,7 @@ async fn library_search_remote_source(
     state: tauri::State<'_, AppState>,
     source: String,
     query: String,
-) -> Result<Vec<library::LibraryBook>, String> {
+) -> Result<Vec<library::LibraryBook>, BridgeError> {
     search_remote_source(&state, &source, &query).await
 }
 
@@ -390,20 +434,23 @@ async fn search_remote_source(
     state: &AppState,
     source: &str,
     query: &str,
-) -> Result<Vec<library::LibraryBook>, String> {
+) -> Result<Vec<library::LibraryBook>, BridgeError> {
     match source.trim().to_ascii_lowercase().as_str() {
         "anilist" => search_anilist(state, query).await,
         "bangumi" => search_bangumi(state, query).await,
         "aozora" => search_aozora(state, query).await,
         "narou" => search_narou(state, query).await,
-        other => Err(format!("不支持的在线来源: {}", other)),
+        other => Err(BridgeError::invalid_argument(format!(
+            "不支持的在线来源: {}",
+            other
+        ))),
     }
 }
 
 async fn search_anilist(
     state: &AppState,
     query: &str,
-) -> Result<Vec<library::LibraryBook>, String> {
+) -> Result<Vec<library::LibraryBook>, BridgeError> {
     use reading_core::connectors::{self, anilist};
 
     let q = query.trim();
@@ -421,16 +468,25 @@ async fn search_anilist(
         .body(body)
         .send()
         .await
-        .map_err(|e| format!("AniList 请求失败: {e}"))?;
+        .map_err(|e| BridgeError::network(format!("AniList 请求失败: {e}")))?;
+    if !resp.status().is_success() {
+        return Err(BridgeError::http_status_for(
+            "AniList 请求失败",
+            resp.status(),
+        ));
+    }
     let json = resp
         .text()
         .await
-        .map_err(|e| format!("读取 AniList 响应失败: {e}"))?;
+        .map_err(|e| BridgeError::network(format!("读取 AniList 响应失败: {e}")))?;
 
     // 2) 解析 + 落库（core）。
-    let entries = anilist::parse_search(&json)?;
+    let entries = anilist::parse_search(&json).map_err(BridgeError::parse)?;
     let now = now_ms();
-    let db = state.library_db.lock().map_err(|e| e.to_string())?;
+    let db = state
+        .library_db
+        .lock()
+        .map_err(|e| BridgeError::storage(e.to_string()))?;
     connectors::ensure_source(
         &db,
         anilist::SOURCE_ID,
@@ -439,14 +495,16 @@ async fn search_anilist(
         Some(anilist::ENDPOINT),
         now,
     )
-    .map_err(|e| e.to_string())?;
-    let ids =
-        connectors::ingest(&db, anilist::SOURCE_ID, &entries, now).map_err(|e| e.to_string())?;
+    .map_err(|e| BridgeError::storage(e.to_string()))?;
+    let ids = connectors::ingest(&db, anilist::SOURCE_ID, &entries, now)
+        .map_err(|e| BridgeError::storage(e.to_string()))?;
 
     // 3) 回读落库后的条目返回前端。
     let mut out = Vec::with_capacity(ids.len());
     for id in ids {
-        if let Some(b) = library::get_book(&db, &id).map_err(|e| e.to_string())? {
+        if let Some(b) =
+            library::get_book(&db, &id).map_err(|e| BridgeError::storage(e.to_string()))?
+        {
             out.push(b);
         }
     }
@@ -456,7 +514,7 @@ async fn search_anilist(
 async fn search_bangumi(
     state: &AppState,
     query: &str,
-) -> Result<Vec<library::LibraryBook>, String> {
+) -> Result<Vec<library::LibraryBook>, BridgeError> {
     use reading_core::connectors::{self, bangumi};
 
     let q = query.trim();
@@ -478,18 +536,24 @@ async fn search_bangumi(
         .body(body)
         .send()
         .await
-        .map_err(|e| format!("Bangumi request failed: {e}"))?;
+        .map_err(|e| BridgeError::network(format!("Bangumi request failed: {e}")))?;
     if !resp.status().is_success() {
-        return Err(format!("Bangumi request failed: HTTP {}", resp.status()));
+        return Err(BridgeError::http_status_for(
+            "Bangumi request failed",
+            resp.status(),
+        ));
     }
     let json = resp
         .text()
         .await
-        .map_err(|e| format!("read Bangumi response failed: {e}"))?;
+        .map_err(|e| BridgeError::network(format!("read Bangumi response failed: {e}")))?;
 
-    let entries = bangumi::parse_search(&json)?;
+    let entries = bangumi::parse_search(&json).map_err(BridgeError::parse)?;
     let now = now_ms();
-    let db = state.library_db.lock().map_err(|e| e.to_string())?;
+    let db = state
+        .library_db
+        .lock()
+        .map_err(|e| BridgeError::storage(e.to_string()))?;
     connectors::ensure_source(
         &db,
         bangumi::SOURCE_ID,
@@ -498,20 +562,25 @@ async fn search_bangumi(
         Some(bangumi::ENDPOINT),
         now,
     )
-    .map_err(|e| e.to_string())?;
-    let ids =
-        connectors::ingest(&db, bangumi::SOURCE_ID, &entries, now).map_err(|e| e.to_string())?;
+    .map_err(|e| BridgeError::storage(e.to_string()))?;
+    let ids = connectors::ingest(&db, bangumi::SOURCE_ID, &entries, now)
+        .map_err(|e| BridgeError::storage(e.to_string()))?;
 
     let mut out = Vec::with_capacity(ids.len());
     for id in ids {
-        if let Some(b) = library::get_book(&db, &id).map_err(|e| e.to_string())? {
+        if let Some(b) =
+            library::get_book(&db, &id).map_err(|e| BridgeError::storage(e.to_string()))?
+        {
             out.push(b);
         }
     }
     Ok(out)
 }
 
-async fn search_narou(state: &AppState, query: &str) -> Result<Vec<library::LibraryBook>, String> {
+async fn search_narou(
+    state: &AppState,
+    query: &str,
+) -> Result<Vec<library::LibraryBook>, BridgeError> {
     use reading_core::connectors::{self, narou};
 
     let q = query.trim();
@@ -535,18 +604,24 @@ async fn search_narou(state: &AppState, query: &str) -> Result<Vec<library::Libr
         .header("user-agent", "LightNovel Reader")
         .send()
         .await
-        .map_err(|e| format!("Narou request failed: {e}"))?;
+        .map_err(|e| BridgeError::network(format!("Narou request failed: {e}")))?;
     if !resp.status().is_success() {
-        return Err(format!("Narou request failed: HTTP {}", resp.status()));
+        return Err(BridgeError::http_status_for(
+            "Narou request failed",
+            resp.status(),
+        ));
     }
     let json = resp
         .text()
         .await
-        .map_err(|e| format!("read Narou response failed: {e}"))?;
+        .map_err(|e| BridgeError::network(format!("read Narou response failed: {e}")))?;
 
-    let entries = narou::parse_search(&json)?;
+    let entries = narou::parse_search(&json).map_err(BridgeError::parse)?;
     let now = now_ms();
-    let db = state.library_db.lock().map_err(|e| e.to_string())?;
+    let db = state
+        .library_db
+        .lock()
+        .map_err(|e| BridgeError::storage(e.to_string()))?;
     connectors::ensure_source(
         &db,
         narou::SOURCE_ID,
@@ -555,20 +630,25 @@ async fn search_narou(state: &AppState, query: &str) -> Result<Vec<library::Libr
         Some(narou::ENDPOINT),
         now,
     )
-    .map_err(|e| e.to_string())?;
-    let ids =
-        connectors::ingest(&db, narou::SOURCE_ID, &entries, now).map_err(|e| e.to_string())?;
+    .map_err(|e| BridgeError::storage(e.to_string()))?;
+    let ids = connectors::ingest(&db, narou::SOURCE_ID, &entries, now)
+        .map_err(|e| BridgeError::storage(e.to_string()))?;
 
     let mut out = Vec::with_capacity(ids.len());
     for id in ids {
-        if let Some(b) = library::get_book(&db, &id).map_err(|e| e.to_string())? {
+        if let Some(b) =
+            library::get_book(&db, &id).map_err(|e| BridgeError::storage(e.to_string()))?
+        {
             out.push(b);
         }
     }
     Ok(out)
 }
 
-async fn search_aozora(state: &AppState, query: &str) -> Result<Vec<library::LibraryBook>, String> {
+async fn search_aozora(
+    state: &AppState,
+    query: &str,
+) -> Result<Vec<library::LibraryBook>, BridgeError> {
     use reading_core::connectors::{self, aozora};
 
     let q = query.trim();
@@ -577,9 +657,13 @@ async fn search_aozora(state: &AppState, query: &str) -> Result<Vec<library::Lib
     }
 
     let csv = load_aozora_catalog_csv(&state.cache_dir).await?;
-    let entries = aozora::parse_catalog_csv(&csv, q, AOZORA_SEARCH_LIMIT)?;
+    let entries =
+        aozora::parse_catalog_csv(&csv, q, AOZORA_SEARCH_LIMIT).map_err(BridgeError::parse)?;
     let now = now_ms();
-    let db = state.library_db.lock().map_err(|e| e.to_string())?;
+    let db = state
+        .library_db
+        .lock()
+        .map_err(|e| BridgeError::storage(e.to_string()))?;
     connectors::ensure_source(
         &db,
         aozora::SOURCE_ID,
@@ -588,13 +672,15 @@ async fn search_aozora(state: &AppState, query: &str) -> Result<Vec<library::Lib
         Some(aozora::CATALOG_ZIP_URL),
         now,
     )
-    .map_err(|e| e.to_string())?;
-    let ids =
-        connectors::ingest(&db, aozora::SOURCE_ID, &entries, now).map_err(|e| e.to_string())?;
+    .map_err(|e| BridgeError::storage(e.to_string()))?;
+    let ids = connectors::ingest(&db, aozora::SOURCE_ID, &entries, now)
+        .map_err(|e| BridgeError::storage(e.to_string()))?;
 
     let mut out = Vec::with_capacity(ids.len());
     for id in ids {
-        if let Some(b) = library::get_book(&db, &id).map_err(|e| e.to_string())? {
+        if let Some(b) =
+            library::get_book(&db, &id).map_err(|e| BridgeError::storage(e.to_string()))?
+        {
             out.push(b);
         }
     }
@@ -605,44 +691,65 @@ async fn search_aozora(state: &AppState, query: &str) -> Result<Vec<library::Lib
 async fn library_acquire_remote(
     state: tauri::State<'_, AppState>,
     id: String,
-) -> Result<library::LibraryBook, String> {
+) -> Result<library::LibraryBook, BridgeError> {
     use reading_core::connectors::aozora;
 
+    if id.trim().is_empty() {
+        return Err(BridgeError::invalid_argument("remote id is required"));
+    }
+
     let acquisition = {
-        let db = state.library_db.lock().map_err(|e| e.to_string())?;
-        let Some(info) = library::remote_acquisition(&db, &id).map_err(|e| e.to_string())? else {
-            return Err("找不到可获取的远程条目".to_string());
+        let db = state
+            .library_db
+            .lock()
+            .map_err(|e| BridgeError::storage(e.to_string()))?;
+        let Some(info) = library::remote_acquisition(&db, &id)
+            .map_err(|e| BridgeError::storage(e.to_string()))?
+        else {
+            return Err(BridgeError::not_found("找不到可获取的远程条目"));
         };
         info
     };
 
     if acquisition.source_id != aozora::SOURCE_ID {
-        return Err("当前只支持获取青空文库公共版权条目".to_string());
+        return Err(BridgeError::forbidden("当前只支持获取青空文库公共版权条目"));
     }
     if acquisition.rights_status != "public_domain" {
-        return Err("该条目不是公共版权，不能下载正文；请跳转官方链接".to_string());
+        return Err(BridgeError::forbidden(
+            "该条目不是公共版权，不能下载正文；请跳转官方链接",
+        ));
     }
     if let Some(existing) = acquisition.existing_asset_id.as_deref() {
-        let db = state.library_db.lock().map_err(|e| e.to_string())?;
-        if let Some(book) = library::get_book(&db, existing).map_err(|e| e.to_string())? {
+        let db = state
+            .library_db
+            .lock()
+            .map_err(|e| BridgeError::storage(e.to_string()))?;
+        if let Some(book) =
+            library::get_book(&db, existing).map_err(|e| BridgeError::storage(e.to_string()))?
+        {
             return Ok(book);
         }
     }
 
     let csv = load_aozora_catalog_csv(&state.cache_dir).await?;
-    let work = aozora::find_catalog_work_by_id(&csv, &acquisition.remote_id)?
-        .ok_or_else(|| "青空目录中找不到该作品".to_string())?;
+    let work = aozora::find_catalog_work_by_id(&csv, &acquisition.remote_id)
+        .map_err(BridgeError::parse)?
+        .ok_or_else(|| BridgeError::not_found("青空目录中找不到该作品"))?;
     if work.rights_status != "public_domain" {
-        return Err("青空目录显示该作品非公共版权，不能下载正文".to_string());
+        return Err(BridgeError::forbidden(
+            "青空目录显示该作品非公共版权，不能下载正文",
+        ));
     }
-    let html_url = work
-        .html_url
-        .as_deref()
-        .ok_or_else(|| "该青空条目没有 XHTML/HTML 正文 URL，暂不能站内阅读".to_string())?;
+    let html_url = work.html_url.as_deref().ok_or_else(|| {
+        BridgeError::not_found("该青空条目没有 XHTML/HTML 正文 URL，暂不能站内阅读")
+    })?;
     ensure_aozora_url(html_url)?;
     let html = fetch_text(html_url, "青空正文").await?;
 
-    let db = state.library_db.lock().map_err(|e| e.to_string())?;
+    let db = state
+        .library_db
+        .lock()
+        .map_err(|e| BridgeError::storage(e.to_string()))?;
     library::attach_remote_html_asset(
         &db,
         &state.library_dir,
@@ -654,26 +761,30 @@ async fn library_acquire_remote(
         &html,
         now_ms(),
     )
+    .map_err(BridgeError::storage)
 }
 
-async fn load_aozora_catalog_csv(cache_dir: &Path) -> Result<String, String> {
+async fn load_aozora_catalog_csv(cache_dir: &Path) -> Result<String, BridgeError> {
     use reading_core::connectors::aozora;
 
     let dir = cache_dir.join("connectors").join("aozora");
     let csv_path = dir.join("list_person_all_extended_utf8.csv");
     if catalog_cache_is_fresh(&csv_path) {
         return std::fs::read_to_string(&csv_path)
-            .map_err(|e| format!("读取青空目录缓存失败: {e}"));
+            .map_err(|e| BridgeError::storage(format!("读取青空目录缓存失败: {e}")));
     }
 
     let bytes = fetch_bytes(aozora::CATALOG_ZIP_URL, "青空目录").await?;
     let csv = tauri::async_runtime::spawn_blocking(move || extract_csv_from_zip(&bytes))
         .await
-        .map_err(|e| format!("解压青空目录任务失败: {e}"))??;
-    std::fs::create_dir_all(&dir).map_err(|e| format!("创建青空缓存目录失败: {e}"))?;
+        .map_err(|e| BridgeError::storage(format!("解压青空目录任务失败: {e}")))??;
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| BridgeError::storage(format!("创建青空缓存目录失败: {e}")))?;
     let tmp = csv_path.with_extension("csv.tmp");
-    std::fs::write(&tmp, csv.as_bytes()).map_err(|e| format!("写入青空目录缓存失败: {e}"))?;
-    std::fs::rename(&tmp, &csv_path).map_err(|e| format!("更新青空目录缓存失败: {e}"))?;
+    std::fs::write(&tmp, csv.as_bytes())
+        .map_err(|e| BridgeError::storage(format!("写入青空目录缓存失败: {e}")))?;
+    std::fs::rename(&tmp, &csv_path)
+        .map_err(|e| BridgeError::storage(format!("更新青空目录缓存失败: {e}")))?;
     Ok(csv)
 }
 
@@ -689,92 +800,119 @@ fn catalog_cache_is_fresh(path: &Path) -> bool {
         .is_ok_and(|age| age <= AOZORA_CATALOG_MAX_AGE)
 }
 
-fn extract_csv_from_zip(bytes: &[u8]) -> Result<String, String> {
+fn extract_csv_from_zip(bytes: &[u8]) -> Result<String, BridgeError> {
     let cursor = std::io::Cursor::new(bytes);
-    let mut archive =
-        zip::ZipArchive::new(cursor).map_err(|e| format!("打开青空目录 ZIP 失败: {e}"))?;
+    let mut archive = zip::ZipArchive::new(cursor)
+        .map_err(|e| BridgeError::parse(format!("打开青空目录 ZIP 失败: {e}")))?;
     let mut csv_name = None;
     for i in 0..archive.len() {
-        let entry = archive.by_index(i).map_err(|e| e.to_string())?;
+        let entry = archive
+            .by_index(i)
+            .map_err(|e| BridgeError::parse(e.to_string()))?;
         if entry.name().to_ascii_lowercase().ends_with(".csv") {
             csv_name = Some(entry.name().to_string());
             break;
         }
     }
-    let name = csv_name.ok_or_else(|| "青空目录 ZIP 中未找到 CSV".to_string())?;
+    let name = csv_name.ok_or_else(|| BridgeError::parse("青空目录 ZIP 中未找到 CSV"))?;
     let mut entry = archive
         .by_name(&name)
-        .map_err(|e| format!("读取青空目录 CSV 失败: {e}"))?;
+        .map_err(|e| BridgeError::parse(format!("读取青空目录 CSV 失败: {e}")))?;
     let mut buf = Vec::new();
     entry
         .read_to_end(&mut buf)
-        .map_err(|e| format!("读取青空目录 CSV 字节失败: {e}"))?;
-    String::from_utf8(buf).map_err(|e| format!("青空目录不是 UTF-8: {e}"))
+        .map_err(|e| BridgeError::parse(format!("读取青空目录 CSV 字节失败: {e}")))?;
+    String::from_utf8(buf).map_err(|e| BridgeError::parse(format!("青空目录不是 UTF-8: {e}")))
 }
 
-async fn fetch_bytes(url: &str, label: &str) -> Result<Vec<u8>, String> {
+async fn fetch_bytes(url: &str, label: &str) -> Result<Vec<u8>, BridgeError> {
     let resp = reqwest::Client::new()
         .get(url)
         .header("user-agent", "LightNovel Reader/0.3.1")
         .send()
         .await
-        .map_err(|e| format!("下载{label}失败: {e}"))?;
+        .map_err(|e| BridgeError::network(format!("下载{label}失败: {e}")))?;
     let status = resp.status();
     if !status.is_success() {
-        return Err(format!("下载{label}失败: HTTP {status}"));
+        return Err(BridgeError::http_status_for(
+            format!("下载{label}失败"),
+            status,
+        ));
     }
     resp.bytes()
         .await
         .map(|b| b.to_vec())
-        .map_err(|e| format!("读取{label}响应失败: {e}"))
+        .map_err(|e| BridgeError::network(format!("读取{label}响应失败: {e}")))
 }
 
-async fn fetch_text(url: &str, label: &str) -> Result<String, String> {
+async fn fetch_text(url: &str, label: &str) -> Result<String, BridgeError> {
     let resp = reqwest::Client::new()
         .get(url)
         .header("user-agent", "LightNovel Reader/0.3.1")
         .send()
         .await
-        .map_err(|e| format!("下载{label}失败: {e}"))?;
+        .map_err(|e| BridgeError::network(format!("下载{label}失败: {e}")))?;
     let status = resp.status();
     if !status.is_success() {
-        return Err(format!("下载{label}失败: HTTP {status}"));
+        return Err(BridgeError::http_status_for(
+            format!("下载{label}失败"),
+            status,
+        ));
     }
     resp.text()
         .await
-        .map_err(|e| format!("读取{label}响应失败: {e}"))
+        .map_err(|e| BridgeError::network(format!("读取{label}响应失败: {e}")))
 }
 
-fn ensure_aozora_url(url: &str) -> Result<(), String> {
+fn ensure_aozora_url(url: &str) -> Result<(), BridgeError> {
     let lower = url.to_ascii_lowercase();
     if lower.starts_with("https://www.aozora.gr.jp/")
         || lower.starts_with("http://www.aozora.gr.jp/")
     {
         Ok(())
     } else {
-        Err("青空正文 URL 不属于官方 aozora.gr.jp，已拒绝下载".to_string())
+        Err(BridgeError::forbidden(
+            "青空正文 URL 不属于官方 aozora.gr.jp，已拒绝下载",
+        ))
     }
 }
 
 #[tauri::command]
-async fn library_open(state: tauri::State<'_, AppState>, id: String) -> Result<OpenedBook, String> {
+async fn library_open(
+    state: tauri::State<'_, AppState>,
+    id: String,
+) -> Result<OpenedBook, BridgeError> {
+    if id.trim().is_empty() {
+        return Err(BridgeError::invalid_argument("book id is required"));
+    }
     let file_path = {
-        let db = state.library_db.lock().map_err(|e| e.to_string())?;
+        let db = state
+            .library_db
+            .lock()
+            .map_err(|e| BridgeError::storage(e.to_string()))?;
         let book = library::get_book(&db, &id)
-            .map_err(|e| e.to_string())?
-            .ok_or_else(|| "书库中找不到这本书".to_string())?;
+            .map_err(|e| BridgeError::storage(e.to_string()))?
+            .ok_or_else(|| BridgeError::not_found("书库中找不到这本书"))?;
         // 远程 metadata_only 条目无本地文件，不能站内打开（应由前端走外链）。
-        book.file_path
-            .ok_or_else(|| "该条目没有本地文件，无法打开（远程条目请用外部链接）".to_string())?
+        book.file_path.ok_or_else(|| {
+            BridgeError::not_found("该条目没有本地文件，无法打开（远程条目请用外部链接）")
+        })?
     };
-    let data = std::fs::read(&file_path).map_err(|e| format!("读取书库文件失败: {}", e))?;
-    load_book_from_data(&state, data)
+    let data = std::fs::read(&file_path)
+        .map_err(|e| BridgeError::storage(format!("读取书库文件失败: {}", e)))?;
+    load_book_from_data(&state, data).map_err(BridgeError::parse)
 }
 
 #[tauri::command]
-fn library_touch_last_read(state: tauri::State<AppState>, id: String) -> Result<(), String> {
-    let db = state.library_db.lock().map_err(|e| e.to_string())?;
-    library::touch_last_read(&db, &id, now_ms()).map_err(|e| e.to_string())
+fn library_touch_last_read(state: tauri::State<AppState>, id: String) -> Result<(), BridgeError> {
+    if id.trim().is_empty() {
+        return Err(BridgeError::invalid_argument("book id is required"));
+    }
+    let db = state
+        .library_db
+        .lock()
+        .map_err(|e| BridgeError::storage(e.to_string()))?;
+    library::touch_last_read(&db, &id, now_ms()).map_err(|e| BridgeError::storage(e.to_string()))
 }
 
 #[tauri::command]
@@ -895,9 +1033,7 @@ async fn opds_list_sources(
 /// 抓取并解析一个 OPDS feed（导航或获取），不做落库。
 /// 自动检测 OPDS 1.x (Atom XML) 与 OPDS 2.0 (JSON) 格式。
 #[tauri::command]
-async fn opds_browse_feed(
-    url: String,
-) -> Result<connectors::opds::OpdsFeed, BridgeError> {
+async fn opds_browse_feed(url: String) -> Result<connectors::opds::OpdsFeed, BridgeError> {
     let url = url.trim();
     if url.is_empty() {
         return Err(BridgeError::invalid_argument("URL is required"));
