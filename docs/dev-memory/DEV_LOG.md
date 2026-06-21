@@ -1890,3 +1890,40 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
 下一步：
 
 - 提交并推送 codex/unified-acquire-open，打开 PR；后续做真实 Tauri/OPDS 冒烟，并设计 acquisition URL 持久化以支持书架远程 OPDS 条目直接获取。
+
+## 2026-06-21：OPDS 获取并阅读真实冒烟补验
+
+变更：
+
+- `scripts/tauri-opds-smoke.mjs` 兼容新的“获取并阅读”按钮，并保留旧 `EPUB` 文本兼容。
+- OPDS 冒烟新增阅读态断言：获取 Gutenberg EPUB 后必须进入 `reading-active`，书库层隐藏，状态栏可见。
+- 修复真实冒烟发现的问题：OPDS 获取后先打开阅读器、再刷新书库会让书库层覆盖阅读器；现在先刷新书库，再按默认阅读方式打开获取后的本地 asset。
+- `PROJECT_MEMORY.md` / `NEXT_ACTIONS.md` / `发布与测试.md` 已记录 `smoke:opds` 的真实验证范围和后续任务。
+
+修改文件：
+
+- `src/main.ts`
+- `scripts/tauri-opds-smoke.mjs`
+- `docs/dev-memory/PROJECT_MEMORY.md`
+- `docs/dev-memory/NEXT_ACTIONS.md`
+- `docs/dev-memory/DEV_LOG.md`
+- `docs/current-project/发布与测试.md`
+
+验证：
+
+- `node --check scripts/tauri-opds-smoke.mjs` 通过。
+- `npm.cmd run tauri -- build --debug --no-bundle` 通过。
+- `npm.cmd run smoke:opds -- --tauri-driver C:\Users\Administrator\.cargo\bin\tauri-driver.exe --native-driver C:\Users\Administrator\AppData\Local\lightnovel-reader-tools\msedgedriver\149.0.4022.62\msedgedriver.exe` 通过（Gutenberg OPDS → Pride and Prejudice → 获取并阅读，`readerUi` 为 `libraryHidden=true` / `readingActive=true` / `statusbarHidden=false`）。
+- `node scripts/check-arch.mjs` 通过。
+- `node scripts/check-dev-memory.mjs` 通过。
+- `npm.cmd run build` 通过。
+- `cargo test --workspace` 通过（reading-core 84 passed）。
+- `git diff --check` 通过（仅 Windows 换行提示）。
+
+未验证/阻塞：
+
+- 无
+
+下一步：
+
+- 提交并推送 codex/opds-acquire-smoke，打开 PR；后续可设计 acquisition URL 持久化，支持从书架远程 OPDS 条目直接获取并阅读。
