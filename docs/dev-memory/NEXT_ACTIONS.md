@@ -1,5 +1,31 @@
 # 下一步任务队列
 
+## 📌 交接留言（2026-06-21，统一合法资源获取后阅读第一步）
+
+当前分支：
+
+- `codex/unified-acquire-open`，从已合并 PR #28 后的最新 `main` 创建。
+
+本轮已完成：
+
+- 青空 `public_domain` 远程条目经 `library.acquireRemote` 获取后，不再固定内置打开，而是走统一的 `openAcquiredLibraryBook`：默认阅读方式为 `外部` 且有 `filePath` 时交给系统默认本地阅读器，否则进入内置阅读器。
+- OPDS feed 面板的开放授权 EPUB 按钮从“下载 EPUB”改为“获取并阅读”。
+- OPDS `open_license` 条目点击“获取并阅读”后，会先 `opds.ingestEntries` 落库拿 `editionId`，再 `opds.downloadEpub` 下载并 attach 成本地 asset，完成后复用同一套 `openAcquiredLibraryBook` 打开。
+- 合规边界不变：OPDS 下载命令层仍强制 `rightsStatus=open_license`；青空正文获取仍只允许 `public_domain`。
+
+已验证：
+
+- `npm.cmd run build` 通过（含 `check-arch`、`tsc`、`vite build`）。
+- `node scripts/check-dev-memory.mjs` 通过。
+- `cargo test --workspace` 通过（reading-core 84 passed）。
+- `git diff --check` 通过（仅 Windows 换行提示）。
+
+下一步优先级：
+
+1. 做真实 Tauri/OPDS 冒烟：添加开放授权 OPDS 源 → 浏览 feed → 点击“获取并阅读” → 确认下载、入库、按偏好打开。
+2. 若要从书架远程 OPDS 条目直接获取，需要给书库模型持久化 acquisition URL（不要滥用 `remoteUrl`，它仍应表示官方/来源外链）。
+3. 若继续协议内功，迁移 `book.*` / `annotation.*` / `reading.*` 到结构化 `BridgeError`。
+
 ## 📌 交接留言（2026-06-21，阅读方式偏好已完成）
 
 当前分支：

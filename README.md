@@ -37,7 +37,7 @@
 - **浏览器打开**：商业、受保护、未知授权或官方 Web 小说条目默认跳官方页面。
 - **外部本地阅读器**：本地文件或已缓存资产可交给系统默认应用，后续支持用户配置其它阅读器路径。
 
-当前已经具备 `library.acquireRemote`、`shell.openExternal`、`shell.openPathExternal`、本地 `library.open` 等基础能力；书架卡片已提供第一版阅读方式选择：内置阅读器、浏览器官方入口、外部本地阅读器，以及公共版权正文获取后内置阅读。书库标题栏的默认阅读方式会本地持久化，卡片点击和主按钮会按偏好选择可用动作并自动回退。
+当前已经具备 `library.acquireRemote`、`opds.downloadEpub`、`shell.openExternal`、`shell.openPathExternal`、本地 `library.open` 等基础能力；书架卡片已提供第一版阅读方式选择：内置阅读器、浏览器官方入口、外部本地阅读器，以及合法正文获取后阅读。书库标题栏的默认阅读方式会本地持久化，卡片点击、主按钮、青空公共版权获取和 OPDS 开放授权 EPUB 获取都会按偏好选择可用动作并自动回退。
 
 ## 架构
 
@@ -104,4 +104,4 @@ npm.cmd run tauri build
 
 ## 当前开发线
 
-当前主线在 v0.6：OPDS、结构化错误码和平台化书库能力收口中。`opds.*` 与 `library.*` 命令已返回结构化 `BridgeError { code, message, details? }`，前端通过 `formatError` 统一展示。下一步重点是 OPDS `open_license` 与公共版权 acquire 的统一体验、阅读方式偏好继续打磨，以及继续迁移 `book.*`、`annotation.*`、`reading.*`。
+当前主线在 v0.6：OPDS、结构化错误码和平台化书库能力收口中。`opds.*` 与 `library.*` 命令已返回结构化 `BridgeError { code, message, details? }`，前端通过 `formatError` 统一展示。下一步重点是 OPDS `open_license` 与公共版权 acquire 体验的实机冒烟、从书架远程 OPDS 条目直接获取所需的 acquisition URL 持久化，以及继续迁移 `book.*`、`annotation.*`、`reading.*`。
