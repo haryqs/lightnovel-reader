@@ -1,5 +1,39 @@
 # 开发日志
 
+## 2026-06-21：从 GitHub 同步并补齐 BridgeError 前端消费
+
+变更：
+
+- 按用户要求从 GitHub 同步：`git fetch --all --prune`、`git checkout main`、`git pull --ff-only`
+  后确认 `main` 已是最新；随后切回/继续 `codex/structured-opds-errors`，该分支以最新 `main` 为祖先。
+- 在 2026-06-19 的 OPDS 结构化错误码第一批基础上，补齐前端真实消费点：
+  `src/main.ts` 从 `src/platform` 引入 `isBridgeError`，统一 `formatError(err)` 在识别
+  `BridgeError` 时展示 `message`，并附带稳定 `code` 与可选 `details`。
+- OPDS 源列表、添加/移除源、浏览/搜索 feed、单条加入书架、下载 EPUB、批量加入书架等错误展示点
+  已改为走 `formatError(e)`，不再直接使用 `e?.message || e`。
+- `docs/resource-library-plan/8_桥接协议_v0.1.md` 补充：TS 侧 `isBridgeError` 已被
+  `src/main.ts::formatError` 消费，当前 OPDS UI 会显示结构化错误码信息。
+
+修改文件：
+
+- `src/main.ts`
+- `docs/resource-library-plan/8_桥接协议_v0.1.md`
+- `docs/dev-memory/DEV_LOG.md`
+- `docs/dev-memory/NEXT_ACTIONS.md`
+
+验证：
+
+- `node scripts/check-arch.mjs` 通过。
+- `node scripts/check-dev-memory.mjs` 通过。
+- `git diff --check` 通过；仅有 Windows 换行提示。
+- `npm.cmd run build` 通过。
+- `cargo test --workspace` 通过（reading-core 84 passed）。
+
+下一步：
+
+- 提交并推送 `codex/structured-opds-errors`，打开/更新 PR。
+- 后续继续按价值迁移其余命令到 `BridgeError`，或在 UI 里基于 `code` 做更细的重试/授权/参数错误提示。
+
 ## 2026-06-19：结构化错误码（第一批：OPDS 命令）
 
 变更：
