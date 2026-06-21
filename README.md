@@ -37,7 +37,7 @@
 - **浏览器打开**：商业、受保护、未知授权或官方 Web 小说条目默认跳官方页面。
 - **外部本地阅读器**：本地文件或已缓存资产可交给系统默认应用，后续支持用户配置其它阅读器路径。
 
-当前已经具备 `library.acquireRemote`、`shell.openExternal`、本地 `library.open` 等基础能力；阅读方式选择 UI 和外部阅读器协议仍在后续任务中。
+当前已经具备 `library.acquireRemote`、`shell.openExternal`、`shell.openPathExternal`、本地 `library.open` 等基础能力；书架卡片已提供第一版阅读方式选择：内置阅读器、浏览器官方入口、外部本地阅读器，以及公共版权正文获取后内置阅读。
 
 ## 架构
 

@@ -250,6 +250,8 @@ export interface ReaderBridge {
   resolveFileUrl(path: string): string
   /** shell.openExternal — 用系统默认浏览器打开外链(远程条目跳官方页) */
   openExternal(url: string): Promise<void>
+  /** shell.openPathExternal - open a local readable asset with the system default app */
+  openPathExternal(path: string): Promise<void>
   // ── OPDS v0.6 ──
   /** opds.addSource — 添加一个 OPDS 书源 */
   opdsAddSource(name: string, url: string): Promise<OpdsSource>

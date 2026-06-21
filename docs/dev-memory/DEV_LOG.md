@@ -1758,3 +1758,47 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
 下一步：
 
 - v0.6 第四轮：实机联网冒烟（真实 OPDS 站点测试完整流程）；URL 粘贴识别 OPDS feed；结构化错误码与协议冻结审计。
+
+## 2026-06-21：阅读方式选择第一版：书架卡片新增内置/外部/获取/浏览器动作；新增 ReaderBridge shell.openPathExternal，并在 Tauri 平台层映射到 @tauri-apps/plugin-opener openPath；README 与桥接协议文档已同步。
+
+变更：
+
+- 阅读方式选择第一版：书架卡片新增内置/外部/获取/浏览器动作；新增 ReaderBridge shell.openPathExternal，并在 Tauri 平台层映射到 @tauri-apps/plugin-opener openPath；README 与桥接协议文档已同步。
+
+修改文件：
+
+- 待补充
+
+验证：
+
+- npm.cmd run build 通过（含 check-arch、tsc、vite build）。
+
+未验证/阻塞：
+
+- 无
+
+下一步：
+
+- 继续跑 check-dev-memory、cargo test --workspace、git diff --check；若通过则提交并开 PR。后续可做阅读方式偏好持久化与 OPDS open_license 统一 acquire 动作。
+
+## 2026-06-21：阅读方式选择第一版收工补记：功能差异保持不变，NEXT_ACTIONS 顶部已从进行中改为已完成交接。
+
+变更：
+
+- 阅读方式选择第一版收工补记：功能差异保持不变，NEXT_ACTIONS 顶部已从进行中改为已完成交接。
+
+修改文件：
+
+- 待补充
+
+验证：
+
+- node scripts/check-dev-memory.mjs 通过；cargo test --workspace 通过（reading-core 84 passed）；git diff --check 通过（仅 Windows 换行提示）；此前 npm.cmd run build 已通过。
+
+未验证/阻塞：
+
+- 无
+
+下一步：
+
+- 提交并推送 codex/reading-action-model，打开 PR；后续做阅读方式偏好持久化、OPDS open_license 与公共版权 acquire 的统一动作入口。

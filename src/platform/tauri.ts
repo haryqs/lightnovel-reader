@@ -1,7 +1,7 @@
 // Tauri 桌面壳的 ReaderBridge 实现:协议方法 → Tauri command 的唯一映射点。
 // @tauri-apps/* 只允许出现在 src/platform/ 内(scripts/check-arch.mjs 强制)。
 import { convertFileSrc, invoke } from '@tauri-apps/api/core'
-import { openUrl } from '@tauri-apps/plugin-opener'
+import { openPath, openUrl } from '@tauri-apps/plugin-opener'
 import type {
   Annotation,
   BookInfo,
@@ -54,6 +54,7 @@ export const tauriBridge: ReaderBridge = {
     invoke<ReadingProgress | null>('get_progress', { bookId }),
   resolveFileUrl: (path) => convertFileSrc(path),
   openExternal: (url) => openUrl(url),
+  openPathExternal: (path) => openPath(path),
   // ── OPDS v0.6 ──
   opdsAddSource: (name, url) =>
     invoke<OpdsSource>('opds_add_source', { name, url }),
