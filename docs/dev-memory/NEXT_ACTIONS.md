@@ -1,5 +1,36 @@
 # 下一步任务队列
 
+## 📌 交接留言（2026-06-21，定位升级为轻小说平台）
+
+当前分支：
+
+- `codex/platform-positioning`，从已合并 PR #25 后的最新 `main` 创建。
+
+本轮产品定位：
+
+- `lightnovel-reader` 不再只按“轻小说阅读器”定义，而是**本地优先轻小说平台**。
+- 阅读器是核心模块；平台还包括发现、索引、收藏、整理、合法获取入口、来源记录、阅读方式选择和未来插件生态。
+- 合法开放资源（公共版权、开放授权、用户自有资源、经 ToS/授权确认可获取的官方免费资源）可以进入站内获取/缓存/阅读流程。
+- 商业、受保护或未知授权正文仍只保存 metadata 与官方入口，不自动抓取、不缓存、不镜像。
+
+已验证：
+
+- `node scripts/check-arch.mjs` 通过。
+- `node scripts/check-dev-memory.mjs` 通过。
+- `git diff --check` 通过；仅有 Windows 换行提示。
+- `npm.cmd run build` 通过。
+- `cargo test --workspace` 通过（reading-core 84 passed）。
+
+下一步优先级：
+
+1. 做“阅读方式选择”第一版动作模型与 UI：
+   - 本地/cached asset：内置阅读器打开、外部本地阅读器打开。
+   - 远程 metadata-only：浏览器打开官方入口。
+   - public_domain/open_license：获取/缓存后用内置阅读器打开。
+   - official_free：默认浏览器打开；只有来源 ToS/API 明确允许时才进入 acquire。
+2. 若新增外部阅读器打开能力，必须经 `src/platform/` 暴露平台命令；不要让前端业务代码直接 import Tauri。
+3. 后续补协议/DTO 时考虑动作枚举：`openInBrowser`、`openInBuiltinReader`、`openInExternalReader`、`acquireThenOpen`。
+
 ## 📌 交接留言（2026-06-21，library.* 结构化错误码进行中）
 
 先同步 GitHub：

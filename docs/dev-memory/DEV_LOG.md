@@ -1,5 +1,35 @@
 # 开发日志
 
+## 2026-06-21：定位升级为轻小说平台
+
+变更：
+
+- 合并 PR #25 到 `main`，使 `library.*` 结构化错误码与上一版 README 进入主线。
+- 新建 `codex/platform-positioning`，全面更新产品定位：
+  - `README.md`：从“轻小说阅读器”改为“本地优先轻小说平台”，补充平台能力、合规边界、阅读方式选择。
+  - `PROJECT_MEMORY.md`：长期定位改为平台；阅读器是核心模块但不是完整边界。
+  - `DEVELOPMENT_OUTLINE.md`：当前阶段改为平台化早期实现；新增 v0.6.5“阅读方式选择与合法开放资源获取体验”。
+  - `DECISIONS.md`：新增两条决策：产品定位升级为轻小说平台；合法开放资源可站内获取但阅读方式必须由用户选择。
+  - `resource-library-plan/0/1/3/4`：总览、产品定位、在线资源接入、合规边界同步平台化与阅读方式模型。
+  - `docs/README.md` 与 `AGENTS.md`：入口文档同步平台定位和当前优先级。
+  - `NEXT_ACTIONS.md`：新增“给下一轮 Codex”的交接，下一步优先做阅读方式选择动作模型与 UI。
+- 明确产品规则：公共版权、开放授权、用户自有资源，以及经 ToS/授权确认可获取的官方免费资源，可以站内获取/
+  缓存/阅读；商业、受保护或未知授权正文只保存 metadata 与官方入口。
+- 明确阅读方式：浏览器打开、内置阅读器打开、外部本地阅读器打开、获取/缓存后打开。
+
+验证：
+
+- `node scripts/check-arch.mjs` 通过。
+- `node scripts/check-dev-memory.mjs` 通过。
+- `git diff --check` 通过；仅有 Windows 换行提示。
+- `npm.cmd run build` 通过。
+- `cargo test --workspace` 通过（reading-core 84 passed）。
+
+下一步：
+
+- 提交并推送 `codex/platform-positioning`，开 PR。
+- 代码层下一步做阅读方式选择动作模型与 UI。
+
 ## 2026-06-21：library.* 结构化错误码与 README 更新
 
 变更：
