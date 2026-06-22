@@ -1,5 +1,42 @@
 # 下一步任务队列
 
+## 📌 交接留言（2026-06-22，协议冻结自动守门进行中）
+
+先同步 GitHub：
+
+```powershell
+cd E:\workspace\game-cooperative-plan\lightnovel-reader
+git fetch --all --prune
+git checkout main
+git pull --ff-only
+git status -sb
+```
+
+当前事实：
+
+- `main` 已包含协议 `1.0-rc.1` 冻结候选与结构化 `BridgeError` 收口。
+- 本轮分支 `codex/protocol-freeze-guard` 新增 `scripts/check-protocol-freeze.mjs`，用于守住协议冻结的三边一致性：TS 协议类型、Rust 壳侧错误码、协议文档。
+- `package.json` 已新增 `check:protocol`，并把协议冻结检查接入 `check:project` 与 `npm.cmd run build`。
+- 冻结纪律不变：后续默认只允许新增消息/新增可选字段，不随意改名、删字段或改语义；若新增错误码，必须同步 TS 类型、Rust 构造器/壳侧实现与文档 8。
+- 版权边界不变：Bangumi / なろう 只做 metadata + 外链；`library.acquireRemote` 只允许青空公共版权条目；OPDS 下载只允许 `open_license`。
+
+已验证：
+
+- `node scripts/check-protocol-freeze.mjs` 通过。
+- `node scripts/check-arch.mjs` 通过。
+- `node scripts/check-dev-memory.mjs` 通过。
+- `npm.cmd run check:project` 通过。
+- `npm.cmd run build` 通过。
+- `cargo test --workspace` 通过（reading-core 84 passed）。
+- `git diff --check` 通过；仅有 Windows 换行提示。
+
+下一步优先级：
+
+1. 提交并推送 `codex/protocol-freeze-guard`，开 PR 后合入主线。
+2. 合并后继续协议冻结候选 review。
+3. 分发线继续目标机器便携包下载/解压/启动抽检；安装版继续 NSIS 安装/卸载并确认不删除 `%APPDATA%` 用户书库数据。
+4. 功能线下一段建议进入 v0.7 插件运行时 / ToS 门控设计，不要把正文/章节类来源塞回内核连接器。
+
 ## 📌 交接留言（2026-06-22，协议 1.0-rc.1 冻结候选进行中）
 
 先同步 GitHub：
