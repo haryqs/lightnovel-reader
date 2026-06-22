@@ -1,5 +1,32 @@
 # 开发日志
 
+## 2026-06-22：补协议冻结自动守门脚本
+
+变更：
+
+- 新增 `scripts/check-protocol-freeze.mjs`，自动核对 `src/platform/protocol.ts`、`src-tauri/src/lib.rs` 与 `docs/resource-library-plan/8_桥接协议_v0.1.md` 的协议冻结关键事实。
+- 检查内容包括：
+  - `PROTOCOL_VERSION` 是否被协议文档同步记录。
+  - TS `BridgeErrorCode` 的全部错误码是否进入协议文档。
+  - Rust `BridgeError` 构造器使用的错误码是否全部存在于 TS `BridgeErrorCode`。
+  - 协议文档是否保留“新增消息/新增可选字段、不允许改名/删字段/改语义”的冻结规则。
+- `package.json` 新增 `check:protocol`，并把它接入 `check:project` 与 `npm.cmd run build` 的前置检查。
+- `docs/resource-library-plan/8_桥接协议_v0.1.md`、`PROJECT_MEMORY.md`、`NEXT_ACTIONS.md` 同步记录这条冻结守门纪律。
+
+已验证：
+
+- `node scripts/check-protocol-freeze.mjs` 通过。
+- `node scripts/check-arch.mjs` 通过。
+- `node scripts/check-dev-memory.mjs` 通过。
+- `npm.cmd run check:project` 通过。
+- `npm.cmd run build` 通过。
+- `cargo test --workspace` 通过（reading-core 84 passed）。
+- `git diff --check` 通过；仅有 Windows 换行提示。
+
+下一步：
+
+- 若验证通过，提交并推送 `codex/protocol-freeze-guard`，开 PR 后再合入主线。
+
 ## 2026-06-22：桥接协议推进到 1.0-rc.1 冻结候选
 
 变更：
