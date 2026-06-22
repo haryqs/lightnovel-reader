@@ -2,6 +2,29 @@
 
 > 记录影响未来开发方向的取舍。格式：日期 / 决策 / 理由 / 后果。
 
+## 2026-06-22：协议冻结前不新增章节预取消息，资源通道边界通过审计
+
+决策：冻结前不新增 `chapter.prefetch` / `chapter.getBatch`。继续把 `chapter.get(href)` 作为唯一章节 HTML 获取消息，
+允许 reader-engine 用它做有界后台预取；资源通道边界维持现状，消息面只保留 `book.open(data)` 与
+`library.importBytes(data)` 两个移动/沙盒兜底大字节例外。
+
+理由：
+
+- `ReaderCore.preloadAroundChapter` 已在当前章加载后后台预取前一章、后一章、后两章，并通过
+  `chapterInflight` 去重、`maxCachedChapters=10` 控制内存。
+- Tauri/core 侧已有当前书内存章节缓存与持久化 parse cache；二次读取同章不重解析。
+- 当前 P0/P1 冒烟与 release 启动候选未暴露跨章 IPC 往返为主瓶颈；新增批量消息会扩大冻结前协议面。
+- 资源通道审计确认：桌面批量导入和书库开书传路径或 id，OPDS/青空下载在壳侧完成，正文图片走
+  `reader-img` URL scheme，封面/缩略图走 `resource.url` 或来源 http(s) URL。
+
+后果：
+
+- 协议冻结清单第 2 项（批量/预取语义）和第 4 项（资源通道核对）标记完成。
+- 冻结后若真机数据证明跨章翻页延迟仍不可接受，只能新增可选 `chapter.prefetch(hrefs)` 消息，
+  不能改变既有 `chapter.get` 语义。
+- 后续新增能力不得把整本书、图片或二进制 blob 直接塞入 JSON 消息；必须使用路径、id、URL scheme、
+  HTTP 流或另行设计的流式资源通道。
+
 ## 2026-06-21：产品定位升级为轻小说平台
 
 决策：`lightnovel-reader` 的产品定位从“轻小说/电子书阅读器”升级为**本地优先轻小说平台**。阅读器是核心模块，但平台边界包括发现、索引、收藏、整理、合法获取入口、来源记录、阅读方式选择和未来插件生态。

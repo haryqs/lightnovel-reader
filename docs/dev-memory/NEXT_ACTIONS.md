@@ -1,5 +1,34 @@
 # 下一步任务队列
 
+## 📌 交接留言（2026-06-22，协议冻结审计：预取/资源通道已收口）
+
+当前分支：
+
+- `codex/protocol-freeze-audit`，从最新 `main`（PR #32 已合并、便携包候选已重验后）创建。
+
+本轮已完成：
+
+- 审计批量/预取语义：
+  - 冻结前不新增 `chapter.prefetch` / `chapter.getBatch`。
+  - `chapter.get(href)` 保持唯一章节 HTML 获取消息，允许 reader-engine 用它做前台加载与后台预取。
+  - 当前 `ReaderCore.preloadAroundChapter` 已有有界预取：前一章、后一章、后两章；前端有
+    `chapterInflight` 去重与 `maxCachedChapters=10`。
+  - core/Tauri 侧有当前书章节内存缓存与持久化 parse cache。
+- 审计资源通道边界：
+  - 仅保留 `book.open(data)` 与 `library.importBytes(data)` 两个移动/沙盒兜底大字节例外。
+  - 桌面导入/开书/OPDS/青空获取不在 JSON 消息里搬运整本书；使用路径、id、HTTP 壳侧下载与对象仓库引用。
+  - 书内图片走 `reader-img` URL scheme；本地封面/缩略图走 `resource.url`；远程封面保持来源 http(s) URL。
+- `docs/resource-library-plan/8_桥接协议_v0.1.md` 已新增两个审计小节，并把冻结前检查清单第 2 / 第 4
+  项标记完成。
+- `docs/dev-memory/DECISIONS.md` 已新增对应决策。
+
+下一步优先级：
+
+1. 提交并推送 `codex/protocol-freeze-audit`，开 PR。
+2. 后续继续协议冻结：结构化错误码范围最终核对、确认是否将 `PROTOCOL_VERSION` 从 `0.1` 进入冻结候选。
+3. 若准备发便携测试包：仍可使用当前 `dist-beta/lightnovel-reader-v0.1.0-release-windows-x64.zip` 候选，
+   在目标机器做下载/解压/启动抽检。
+
 ## 📌 交接留言（2026-06-22，PR #32 已合并 + 便携包候选已重验）
 
 先同步 GitHub：
