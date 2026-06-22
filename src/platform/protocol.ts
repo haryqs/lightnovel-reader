@@ -205,6 +205,48 @@ export interface TextAnchor {
   suffix: string      // 后 20 字符
 }
 
+// ── v0.7 插件安装 DTO（只读包信息与安装元数据，不执行插件代码）──
+
+export type PluginPermission = 'http' | 'kv'
+export type PluginCapability = 'browse' | 'resolveUrl' | 'fetchMetadata' | 'acquire'
+export type PluginLegalKind = 'public-domain' | 'open-license' | 'official-free' | 'user-declared'
+
+export interface PluginLegal {
+  kind: PluginLegalKind
+  note?: string
+}
+
+export interface PluginManifest {
+  apiVersion: string
+  id: string
+  name: string
+  version: string
+  description?: string
+  author?: string
+  language?: string
+  entry: string
+  domains: string[]
+  permissions: PluginPermission[]
+  capabilities: PluginCapability[]
+  legal: PluginLegal
+}
+
+export interface PluginValidation {
+  officialRepositoryEligible: boolean
+  requiresUserLegalConfirmation: boolean
+  warnings: string[]
+}
+
+export interface PluginInstallPreview {
+  manifest: PluginManifest
+  validation: PluginValidation
+  entrySize: number
+}
+
+export interface InstalledPlugin extends PluginInstallPreview {
+  installedAt: number
+}
+
 // ---- 桥接接口:每个方法对应协议里的一条消息 ----
 
 export interface ReaderBridge {
@@ -256,6 +298,14 @@ export interface ReaderBridge {
   openExternal(url: string): Promise<void>
   /** shell.openPathExternal - open a local readable asset with the system default app */
   openPathExternal(path: string): Promise<void>
+  /** plugin.selectPackagePath — 选择源插件 zip 安装包，返回本地路径或 null */
+  selectPluginPackagePath(): Promise<string | null>
+  /** plugin.inspectPackage — 读取 zip manifest/入口并返回安装前确认信息，不执行插件代码 */
+  inspectPluginPackage(path: string): Promise<PluginInstallPreview>
+  /** plugin.installPackage — 用户确认后写入本地插件目录，不执行插件代码 */
+  installPluginPackage(path: string, confirmUserLegal: boolean): Promise<InstalledPlugin>
+  /** plugin.listInstalled — 列出已安装源插件元数据 */
+  listInstalledPlugins(): Promise<InstalledPlugin[]>
   // ── OPDS v0.6 ──
   /** opds.addSource — 添加一个 OPDS 书源 */
   opdsAddSource(name: string, url: string): Promise<OpdsSource>

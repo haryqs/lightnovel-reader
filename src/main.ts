@@ -1,5 +1,5 @@
 import { ReaderCore, type PageMode, type ReaderLayoutSettings, type TocItem } from './reader-core'
-import { bridge, hasNativeBridge, isBridgeError, type LibraryBook, type LibrarySourceRecord, type OpdsEntry, type OpdsFeed, type OpdsSource, type RemoteLibrarySource } from './platform'
+import { bridge, hasNativeBridge, isBridgeError, type InstalledPlugin, type LibraryBook, type LibrarySourceRecord, type OpdsEntry, type OpdsFeed, type OpdsSource, type PluginInstallPreview, type RemoteLibrarySource } from './platform'
 import type { ThemeName } from './themes'
 
 const reader = new ReaderCore()
@@ -571,9 +571,17 @@ const opdsFeedTitle = $('#opds-feed-title')
 const opdsFeedGrid = $('#opds-feed-grid')
 const opdsFeedBackBtn = $('#btn-opds-feed-back')
 const opdsFeedIngestAllBtn = $<HTMLButtonElement>('#btn-opds-feed-ingest-all')
+// v0.7 plugin install preview
+const libraryPluginPanel = $<HTMLDetailsElement>('#library-plugin-panel')
+const pluginSelectPackageBtn = $<HTMLButtonElement>('#btn-plugin-select-package')
+const pluginRefreshBtn = $<HTMLButtonElement>('#btn-plugin-refresh')
+const pluginInstallPreview = $('#plugin-install-preview')
+const pluginInstalledList = $('#plugin-installed-list')
 // OPDS session state: track current browsing context
 let opdsFeedCache: OpdsFeed | null = null
 let opdsSourceCache: OpdsSource | null = null
+let pendingPluginPackagePath = ''
+let pendingPluginPreview: PluginInstallPreview | null = null
 let dismissedOpdsUrlHint = ''
 let libraryBooks: LibraryBook[] = []
 let librarySearchTimer: number | null = null
@@ -640,6 +648,11 @@ librarySearchInput.addEventListener('input', () => {
 })
 libraryOpdsUseUrlBtn.addEventListener('click', () => useDetectedOpdsUrl())
 libraryOpdsDismissUrlBtn.addEventListener('click', () => dismissDetectedOpdsUrl())
+libraryPluginPanel.addEventListener('toggle', () => {
+  if (libraryPluginPanel.open) void refreshInstalledPlugins()
+})
+pluginSelectPackageBtn.addEventListener('click', () => void selectPluginPackage())
+pluginRefreshBtn.addEventListener('click', () => void refreshInstalledPlugins())
 
 function detectOpdsFeedUrl(value: string): string | null {
   const raw = value.trim()
@@ -706,6 +719,237 @@ function useDetectedOpdsUrl() {
 function dismissDetectedOpdsUrl() {
   dismissedOpdsUrlHint = detectOpdsFeedUrl(librarySearchInput.value) || ''
   libraryOpdsUrlHint.hidden = true
+}
+
+async function selectPluginPackage() {
+  if (!isTauriRuntime()) {
+    showPluginPanelMessage('源插件安装需要 Tauri 桌面窗口。', true)
+    return
+  }
+  pluginSelectPackageBtn.disabled = true
+  pluginSelectPackageBtn.textContent = '选择中…'
+  try {
+    const path = await bridge.selectPluginPackagePath()
+    if (!path) return
+    pendingPluginPackagePath = path
+    pendingPluginPreview = await bridge.inspectPluginPackage(path)
+    renderPluginInstallPreview(pendingPluginPreview, path)
+  } catch (e: any) {
+    showPluginPanelMessage(`读取插件安装包失败：${formatError(e)}`, true)
+  } finally {
+    pluginSelectPackageBtn.disabled = false
+    pluginSelectPackageBtn.textContent = '选择插件 zip'
+  }
+}
+
+function renderPluginInstallPreview(preview: PluginInstallPreview, path: string) {
+  pluginInstallPreview.hidden = false
+  pluginInstallPreview.innerHTML = ''
+
+  const header = document.createElement('div')
+  header.className = 'plugin-preview-header'
+  const title = document.createElement('div')
+  title.className = 'plugin-preview-title'
+  title.textContent = `${preview.manifest.name} ${preview.manifest.version}`
+  const id = document.createElement('div')
+  id.className = 'plugin-preview-id'
+  id.textContent = `${preview.manifest.id} · API ${preview.manifest.apiVersion} · ${formatBytes(preview.entrySize)}`
+  header.append(title, id)
+
+  const pathEl = document.createElement('div')
+  pathEl.className = 'plugin-preview-path'
+  pathEl.textContent = path
+
+  const desc = document.createElement('div')
+  desc.className = 'plugin-preview-desc'
+  desc.textContent = preview.manifest.description || '该插件未提供简介。'
+
+  const facts = document.createElement('div')
+  facts.className = 'plugin-preview-facts'
+  facts.append(
+    pluginFact('授权', pluginLegalLabel(preview.manifest.legal.kind)),
+    pluginFact('权限', preview.manifest.permissions.join(', ') || '无'),
+    pluginFact('能力', preview.manifest.capabilities.map(pluginCapabilityLabel).join(', ') || '基础搜索'),
+    pluginFact('域名', preview.manifest.domains.join(', ')),
+  )
+
+  const warnings = document.createElement('div')
+  warnings.className = preview.validation.warnings.length > 0
+    ? 'plugin-preview-warnings'
+    : 'plugin-preview-warnings plugin-preview-warnings-ok'
+  warnings.textContent = preview.validation.warnings.length > 0
+    ? preview.validation.warnings.join(' · ')
+    : '未发现额外合规警告。安装后仍不会执行插件代码。'
+
+  const confirmation = document.createElement('label')
+  confirmation.className = 'plugin-confirm'
+  const checkbox = document.createElement('input')
+  checkbox.type = 'checkbox'
+  checkbox.checked = !preview.validation.requiresUserLegalConfirmation
+  checkbox.disabled = !preview.validation.requiresUserLegalConfirmation
+  const confirmText = document.createElement('span')
+  confirmText.textContent = preview.validation.requiresUserLegalConfirmation
+    ? '我确认该 user-declared 插件来源与合法性由我自行负责'
+    : '官方可收录类型：无需额外 user-declared 确认'
+  confirmation.append(checkbox, confirmText)
+
+  const actions = document.createElement('div')
+  actions.className = 'plugin-preview-actions'
+  const install = document.createElement('button')
+  install.className = 'btn btn-primary'
+  install.textContent = '确认安装'
+  install.addEventListener('click', () => {
+    void installPendingPlugin(checkbox.checked)
+  })
+  const clear = document.createElement('button')
+  clear.className = 'btn'
+  clear.textContent = '取消'
+  clear.addEventListener('click', clearPluginPreview)
+  actions.append(install, clear)
+
+  pluginInstallPreview.append(header, pathEl, desc, facts, warnings, confirmation, actions)
+}
+
+function pluginFact(label: string, value: string): HTMLElement {
+  const item = document.createElement('div')
+  item.className = 'plugin-preview-fact'
+  const key = document.createElement('span')
+  key.textContent = label
+  const val = document.createElement('strong')
+  val.textContent = value
+  item.append(key, val)
+  return item
+}
+
+async function installPendingPlugin(confirmUserLegal: boolean) {
+  if (!pendingPluginPackagePath || !pendingPluginPreview) return
+  const installBtn = pluginInstallPreview.querySelector<HTMLButtonElement>('.plugin-preview-actions .btn-primary')
+  if (installBtn) {
+    installBtn.disabled = true
+    installBtn.textContent = '安装中…'
+  }
+  try {
+    const installed = await bridge.installPluginPackage(pendingPluginPackagePath, confirmUserLegal)
+    clearPluginPreview()
+    prependPluginSummary(`已安装源插件：${installed.manifest.name} ${installed.manifest.version}`)
+    await refreshInstalledPlugins()
+  } catch (e: any) {
+    showPluginPanelMessage(`安装插件失败：${formatError(e)}`, true)
+  } finally {
+    if (installBtn) {
+      installBtn.disabled = false
+      installBtn.textContent = '确认安装'
+    }
+  }
+}
+
+function clearPluginPreview() {
+  pendingPluginPackagePath = ''
+  pendingPluginPreview = null
+  pluginInstallPreview.hidden = true
+  pluginInstallPreview.innerHTML = ''
+}
+
+async function refreshInstalledPlugins() {
+  if (!isTauriRuntime()) {
+    pluginInstalledList.innerHTML = '<div class="plugin-empty">源插件需要 Tauri 桌面窗口。</div>'
+    return
+  }
+  pluginInstalledList.innerHTML = '<div class="plugin-empty">读取已安装插件…</div>'
+  try {
+    const plugins = await bridge.listInstalledPlugins()
+    renderInstalledPlugins(plugins)
+  } catch (e: any) {
+    pluginInstalledList.innerHTML = ''
+    showPluginPanelMessage(`读取已安装插件失败：${formatError(e)}`, true)
+  }
+}
+
+function renderInstalledPlugins(plugins: InstalledPlugin[]) {
+  pluginInstalledList.innerHTML = ''
+  if (plugins.length === 0) {
+    pluginInstalledList.innerHTML = '<div class="plugin-empty">暂无已安装源插件。</div>'
+    return
+  }
+  for (const plugin of plugins) {
+    const row = document.createElement('div')
+    row.className = 'plugin-installed-row'
+    const main = document.createElement('div')
+    main.className = 'plugin-installed-main'
+    const name = document.createElement('div')
+    name.className = 'plugin-installed-name'
+    name.textContent = `${plugin.manifest.name} ${plugin.manifest.version}`
+    const meta = document.createElement('div')
+    meta.className = 'plugin-installed-meta'
+    meta.textContent = [
+      plugin.manifest.id,
+      pluginLegalLabel(plugin.manifest.legal.kind),
+      plugin.manifest.capabilities.map(pluginCapabilityLabel).join(', ') || '基础搜索',
+      `安装于 ${new Date(plugin.installedAt).toLocaleString('zh-CN')}`,
+    ].join(' · ')
+    main.append(name, meta)
+
+    const badge = document.createElement('span')
+    badge.className = plugin.validation.requiresUserLegalConfirmation
+      ? 'plugin-badge plugin-badge-user'
+      : 'plugin-badge'
+    badge.textContent = plugin.validation.requiresUserLegalConfirmation ? '用户自装' : '可白名单'
+    row.append(main, badge)
+    pluginInstalledList.appendChild(row)
+  }
+}
+
+function showPluginPanelMessage(message: string, error = false) {
+  pluginInstallPreview.hidden = false
+  pluginInstallPreview.innerHTML = ''
+  const item = document.createElement('div')
+  item.className = error ? 'plugin-message plugin-message-error' : 'plugin-message'
+  item.textContent = message
+  pluginInstallPreview.appendChild(item)
+}
+
+function prependPluginSummary(message: string) {
+  const msg = document.createElement('div')
+  msg.className = 'library-import-summary'
+  msg.textContent = message
+  libraryGrid.prepend(msg)
+}
+
+function pluginLegalLabel(kind: string): string {
+  switch (kind) {
+    case 'public-domain':
+      return '公共版权'
+    case 'open-license':
+      return '开放授权'
+    case 'official-free':
+      return '官方免费'
+    case 'user-declared':
+      return '用户声明'
+    default:
+      return kind || '未知'
+  }
+}
+
+function pluginCapabilityLabel(capability: string): string {
+  switch (capability) {
+    case 'browse':
+      return '浏览目录'
+    case 'resolveUrl':
+      return '识别链接'
+    case 'fetchMetadata':
+      return '补全元数据'
+    case 'acquire':
+      return '请求获取'
+    default:
+      return capability
+  }
+}
+
+function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes < 0) return '0 B'
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 102.4) / 10} KB`
+  return `${Math.round(bytes / (1024 * 102.4)) / 10} MB`
 }
 
 const librarySearchRemoteBtn = $<HTMLButtonElement>('#btn-library-search-remote')

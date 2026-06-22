@@ -1,5 +1,30 @@
 # 开发日志
 
+## 2026-06-22：v0.7 插件安装 UI 与本地存储骨架
+
+变更：
+
+- 新增 `reading-core::plugin_store`，提供插件包预览、安装写入与已安装插件列表读取。
+- 插件安装写入 app data `plugins/sources/<plugin-id>/`，保存 `manifest.json`、入口 JS 与 `install.json`；当前仍不执行插件代码。
+- `user-declared` 插件必须传入用户显式确认，否则 core 拒绝安装。
+- 新增 `plugin.selectPackagePath` / `plugin.inspectPackage` / `plugin.installPackage` / `plugin.listInstalled` 协议能力，桌面壳用 Tauri dialog 原生文件选择器取得 zip 路径，消息面不传 zip 字节。
+- 书库新增“源插件（v0.7 预览）”面板，展示插件名称、版本、域名、权限、能力、授权状态、warning 与已安装列表。
+- 同步 README、插件契约文档、桥接协议文档与项目记忆。
+
+已验证：
+
+- `node scripts/check-arch.mjs` 通过。
+- `node scripts/check-dev-memory.mjs` 通过。
+- `node scripts/check-protocol-freeze.mjs` 通过。
+- `npm.cmd run build` 通过。
+- `cargo test --workspace` 通过（reading-core 102 passed）。
+- `npm.cmd run tauri -- build --debug --no-bundle` 通过。
+- `git diff --check` 通过（仅 Windows 换行提示）。
+
+下一步：
+
+- 后续 v0.7 可继续做 host API 纯 Rust 输入输出结构与插件启用/禁用状态；仍不执行第三方 JS、不接正文抓取源。
+
 ## 2026-06-22：v0.7 插件 zip 安装包读取骨架落入 reading-core
 
 变更：

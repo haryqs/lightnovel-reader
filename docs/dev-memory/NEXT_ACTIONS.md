@@ -1,5 +1,41 @@
 # 下一步任务队列
 
+## 📌 交接留言（2026-06-22，v0.7 插件安装 UI/权限确认完成）
+
+先同步 GitHub：
+
+```powershell
+cd E:\workspace\game-cooperative-plan\lightnovel-reader
+git fetch --all --prune
+git checkout main
+git pull --ff-only
+git status -sb
+```
+
+当前事实：
+
+- 已新增 `reading-core::plugin_store`：预览插件 zip、安装写入 app data 插件目录、列出已安装插件。
+- 已新增协议能力：`plugin.selectPackagePath`、`plugin.inspectPackage`、`plugin.installPackage`、`plugin.listInstalled`。
+- 桌面壳引入官方 Tauri dialog 插件，用原生文件选择器取得 zip 路径；协议消息不传插件 zip 字节。
+- 书库已有“源插件（v0.7 预览）”面板：展示 manifest、域名、权限、能力、授权类型、warnings；`user-declared` 必须勾选确认后才能安装。
+- 当前仍不引入 QuickJS、不执行插件 JS、不把正文/章节抓取源塞回内核连接器。
+
+已验证：
+
+- `node scripts/check-arch.mjs` 通过。
+- `node scripts/check-dev-memory.mjs` 通过。
+- `node scripts/check-protocol-freeze.mjs` 通过。
+- `npm.cmd run build` 通过。
+- `cargo test --workspace` 通过（reading-core 102 passed）。
+- `npm.cmd run tauri -- build --debug --no-bundle` 通过。
+- `git diff --check` 通过（仅 Windows 换行提示）。
+
+下一步优先级：
+
+1. 后续 v0.7 下一块建议做 host API 纯 Rust 输入输出结构，或插件启用/禁用状态；仍不要执行第三方 JS。
+2. 后续若做插件运行时，先实现 host API 权限门控与域名白名单测试，再接 QuickJS。
+3. 继续保持边界：官方内核连接器不接正文/章节抓取源，插件也必须经过安装确认与合规门控。
+
 ## 📌 交接留言（2026-06-22，v0.7 插件 zip 安装包读取骨架完成）
 
 先同步 GitHub：

@@ -56,7 +56,8 @@ pub enum PluginLegalKind {
     UserDeclared,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ManifestValidation {
     pub official_repository_eligible: bool,
     pub requires_user_legal_confirmation: bool,

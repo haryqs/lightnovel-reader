@@ -7,7 +7,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use reading_core::connectors;
 use reading_core::epub_parser::{self, BookInfo};
-use reading_core::{compute_book_id, library, parse_cache, rusqlite, storage};
+use reading_core::{compute_book_id, library, parse_cache, plugin_store, rusqlite, storage};
 use tauri::Manager;
 
 struct LoadedBook {
@@ -42,6 +42,7 @@ struct AppState {
     library_db: Mutex<rusqlite::Connection>,
     library_dir: std::path::PathBuf,
     cache_dir: std::path::PathBuf, // 持久化解析缓存根目录
+    plugin_dir: std::path::PathBuf,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -373,6 +374,58 @@ fn library_import_bytes(
         now_ms(),
     )
     .map_err(BridgeError::storage)
+}
+
+// —— 插件安装预览（v0.7 地基）：只读取/校验/写入插件目录，不执行插件 JS。——
+
+fn plugin_package_error(message: String) -> BridgeError {
+    if message.contains("legal confirmation") {
+        BridgeError::forbidden(message)
+    } else if message.contains("read ")
+        || message.contains("write ")
+        || message.contains("create ")
+        || message.contains("directory")
+    {
+        BridgeError::storage(message)
+    } else {
+        BridgeError::parse(message)
+    }
+}
+
+#[tauri::command]
+fn plugin_inspect_package(path: String) -> Result<plugin_store::PluginInstallPreview, BridgeError> {
+    if path.trim().is_empty() {
+        return Err(BridgeError::invalid_argument(
+            "plugin package path is required",
+        ));
+    }
+    let bytes = std::fs::read(Path::new(&path))
+        .map_err(|e| BridgeError::storage(format!("读取插件安装包失败: {e}")))?;
+    plugin_store::inspect_plugin_package(&bytes).map_err(plugin_package_error)
+}
+
+#[tauri::command]
+fn plugin_install_package(
+    state: tauri::State<AppState>,
+    path: String,
+    confirm_user_legal: bool,
+) -> Result<plugin_store::InstalledPlugin, BridgeError> {
+    if path.trim().is_empty() {
+        return Err(BridgeError::invalid_argument(
+            "plugin package path is required",
+        ));
+    }
+    let bytes = std::fs::read(Path::new(&path))
+        .map_err(|e| BridgeError::storage(format!("读取插件安装包失败: {e}")))?;
+    plugin_store::install_plugin_package(&state.plugin_dir, &bytes, confirm_user_legal, now_ms())
+        .map_err(plugin_package_error)
+}
+
+#[tauri::command]
+fn plugin_list_installed(
+    state: tauri::State<AppState>,
+) -> Result<Vec<plugin_store::InstalledPlugin>, BridgeError> {
+    plugin_store::list_installed_plugins(&state.plugin_dir).map_err(plugin_package_error)
 }
 
 #[tauri::command]
@@ -1291,6 +1344,7 @@ async fn opds_download_epub(
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         // 图片协议：正文里的 <img src="reader-img://localhost/<路径>"> 由此按需从书内读取，
         // 既能显示封面/插图，又不把图片 base64 内联进 HTML。
         .register_uri_scheme_protocol("reader-img", |ctx, request| {
@@ -1330,12 +1384,15 @@ pub fn run() {
                 .expect("书库 SQLite 初始化失败");
             let cache_dir = dir.join("cache");
             std::fs::create_dir_all(&cache_dir).ok();
+            let plugin_dir = dir.join("plugins").join("sources");
+            std::fs::create_dir_all(&plugin_dir).ok();
             app.manage(AppState {
                 book: Mutex::new(None),
                 db: Mutex::new(conn),
                 library_db: Mutex::new(library_conn),
                 library_dir,
                 cache_dir,
+                plugin_dir,
             });
             Ok(())
         })
@@ -1345,6 +1402,9 @@ pub fn run() {
             list_calibre_books,
             library_import,
             library_import_bytes,
+            plugin_inspect_package,
+            plugin_install_package,
+            plugin_list_installed,
             library_list,
             library_search,
             library_source_records,
