@@ -13,7 +13,7 @@
 - **站内合法阅读**：公共版权或开放授权资源可以在明确授权与来源校验后获取正文，转为本地 cached asset 后用内置阅读器打开。
 - **阅读方式选择**：每个可读条目最终应允许用户选择用内置阅读器、系统浏览器或本机其它阅读器打开。
 - **远程条目整理**：远程 metadata 条目可人工关联到本地资产，保留阅读进度和标注锚点。
-- **插件生态地基**：`plugin-sdk` 已有 manifest/schema/host API 契约；`reading-core` 已开始提供 manifest 校验、权限/能力声明和域名白名单策略骨架。
+- **插件生态地基**：`plugin-sdk` 已有 manifest/schema/host API 契约；`reading-core` 已提供 manifest 校验、权限/能力声明、域名白名单、zip 安装包读取与本地安装存储骨架；书库已有插件安装前权限确认面板。
 - **分发脚本**：便携测试包、Web 下载器安装器、Tauri NSIS 安装包配置。
 
 ## 合规边界
@@ -105,4 +105,4 @@ npm.cmd run tauri build
 
 ## 当前开发线
 
-当前主线已推进到协议 `1.0-rc.1` 冻结候选：Tauri command 与 shell promise 错误已统一为结构化 `BridgeError { code, message, details? }`，并由 `scripts/check-protocol-freeze.mjs` 守住协议版本/错误码/文档一致性。功能线下一步进入 v0.7 插件运行时地基：先完成 manifest、权限、域名白名单和 ToS 门控，再考虑 QuickJS host API；分发线仍需继续便携包目标机器抽检和 NSIS 卸载保留数据验证。
+当前主线已推进到协议 `1.0-rc.1` 冻结候选：Tauri command 与 shell promise 错误已统一为结构化 `BridgeError { code, message, details? }`，并由 `scripts/check-protocol-freeze.mjs` 守住协议版本/错误码/文档一致性。功能线正在推进 v0.7 插件运行时地基：manifest/权限/域名白名单、zip 安装包预览、用户确认和本地写入已起步；下一步再进入 host API 与 JS 引擎。分发线仍需继续便携包目标机器抽检和 NSIS 卸载保留数据验证。

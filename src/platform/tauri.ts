@@ -1,6 +1,7 @@
 // Tauri 桌面壳的 ReaderBridge 实现:协议方法 → Tauri command 的唯一映射点。
 // @tauri-apps/* 只允许出现在 src/platform/ 内(scripts/check-arch.mjs 强制)。
 import { convertFileSrc, invoke } from '@tauri-apps/api/core'
+import { open } from '@tauri-apps/plugin-dialog'
 import { openPath, openUrl } from '@tauri-apps/plugin-opener'
 import type {
   Annotation,
@@ -8,11 +9,13 @@ import type {
   BookInfo,
   CalibreBook,
   ImportOutcome,
+  InstalledPlugin,
   LibraryBook,
   LibrarySourceRecord,
   OpdsFeed,
   OpdsSource,
   OpenedBook,
+  PluginInstallPreview,
   ReaderBridge,
   ReadingProgress,
   RemoteLibrarySource,
@@ -86,6 +89,19 @@ export const tauriBridge: ReaderBridge = {
   resolveFileUrl: (path) => convertFileSrc(path),
   openExternal: (url) => openUrlExternal(url),
   openPathExternal: (path) => openLocalPathExternal(path),
+  selectPluginPackagePath: async () => {
+    const selected = await open({
+      multiple: false,
+      filters: [{ name: 'LightNovel Reader source plugin', extensions: ['zip'] }],
+    })
+    return typeof selected === 'string' ? selected : null
+  },
+  inspectPluginPackage: (path) =>
+    invoke<PluginInstallPreview>('plugin_inspect_package', { path }),
+  installPluginPackage: (path, confirmUserLegal) =>
+    invoke<InstalledPlugin>('plugin_install_package', { path, confirmUserLegal }),
+  listInstalledPlugins: () =>
+    invoke<InstalledPlugin[]>('plugin_list_installed'),
   // ── OPDS v0.6 ──
   opdsAddSource: (name, url) =>
     invoke<OpdsSource>('opds_add_source', { name, url }),

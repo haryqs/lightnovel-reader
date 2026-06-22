@@ -2,6 +2,22 @@
 
 > 记录影响未来开发方向的取舍。格式：日期 / 决策 / 理由 / 后果。
 
+## 2026-06-22：插件安装 UI 用原生文件选择器走路径，不传 zip 字节
+
+决策：v0.7 插件安装预览引入官方 `@tauri-apps/plugin-dialog` / `tauri-plugin-dialog`，由桌面壳打开原生文件选择器取得 zip 路径；`plugin.inspectPackage` / `plugin.installPackage` 只传路径与确认布尔值，壳侧读取文件后交给 `reading-core::plugin_store` 校验/写入。
+
+理由：
+
+- 符合桥接协议“消息面只传引用，大字节走资源通道”的纪律，避免把插件 zip 字节塞进前端消息。
+- 插件安装属于平台文件权限能力，用原生选择器比让用户手填路径更符合真实软件体验。
+- 安装前展示权限/域名/合规声明需要真实文件路径读取，但仍不需要执行插件 JS。
+
+后果：
+
+- Tauri capability 需要包含 `dialog:default`。
+- 插件安装命令新增在协议 `1.0-rc.1` 的“新增消息”范围内；不改变既有消息语义。
+- 后续移动端可用各自文件选择器实现同一 `plugin.selectPackagePath` 语义，或新增沙盒导入能力，但不得绕过安装确认门控。
+
 ## 2026-06-22：插件分发包先采用目录 zip，安装前只读取校验不执行
 
 决策：v0.7 插件分发格式先采用目录 zip。zip 可直接包含 `manifest.json + plugin.js`，也可外包一层目录；宿主只允许一个 `manifest.json`，`manifest.entry` 必须是同目录的单个 `.js` 文件名。安装前 core 只读取 manifest 与入口文本并做策略校验，不执行插件代码。

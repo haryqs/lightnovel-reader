@@ -15,6 +15,7 @@ my-source/
 分发时打成 zip。zip 可以直接包含 `manifest.json + plugin.js`,也可以外面包一层同名目录;
 宿主只允许一个 `manifest.json`,入口脚本必须与 manifest 同目录,且必须是单个 `.js` 文件名。
 `reading-core::plugin_package` 会在安装前读取 zip、校验 manifest、确认入口脚本存在,但不会执行插件代码。
+桌面端安装 UI 会展示域名、权限、能力和授权声明；`user-declared` 插件必须由用户显式确认后才会写入本地插件目录。
 
 ## 三个文件
 

@@ -206,6 +206,7 @@ v0.3 本地书库闭环
 - QuickJS 桌面运行时。
 - `plugin-sdk` manifest 校验。
   - 已起步：`reading-core::plugin_manifest` 解析/校验 manifest、权限/能力去重、精确域名白名单与合规提示。
+  - 已起步：`reading-core::plugin_package` / `plugin_store` 支持 zip 安装包预览、本地写入与已安装插件列表；书库 UI 已有安装前权限确认面板，仍不执行 JS。
 - `host.http` 域名白名单。
 - `host.html` 解析能力。
 - `host.kv` 私有存储。
