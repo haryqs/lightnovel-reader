@@ -50,6 +50,7 @@ const noBridge: ReaderBridge = {
   inspectPluginPackage: async () => unavailable('plugin.inspectPackage'),
   installPluginPackage: async () => unavailable('plugin.installPackage'),
   listInstalledPlugins: async () => unavailable('plugin.listInstalled'),
+  setPluginEnabled: async () => unavailable('plugin.setEnabled'),
   // OPDS v0.6
   opdsAddSource: async () => unavailable('opds.addSource'),
   opdsRemoveSource: async () => unavailable('opds.removeSource'),

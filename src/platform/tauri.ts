@@ -102,6 +102,8 @@ export const tauriBridge: ReaderBridge = {
     invoke<InstalledPlugin>('plugin_install_package', { path, confirmUserLegal }),
   listInstalledPlugins: () =>
     invoke<InstalledPlugin[]>('plugin_list_installed'),
+  setPluginEnabled: (pluginId, enabled) =>
+    invoke<InstalledPlugin>('plugin_set_enabled', { pluginId, enabled }),
   // ── OPDS v0.6 ──
   opdsAddSource: (name, url) =>
     invoke<OpdsSource>('opds_add_source', { name, url }),

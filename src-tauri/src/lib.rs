@@ -381,6 +381,8 @@ fn library_import_bytes(
 fn plugin_package_error(message: String) -> BridgeError {
     if message.contains("legal confirmation") {
         BridgeError::forbidden(message)
+    } else if message.contains("not found") {
+        BridgeError::not_found(message)
     } else if message.contains("read ")
         || message.contains("write ")
         || message.contains("create ")
@@ -426,6 +428,19 @@ fn plugin_list_installed(
     state: tauri::State<AppState>,
 ) -> Result<Vec<plugin_store::InstalledPlugin>, BridgeError> {
     plugin_store::list_installed_plugins(&state.plugin_dir).map_err(plugin_package_error)
+}
+
+#[tauri::command]
+fn plugin_set_enabled(
+    state: tauri::State<AppState>,
+    plugin_id: String,
+    enabled: bool,
+) -> Result<plugin_store::InstalledPlugin, BridgeError> {
+    if plugin_id.trim().is_empty() {
+        return Err(BridgeError::invalid_argument("plugin id is required"));
+    }
+    plugin_store::set_installed_plugin_enabled(&state.plugin_dir, &plugin_id, enabled)
+        .map_err(plugin_package_error)
 }
 
 #[tauri::command]
@@ -1405,6 +1420,7 @@ pub fn run() {
             plugin_inspect_package,
             plugin_install_package,
             plugin_list_installed,
+            plugin_set_enabled,
             library_list,
             library_search,
             library_source_records,

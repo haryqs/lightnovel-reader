@@ -1199,6 +1199,16 @@ body.statusbar-visible .statusbar,
 .plugin-installed-main {
   min-width: 0;
 }
+.plugin-installed-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.plugin-installed-actions .btn {
+  padding: 4px 8px;
+  font-size: 11px;
+}
 .plugin-badge {
   padding: 3px 7px;
   border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border));
