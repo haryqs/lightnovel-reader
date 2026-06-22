@@ -1,5 +1,37 @@
 # 开发日志
 
+## 2026-06-22：协议冻结审计收口预取与资源通道
+
+变更：
+
+- 新建 `codex/protocol-freeze-audit`，继续 NEXT_ACTIONS 的协议冻结审计。
+- 审计 `src/reader-core.ts`、`src-tauri/src/lib.rs`、`crates/reading-core/src/parse_cache.rs` 与
+  `docs/resource-library-plan/8_桥接协议_v0.1.md` 后确认：
+  - `ReaderCore.preloadAroundChapter` 已通过 `chapter.get` 有界预取前一章、后一章、后两章。
+  - 前端有 `chapterInflight` 去重和 `maxCachedChapters=10` 内存上限。
+  - core/Tauri 侧有当前书章节内存缓存与持久化 parse cache。
+  - 书内图片走 `reader-img` URL scheme，封面/缩略图走 `resource.url` 或来源 http(s) URL。
+- `docs/resource-library-plan/8_桥接协议_v0.1.md`：
+  - 新增“章节预取语义（冻结前审计结论）”小节，明确冻结前不新增 `chapter.prefetch` /
+    `chapter.getBatch`。
+  - 新增“资源通道审计（冻结前审计结论）”小节，明确只保留 `book.open(data)` 与
+    `library.importBytes(data)` 两个大字节兜底例外。
+  - 冻结前检查清单第 2 项和第 4 项标记完成。
+- `docs/dev-memory/DECISIONS.md` 新增决策：协议冻结前不新增章节预取消息，资源通道边界通过审计。
+
+已验证：
+
+- `node scripts/check-arch.mjs` 通过。
+- `node scripts/check-dev-memory.mjs` 通过。
+- `git diff --check` 通过；仅有 Windows 换行提示。
+- `npm.cmd run build` 通过。
+- `cargo test --workspace` 通过（reading-core 84 passed）。
+
+下一步：
+
+- 提交并推送 `codex/protocol-freeze-audit`，开 PR。
+- 后续继续协议冻结：结构化错误码范围最终核对、确认是否将 `PROTOCOL_VERSION` 从 `0.1` 进入冻结候选。
+
 ## 2026-06-22：合并 PR #32 并重跑便携包候选验证
 
 变更：
