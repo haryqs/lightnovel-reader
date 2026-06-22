@@ -1,5 +1,40 @@
 # 下一步任务队列
 
+## 📌 交接留言（2026-06-22，v0.7 插件管理闭环完成）
+
+先同步 GitHub：
+
+```powershell
+cd E:\workspace\game-cooperative-plan\lightnovel-reader
+git fetch --all --prune
+git checkout main
+git pull --ff-only
+git status -sb
+```
+
+当前事实：
+
+- 当前工作分支：`codex/plugin-management-complete`。
+- 已新增 `plugin.uninstall(pluginId)` 协议能力、Tauri command 与书库 UI 卸载按钮。
+- `reading-core::plugin_store::uninstall_plugin` 会按安全插件 id 删除 app data 下对应插件目录。
+- 重新安装同 id 插件时会先清理旧目录再写入新包，避免旧入口文件残留。
+- 卸载只删除插件文件，不影响书库数据；当前仍不执行插件 JS。
+
+已验证：
+
+- `node scripts/check-arch.mjs` 通过。
+- `node scripts/check-dev-memory.mjs` 通过。
+- `node scripts/check-protocol-freeze.mjs` 通过。
+- `npm.cmd run build` 通过。
+- `cargo test --workspace` 通过（reading-core 106 passed）。
+- `git diff --check` 通过（仅 Windows 换行提示）。
+
+下一步优先级：
+
+1. 继续 v0.7 host API 纯 Rust 输入输出结构。
+2. 后续运行时落地时必须跳过停用插件，且不得加载已卸载插件。
+3. 继续保持边界：插件可管理不等于可执行，执行前先补 host API 权限门控与域名白名单测试。
+
 ## 📌 交接留言（2026-06-22，v0.7 插件启用状态骨架完成）
 
 先同步 GitHub：

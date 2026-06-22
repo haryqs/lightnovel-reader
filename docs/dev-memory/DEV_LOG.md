@@ -1,5 +1,28 @@
 # 开发日志
 
+## 2026-06-22：v0.7 插件卸载与覆盖安装收口
+
+变更：
+
+- `reading-core::plugin_store` 新增 `uninstall_plugin`，按安全插件 id 删除 app data 下对应插件目录。
+- 重新安装同 id 插件时先删除旧目录再写入新包，避免旧入口文件残留。
+- 新增 `plugin.uninstall` 桥接能力与 Tauri command；书库源插件面板增加“卸载”按钮和确认提示。
+- 卸载只删除插件文件，不影响书库数据；当前仍不执行插件 JS。
+- 同步 README、桥接协议文档、插件契约文档与项目记忆。
+
+已验证：
+
+- `node scripts/check-arch.mjs` 通过。
+- `node scripts/check-dev-memory.mjs` 通过。
+- `node scripts/check-protocol-freeze.mjs` 通过。
+- `npm.cmd run build` 通过。
+- `cargo test --workspace` 通过（reading-core 106 passed）。
+- `git diff --check` 通过（仅 Windows 换行提示）。
+
+下一步：
+
+- 后续 v0.7 继续做 host API 纯 Rust 输入输出结构；运行时落地时必须跳过停用插件，且不得加载已卸载插件。
+
 ## 2026-06-22：v0.7 插件启用状态骨架
 
 变更：
