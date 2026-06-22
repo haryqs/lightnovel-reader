@@ -2,6 +2,26 @@
 
 > 记录影响未来开发方向的取舍。格式：日期 / 决策 / 理由 / 后果。
 
+## 2026-06-22：桥接协议进入 1.0-rc.1 冻结候选
+
+决策：将 `src/platform/protocol.ts` 的 `PROTOCOL_VERSION` 从 `0.1` 推进到 `1.0-rc.1`。官方 Tauri
+壳的 promise 型桥接错误统一收敛到 `BridgeError { code, message, details? }`；新增
+`platformError` 覆盖系统浏览器/外部阅读器等平台能力失败。
+
+理由：
+
+- 冻结前四项审计已经完成：DTO 预留、章节预取语义、结构化错误码、资源通道边界。
+- Tauri command 面已全部返回 `BridgeError`；`shell.openExternal` / `shell.openPathExternal` 也由 TS
+  壳侧包装为结构化错误，避免协议面保留裸字符串/原生 Error 例外。
+- `1.0-rc.1` 表示冻结候选而非最终冻结：后续仍可在 rc 阶段修正审计发现的小问题，但不能随意扩大或重写协议面。
+
+后果：
+
+- 冻结后原则：只能新增消息/新增可选字段，不改名、不删字段、不改变既有语义；破坏性变更需升大版本。
+- 新增 promise 型桥接方法默认必须返回 `BridgeError` 形态；新增错误码必须同步 TS 类型、文档，若由 Rust command 发出还要同步 Rust 构造器。
+- 文件 `docs/resource-library-plan/8_桥接协议_v0.1.md` 暂不改名，以保持历史链接稳定；内容和
+  `PROTOCOL_VERSION` 才是版本权威。
+
 ## 2026-06-22：协议冻结前不新增章节预取消息，资源通道边界通过审计
 
 决策：冻结前不新增 `chapter.prefetch` / `chapter.getBatch`。继续把 `chapter.get(href)` 作为唯一章节 HTML 获取消息，

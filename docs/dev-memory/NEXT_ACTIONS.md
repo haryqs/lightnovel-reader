@@ -1,5 +1,41 @@
 # 下一步任务队列
 
+## 📌 交接留言（2026-06-22，协议 1.0-rc.1 冻结候选进行中）
+
+先同步 GitHub：
+
+```powershell
+cd E:\workspace\game-cooperative-plan\lightnovel-reader
+git fetch --all --prune
+git checkout main
+git pull --ff-only
+git status -sb
+```
+
+当前事实：
+
+- PR #33（`codex/protocol-freeze-audit`）已合并进 `main`，预取语义与资源通道审计已进入主线。
+- 当前工作分支是 `codex/protocol-error-freeze-audit`，从合并 PR #33 后的最新 `main` 创建。
+- 本轮把 `PROTOCOL_VERSION` 从 `0.1` 推进到 `1.0-rc.1`，协议文档标题同步为“桥接协议 v1.0-rc.1”；文件名暂沿用 `8_桥接协议_v0.1.md` 以保持历史链接稳定。
+- Tauri command 面此前已全部返回 `BridgeError`；本轮补齐 `shell.openExternal` / `shell.openPathExternal` 的结构化错误包装，并让无原生 bridge 兜底也抛同形态对象。
+- 新增错误码 `platformError`，用于系统浏览器/外部阅读器打开失败、无桌面壳等平台能力失败；空 URL/path 仍走 `invalidArgument`。
+- 版权边界不变：Bangumi / なろう 只做 metadata + 外链，不抓正文；`library.acquireRemote` 仍只允许青空公共版权条目，OPDS acquire 仍强制 `open_license`。
+
+已验证：
+
+- `npm.cmd run build` 通过。
+- `node scripts/check-arch.mjs` 通过。
+- `node scripts/check-dev-memory.mjs` 通过。
+- `cargo test --workspace` 通过（reading-core 84 passed）。
+- `git diff --check` 通过；仅有 Windows 换行提示。
+
+下一步优先级：
+
+1. 提交并推送 `codex/protocol-error-freeze-audit`，打开 PR。
+2. PR 合并后，如果没有审计阻塞，可把协议冻结候选进入 review：只允许新增消息/新增可选字段，不再随意改名、删字段或改语义。
+3. 分发线继续用当前便携包候选做目标机器下载/解压/启动抽检；安装版另跑 NSIS 安装/卸载，并确认卸载不删除 `%APPDATA%` 用户书库数据。
+4. 功能线下一段建议进入 v0.7 插件运行时 / ToS 门控设计，不要把正文/章节类来源塞回内核连接器。
+
 ## 📌 交接留言（2026-06-22，协议冻结审计：预取/资源通道已收口）
 
 当前分支：

@@ -1,6 +1,6 @@
 // platform 适配层:reader-engine 与平台壳之间的唯一边界(方案文档 7 的纪律 1)。
 // 引擎代码只允许 import 本目录,不允许直接触碰 @tauri-apps/* 或其他平台 API。
-import type { ReaderBridge } from './protocol'
+import type { BridgeError, ReaderBridge } from './protocol'
 import { isTauriRuntime, tauriBridge } from './tauri'
 
 export * from './protocol'
@@ -11,7 +11,11 @@ export const hasNativeBridge = isTauriRuntime
 const NO_BRIDGE_HINT = '需要桌面窗口(请运行 npm run tauri dev)'
 
 const unavailable = (method: string): never => {
-  throw new Error(`${method} ${NO_BRIDGE_HINT}`)
+  const err: BridgeError = {
+    code: 'platformError',
+    message: `${method} ${NO_BRIDGE_HINT}`,
+  }
+  throw err
 }
 
 // 纯浏览器环境的兜底实现:除路径透传外全部报错,错误信息可直接展示给用户。
