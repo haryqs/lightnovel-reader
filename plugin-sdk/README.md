@@ -12,6 +12,10 @@ my-source/
 └── plugin.js       # 入口:export default { search, getBook, getChapter }
 ```
 
+分发时打成 zip。zip 可以直接包含 `manifest.json + plugin.js`,也可以外面包一层同名目录;
+宿主只允许一个 `manifest.json`,入口脚本必须与 manifest 同目录,且必须是单个 `.js` 文件名。
+`reading-core::plugin_package` 会在安装前读取 zip、校验 manifest、确认入口脚本存在,但不会执行插件代码。
+
 ## 三个文件
 
 | 文件 | 作用 |
