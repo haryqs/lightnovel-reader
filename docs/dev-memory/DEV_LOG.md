@@ -1,5 +1,26 @@
 # 开发日志
 
+## 2026-06-22：协议冻结候选自动检查
+
+变更：
+
+- 合并 PR #34 后，从最新 `main` 新建 `codex/protocol-freeze-check`。
+- 新增 `scripts/check-protocol-freeze.mjs`，校验 `PROTOCOL_VERSION`、TS `BridgeErrorCode`、文档 8 错误码表与 Rust command 构造器之间的一致性。
+- `package.json` 新增 `check:protocol`，并把该检查接入 `check:project` 与 `npm run build`。
+- `AGENTS.md` / `NEXT_ACTIONS.md` 同步收工检查与下一步交接。
+
+已验证：
+
+- `node scripts/check-protocol-freeze.mjs` 通过。
+- `npm.cmd run build` 通过（已串起 `check-arch` 与 `check-protocol-freeze`）。
+- `node scripts/check-dev-memory.mjs` 通过。
+- `cargo test --workspace` 通过（reading-core 84 passed）。
+- `git diff --check` 通过；仅有 Windows 换行提示。
+
+下一步：
+
+- 提交并推送 `codex/protocol-freeze-check`，打开 PR。
+
 ## 2026-06-22：桥接协议推进到 1.0-rc.1 冻结候选
 
 变更：

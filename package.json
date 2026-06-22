@@ -7,7 +7,8 @@
     "dev": "vite",
     "check:arch": "node scripts/check-arch.mjs",
     "check:memory": "node scripts/check-dev-memory.mjs",
-    "check:project": "node scripts/check-arch.mjs && node scripts/check-dev-memory.mjs",
+    "check:protocol": "node scripts/check-protocol-freeze.mjs",
+    "check:project": "node scripts/check-arch.mjs && node scripts/check-dev-memory.mjs && node scripts/check-protocol-freeze.mjs",
     "dev:note": "node scripts/dev-note.mjs",
     "smoke:fixtures": "powershell -ExecutionPolicy Bypass -File scripts/new-smoke-epubs.ps1",
     "smoke:tauri": "node scripts/tauri-webdriver-smoke.mjs",
@@ -17,7 +18,7 @@
     "smoke:opds": "node scripts/tauri-opds-smoke.mjs",
     "package:beta": "powershell -ExecutionPolicy Bypass -File scripts/package-beta.ps1",
     "installer:web": "powershell -ExecutionPolicy Bypass -File scripts/build-web-installer.ps1",
-    "build": "node scripts/check-arch.mjs && tsc && vite build",
+    "build": "node scripts/check-arch.mjs && node scripts/check-protocol-freeze.mjs && tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri"
   },

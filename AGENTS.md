@@ -30,7 +30,7 @@
 - 更新 `docs/dev-memory/DEV_LOG.md`：写明做了什么、验证了什么、还欠什么。
 - 如有架构/产品取舍，更新 `docs/dev-memory/DECISIONS.md`。
 - 如有下一步任务，更新 `docs/dev-memory/NEXT_ACTIONS.md`。
-- 至少运行 `node scripts/check-arch.mjs` 和 `node scripts/check-dev-memory.mjs`。
+- 至少运行 `node scripts/check-arch.mjs`、`node scripts/check-dev-memory.mjs` 和 `node scripts/check-protocol-freeze.mjs`。
 - 可用 `node scripts/dev-note.mjs --done "..." --verify "..." --next "..."` 快速追加开发日志。
 - 如果因为依赖、网络、GUI 环境不能验证，必须在最终说明和开发日志里写清楚。
 
