@@ -20,6 +20,9 @@ my-source/
 | `host-api.d.ts` | 插件能用的全部宿主能力:`host.http` / `host.html` / `host.kv` / `host.log` |
 | `source-plugin.d.ts` | 插件必须实现的接口:`search` / `getBook` / `getChapter` |
 
+`manifest.capabilities` 只声明可选能力:`browse`、`resolveUrl`、`fetchMetadata`、`acquire`。
+宿主会根据 manifest、授权性质和 ToS 门控决定是否显示/放行这些能力；插件返回值不能自行决定可缓存正文。
+
 ## 安全模型(写插件前必读)
 
 - 插件跑在沙箱 JS 引擎里(桌面/Android/鸿蒙:QuickJS;iOS:JavaScriptCore)。
@@ -31,3 +34,4 @@ my-source/
 
 官方插件仓库只收 `legal.kind` 为 `public-domain` / `open-license` / `official-free`
 的源,且 `official-free` 必须遵守源站 ToS(含抓取频率)。内核不内置任何源。
+`user-declared` 插件只能用户自装,安装时必须做明示确认,UI 上也必须与官方插件区分。

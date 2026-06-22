@@ -1,5 +1,32 @@
 # 开发日志
 
+## 2026-06-22：v0.7 插件 manifest 策略骨架落入 reading-core
+
+变更：
+
+- 新增 `crates/reading-core/src/plugin_manifest.rs`，作为 v0.7 插件运行时的第一块宿主侧策略骨架。
+- `PluginManifest` 强类型覆盖 `apiVersion/id/name/version/entry/domains/permissions/capabilities/legal`。
+- `validate_manifest` 强制校验 API 版本、插件 id、semver、入口文件名、域名白名单、权限/能力去重、字段长度和 `user-declared` 明示确认要求。
+- `is_url_allowed_by_manifest` 提供宿主侧精确域名白名单检查；只接受 `http(s)`，不做子域通配。
+- `official-free + acquire` 会返回 ToS/限速门控 warning；`user-declared` 不具备官方仓库资格，并要求安装时明示确认。
+- `plugin-sdk/manifest.schema.json` 同步新增 `capabilities` 与 domains 去重；`source-plugin.d.ts` 同步可选 capability 方法与 acquire proposal 类型；README 补充插件边界。
+- `docs/resource-library-plan/9_插件契约_v0.1.md`、`PROJECT_MEMORY.md`、`NEXT_ACTIONS.md`、`DECISIONS.md`、`DEVELOPMENT_OUTLINE.md`、`README.md` 同步当前状态。
+
+已验证：
+
+- `node scripts/check-arch.mjs` 通过。
+- `node scripts/check-dev-memory.mjs` 通过。
+- `node scripts/check-protocol-freeze.mjs` 通过。
+- `npm.cmd run build` 通过。
+- `cargo test --workspace` 通过（reading-core 92 passed）。
+- `node -e "JSON.parse(...)"` 校验 `plugin-sdk/manifest.schema.json` 与示例 manifest 均为合法 JSON。
+- `git diff --check` 通过；仅有 Windows 换行提示。
+- `cargo fmt --check` 未作为本轮门槛：当前仓库既有多处 Rust 文件会被 rustfmt 改写，已仅对本轮新增的 `plugin_manifest.rs` 做局部 `rustfmt`，避免无关格式噪声。
+
+下一步：
+
+- 后续 v0.7 可在此基础上做插件安装包读取/展示权限，再进入 QuickJS host API，不要先接正文抓取源。
+
 ## 2026-06-22：补协议冻结自动守门脚本
 
 变更：

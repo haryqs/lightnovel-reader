@@ -14,6 +14,14 @@ declare global {
     getBook(bookUrl: string): Promise<BookDetail>
     /** 拉取一章正文。chapterUrl 来自 BookDetail.chapters[].url。 */
     getChapter(chapterUrl: string): Promise<ChapterContent>
+    /** Optional: category/ranking browsing. Requires manifest.capabilities: browse. */
+    browse?(path: string, page: number): Promise<SearchPage>
+    /** Optional: resolve a pasted source URL. Requires manifest.capabilities: resolveUrl. */
+    resolveUrl?(url: string): Promise<SearchResult | null>
+    /** Optional: metadata-only lookup. Requires manifest.capabilities: fetchMetadata. */
+    fetchMetadata?(remoteId: string): Promise<BookDetail | null>
+    /** Optional: propose acquisition. Requires manifest.capabilities: acquire; host still enforces legal gates. */
+    acquire?(remoteId: string, mode: AcquireMode): Promise<AcquireProposal>
   }
 
   interface SearchPage {
@@ -56,5 +64,18 @@ declare global {
      * 宿主入库前还会过 reading-core 的 HTML 清洗,脚本与样式一律剥除。
      */
     html: string
+  }
+
+  type AcquireMode = 'metadataOnly' | 'download' | 'cacheForReading'
+
+  interface AcquireProposal {
+    /** Candidate acquisition URL. Host must still enforce domain, rights and ToS gates. */
+    url: string
+    /** Plugin-declared rights status; never the final host decision by itself. */
+    rightsStatus: 'public_domain' | 'open_license' | 'official_free' | 'unknown'
+    /** Optional content type hint, such as application/epub+zip or text/html. */
+    mimeType?: string
+    /** User-facing source note or ToS warning. */
+    note?: string
   }
 }
