@@ -1,5 +1,28 @@
 # 开发日志
 
+## 2026-06-22：v0.7 插件启用状态骨架
+
+变更：
+
+- `InstalledPlugin` 新增 `enabled` 字段；旧安装记录缺字段时默认视为启用。
+- 新增 `reading-core::plugin_store::set_installed_plugin_enabled`，按安全插件 id 更新 `install.json`，并拒绝路径穿越式 id。
+- 新增 `plugin.setEnabled` 桥接能力与 Tauri command；书库源插件面板可对已安装插件执行启用/停用。
+- `plugin-sdk/examples/*.zip` 加入 `.gitignore`，避免测试打包产物污染工作区。
+- 同步桥接协议文档与插件契约文档。
+
+已验证：
+
+- `node scripts/check-arch.mjs` 通过。
+- `node scripts/check-dev-memory.mjs` 通过。
+- `node scripts/check-protocol-freeze.mjs` 通过。
+- `npm.cmd run build` 通过。
+- `cargo test --workspace` 通过（reading-core 104 passed）。
+- `git diff --check` 通过（仅 Windows 换行提示）。
+
+下一步：
+
+- 后续 v0.7 可继续做 host API 纯 Rust 输入输出结构；运行时落地时必须跳过 `enabled=false` 的插件。
+
 ## 2026-06-22：v0.7 插件安装 UI 与本地存储骨架
 
 变更：

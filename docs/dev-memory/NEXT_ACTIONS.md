@@ -1,5 +1,40 @@
 # 下一步任务队列
 
+## 📌 交接留言（2026-06-22，v0.7 插件启用状态骨架完成）
+
+先同步 GitHub：
+
+```powershell
+cd E:\workspace\game-cooperative-plan\lightnovel-reader
+git fetch --all --prune
+git checkout main
+git pull --ff-only
+git status -sb
+```
+
+当前事实：
+
+- 当前工作分支：`codex/plugin-enable-state`。
+- 已安装插件元数据新增 `enabled` 字段；旧安装记录缺字段时默认启用。
+- 已新增 `plugin.setEnabled(pluginId, enabled)` 协议能力、Tauri command 与书库 UI 按钮。
+- 停用只更新 `install.json`；不删除插件文件，不执行插件 JS。
+- `plugin-sdk/examples/*.zip` 已加入 `.gitignore`，用于忽略本地测试打包产物。
+
+已验证：
+
+- `node scripts/check-arch.mjs` 通过。
+- `node scripts/check-dev-memory.mjs` 通过。
+- `node scripts/check-protocol-freeze.mjs` 通过。
+- `npm.cmd run build` 通过。
+- `cargo test --workspace` 通过（reading-core 104 passed）。
+- `git diff --check` 通过（仅 Windows 换行提示）。
+
+下一步优先级：
+
+1. 继续 v0.7 host API 纯 Rust 输入输出结构。
+2. 后续运行时落地时必须跳过 `enabled=false` 的插件。
+3. 仍不接正文抓取源；插件执行前先把 host API 权限门控与域名白名单测试补齐。
+
 ## 📌 交接留言（2026-06-22，v0.7 插件安装 UI/权限确认完成）
 
 先同步 GitHub：

@@ -884,18 +884,38 @@ function renderInstalledPlugins(plugins: InstalledPlugin[]) {
     meta.textContent = [
       plugin.manifest.id,
       pluginLegalLabel(plugin.manifest.legal.kind),
+      plugin.enabled ? '已启用' : '已停用',
       plugin.manifest.capabilities.map(pluginCapabilityLabel).join(', ') || '基础搜索',
       `安装于 ${new Date(plugin.installedAt).toLocaleString('zh-CN')}`,
     ].join(' · ')
     main.append(name, meta)
 
+    const side = document.createElement('div')
+    side.className = 'plugin-installed-actions'
     const badge = document.createElement('span')
     badge.className = plugin.validation.requiresUserLegalConfirmation
       ? 'plugin-badge plugin-badge-user'
       : 'plugin-badge'
     badge.textContent = plugin.validation.requiresUserLegalConfirmation ? '用户自装' : '可白名单'
-    row.append(main, badge)
+    const toggle = document.createElement('button')
+    toggle.className = plugin.enabled ? 'btn' : 'btn btn-primary'
+    toggle.textContent = plugin.enabled ? '停用' : '启用'
+    toggle.title = plugin.enabled ? '停用后运行时不会加载该插件' : '重新允许运行时加载该插件'
+    toggle.addEventListener('click', () => {
+      void setInstalledPluginEnabled(plugin.manifest.id, !plugin.enabled)
+    })
+    side.append(badge, toggle)
+    row.append(main, side)
     pluginInstalledList.appendChild(row)
+  }
+}
+
+async function setInstalledPluginEnabled(pluginId: string, enabled: boolean) {
+  try {
+    await bridge.setPluginEnabled(pluginId, enabled)
+    await refreshInstalledPlugins()
+  } catch (e: any) {
+    showPluginPanelMessage(`更新插件状态失败：${formatError(e)}`, true)
   }
 }
 

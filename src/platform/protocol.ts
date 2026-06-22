@@ -245,6 +245,7 @@ export interface PluginInstallPreview {
 
 export interface InstalledPlugin extends PluginInstallPreview {
   installedAt: number
+  enabled: boolean
 }
 
 // ---- 桥接接口:每个方法对应协议里的一条消息 ----
@@ -306,6 +307,8 @@ export interface ReaderBridge {
   installPluginPackage(path: string, confirmUserLegal: boolean): Promise<InstalledPlugin>
   /** plugin.listInstalled — 列出已安装源插件元数据 */
   listInstalledPlugins(): Promise<InstalledPlugin[]>
+  /** plugin.setEnabled — 启用/停用已安装源插件；不执行插件代码 */
+  setPluginEnabled(pluginId: string, enabled: boolean): Promise<InstalledPlugin>
   // ── OPDS v0.6 ──
   /** opds.addSource — 添加一个 OPDS 书源 */
   opdsAddSource(name: string, url: string): Promise<OpdsSource>

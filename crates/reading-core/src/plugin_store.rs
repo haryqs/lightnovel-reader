@@ -21,6 +21,8 @@ pub struct InstalledPlugin {
     pub validation: ManifestValidation,
     pub entry_size: usize,
     pub installed_at: i64,
+    #[serde(default = "default_enabled")]
+    pub enabled: bool,
 }
 
 pub fn inspect_plugin_package(bytes: &[u8]) -> Result<PluginInstallPreview, String> {
@@ -46,6 +48,7 @@ pub fn install_plugin_package(
     let installed = InstalledPlugin {
         entry_size: package.entry_source.len(),
         installed_at,
+        enabled: true,
         manifest: package.manifest.clone(),
         validation: package.validation.clone(),
     };
@@ -100,8 +103,50 @@ pub fn list_installed_plugins(plugin_root: &Path) -> Result<Vec<InstalledPlugin>
     Ok(plugins)
 }
 
+pub fn set_installed_plugin_enabled(
+    plugin_root: &Path,
+    plugin_id: &str,
+    enabled: bool,
+) -> Result<InstalledPlugin, String> {
+    if !is_safe_plugin_id(plugin_id) {
+        return Err("invalid plugin id".into());
+    }
+    let install_path = plugin_dir(plugin_root, plugin_id).join("install.json");
+    if !install_path.exists() {
+        return Err("plugin install metadata not found".into());
+    }
+
+    let text = fs::read_to_string(&install_path)
+        .map_err(|e| format!("read plugin install metadata failed: {e}"))?;
+    let mut plugin: InstalledPlugin = serde_json::from_str(&text)
+        .map_err(|e| format!("parse plugin install metadata failed: {e}"))?;
+    plugin.enabled = enabled;
+    let install_json = serde_json::to_string_pretty(&plugin)
+        .map_err(|e| format!("serialize plugin install metadata failed: {e}"))?;
+    fs::write(&install_path, install_json)
+        .map_err(|e| format!("write plugin install metadata failed: {e}"))?;
+    Ok(plugin)
+}
+
 fn plugin_dir(root: &Path, id: &str) -> PathBuf {
     root.join(id)
+}
+
+fn default_enabled() -> bool {
+    true
+}
+
+fn is_safe_plugin_id(id: &str) -> bool {
+    let len = id.len();
+    len >= 2
+        && len <= 64
+        && id
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
+        && id
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
 }
 
 #[cfg(test)]
@@ -169,6 +214,7 @@ mod tests {
 
         let installed = install_plugin_package(&root, &bytes, false, 42).unwrap();
         assert_eq!(installed.installed_at, 42);
+        assert!(installed.enabled);
         assert!(root.join("sample-source").join("manifest.json").exists());
         assert!(root.join("sample-source").join("plugin.js").exists());
         assert!(root.join("sample-source").join("install.json").exists());
@@ -176,6 +222,32 @@ mod tests {
         let plugins = list_installed_plugins(&root).unwrap();
         assert_eq!(plugins, vec![installed]);
         let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn toggles_installed_plugin_enabled_state() {
+        let root = temp_plugin_root("toggle");
+        let bytes = zip_bytes(&[
+            ("manifest.json", &manifest("plugin.js", "public-domain")),
+            ("plugin.js", "export default {}"),
+        ]);
+        install_plugin_package(&root, &bytes, false, 42).unwrap();
+
+        let disabled = set_installed_plugin_enabled(&root, "sample-source", false).unwrap();
+        assert!(!disabled.enabled);
+        let plugins = list_installed_plugins(&root).unwrap();
+        assert_eq!(plugins[0].enabled, false);
+
+        let enabled = set_installed_plugin_enabled(&root, "sample-source", true).unwrap();
+        assert!(enabled.enabled);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn rejects_unsafe_plugin_id_when_toggling() {
+        let root = temp_plugin_root("unsafe");
+        let err = set_installed_plugin_enabled(&root, "../sample-source", false).unwrap_err();
+        assert!(err.contains("invalid plugin id"));
     }
 
     #[test]
