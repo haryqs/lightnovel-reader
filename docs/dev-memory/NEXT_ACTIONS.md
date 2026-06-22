@@ -1,5 +1,43 @@
 # 下一步任务队列
 
+## 📌 交接留言（2026-06-22，PR #32 已合并 + 便携包候选已重验）
+
+先同步 GitHub：
+
+```powershell
+cd E:\workspace\game-cooperative-plan\lightnovel-reader
+git fetch --all --prune
+git checkout main
+git pull --ff-only
+git status -sb
+```
+
+当前事实：
+
+- PR #32（`codex/remaining-bridge-errors`）已合并进 `main`，远端分支已删除。
+- `book.*`、`chapter.get`、`annotation.*`、`reading.*` 已与 `opds.*` / `library.*` 一样迁移到结构化
+  `BridgeError { code, message, details? }`。
+- 当前 release 便携包候选已重新生成：
+  `dist-beta/lightnovel-reader-v0.1.0-release-windows-x64.zip`。
+- 已把 zip 解压到 `dist-beta/extract-check-release` 并用解压后的 `reader.exe` 跑过真实 Tauri 启动冒烟。
+
+已验证：
+
+- PR #32 合并前：`cargo check --workspace`、`node scripts/check-arch.mjs`、
+  `node --check scripts/tauri-opds-smoke.mjs`、`node scripts/check-dev-memory.mjs`、
+  `npm.cmd run build`、`cargo test --workspace`、`git diff --check` 均通过。
+- PR #32 合并后：`npm.cmd run package:beta` 通过。
+- PR #32 合并后：解压后的 release `reader.exe` 启动冒烟通过：
+  `npm.cmd run smoke:tauri -- --tauri-driver C:\Users\41267\.cargo\bin\tauri-driver.exe --native-driver C:\Users\41267\AppData\Local\lightnovel-reader-tools\msedgedriver\149.0.4022.69\msedgedriver.exe --application E:\workspace\game-cooperative-plan\lightnovel-reader\dist-beta\extract-check-release\reader.exe`
+
+下一步优先级：
+
+1. 若准备发便携测试包：把当前 zip 作为候选，在目标机器做下载/解压/启动抽检；需要更稳时再补跑
+   `smoke:p0` / `smoke:p1` / `smoke:remote-link` / `smoke:opds`。
+2. 若继续开发：做协议冻结审计，优先核对批量/预取语义、资源通道边界、后续新增命令默认使用
+   `BridgeError`。
+3. 若做安装版：重跑 NSIS 安装 / 卸载，并确认卸载不删除 `%APPDATA%` 用户书库数据。
+
 ## 📌 交接留言（2026-06-22，剩余阅读/标注命令 BridgeError 迁移）
 
 当前分支：

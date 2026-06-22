@@ -1,5 +1,34 @@
 # 开发日志
 
+## 2026-06-22：合并 PR #32 并重跑便携包候选验证
+
+变更：
+
+- 合并 PR #32（`codex/remaining-bridge-errors`）到 `main`，远端分支已删除；本地 `main` 快进到
+  `f74ef4d`。
+- 重新运行 `npm.cmd run package:beta`，生成 release 便携候选：
+  `dist-beta/lightnovel-reader-v0.1.0-release-windows-x64.zip`。
+- 将 zip 解压到 `dist-beta/extract-check-release`，确认包内包含：
+  `reader.exe`、`LightNovel Reader Launcher.cmd`、`README.txt`、`VERSION.txt` 与 `samples/`。
+- 使用解压后的 release `reader.exe` 跑真实 Tauri 启动冒烟，验证初始 UI、插图加载、书库入口、
+  导入按钮、Calibre 迁移入口位置与关闭书库面板。
+
+已验证：
+
+- `npm.cmd run package:beta` 通过。
+- `npm.cmd run smoke:tauri -- --tauri-driver C:\Users\41267\.cargo\bin\tauri-driver.exe --native-driver C:\Users\41267\AppData\Local\lightnovel-reader-tools\msedgedriver\149.0.4022.69\msedgedriver.exe --application E:\workspace\game-cooperative-plan\lightnovel-reader\dist-beta\extract-check-release\reader.exe` 通过。
+
+未验证：
+
+- 本轮未重跑 NSIS 安装 / 卸载。
+- 本轮未重跑 `smoke:p0` / `smoke:p1` / `smoke:remote-link` / `smoke:opds`。
+
+下一步：
+
+- 若准备发便携测试包，可把当前 zip 作为候选，再按目标机器做下载/解压/启动抽检。
+- 若继续开发，优先做协议冻结审计：批量/预取语义、资源通道核对、后续新增命令默认使用
+  `BridgeError`。
+
 ## 2026-06-22：迁移剩余阅读/标注命令到 BridgeError
 
 变更：
