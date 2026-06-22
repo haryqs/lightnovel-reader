@@ -1,5 +1,34 @@
 # 下一步任务队列
 
+## 📌 交接留言（2026-06-22，协议冻结候选自动检查进行中）
+
+当前分支：
+
+- `codex/protocol-freeze-check`，从已合并 PR #34 后的最新 `main` 创建。
+
+本轮目标：
+
+- 把协议冻结候选 review 的一部分固化成脚本，避免后续 `PROTOCOL_VERSION`、`BridgeErrorCode`
+  或文档 8 错误码表单边漂移。
+- 新增 `scripts/check-protocol-freeze.mjs`，校验：
+  - `src/platform/protocol.ts` 的 `PROTOCOL_VERSION` 与文档 8 标题/版本段同步。
+  - TS `BridgeErrorCode` 与文档 8 错误码表完全一致。
+  - Rust command 侧构造的 `BridgeError` code 不超出 TS/文档清单；除 `platformError` 这个 TS 壳专用 code 外，TS/文档 code 均需在 Rust command 构造器中出现。
+- `package.json` 新增 `check:protocol`，并接入 `check:project` 与 `npm run build`。
+
+已验证：
+
+- `node scripts/check-protocol-freeze.mjs` 通过。
+- `npm.cmd run build` 通过（已串起 `check-arch` 与 `check-protocol-freeze`）。
+- `node scripts/check-dev-memory.mjs` 通过。
+- `cargo test --workspace` 通过（reading-core 84 passed）。
+- `git diff --check` 通过；仅有 Windows 换行提示。
+
+下一步优先级：
+
+1. 提交并推送 `codex/protocol-freeze-check`，打开 PR。
+2. PR 合并后继续协议冻结候选 review，或切到分发线做目标机器便携包抽检 / NSIS 卸载保留数据验证。
+
 ## 📌 交接留言（2026-06-22，协议 1.0-rc.1 冻结候选进行中）
 
 先同步 GitHub：
@@ -31,7 +60,7 @@ git status -sb
 
 下一步优先级：
 
-1. 提交并推送 `codex/protocol-error-freeze-audit`，打开 PR。
+1. PR #34 已合并；本段保留为历史交接记录。
 2. PR 合并后，如果没有审计阻塞，可把协议冻结候选进入 review：只允许新增消息/新增可选字段，不再随意改名、删字段或改语义。
 3. 分发线继续用当前便携包候选做目标机器下载/解压/启动抽检；安装版另跑 NSIS 安装/卸载，并确认卸载不删除 `%APPDATA%` 用户书库数据。
 4. 功能线下一段建议进入 v0.7 插件运行时 / ToS 门控设计，不要把正文/章节类来源塞回内核连接器。
