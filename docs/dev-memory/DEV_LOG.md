@@ -1,5 +1,38 @@
 # 开发日志
 
+## 2026-06-22：迁移剩余阅读/标注命令到 BridgeError
+
+变更：
+
+- 从 GitHub 同步最新 `main`：`git fetch --all --prune` 后确认远端 `codex/source-record-panel` 已删除，
+  `git pull --ff-only` 快进到 `0b027bf`，拉下 OPDS acquisition URL 持久化等主线更新。
+- 新建 `codex/remaining-bridge-errors`，按 NEXT_ACTIONS 顶部优先级继续协议内功。
+- `src-tauri/src/lib.rs`：
+  - `load_book_from_data` 改为返回 `BridgeError`，解析失败走 `parseError`，锁/状态写入失败走 `storageError`。
+  - `book.open`、`book.openPath`、`book.close`、`chapter.get` 改为结构化错误；空参数走
+    `invalidArgument`，未打开书籍走 `notFound`。
+  - `annotation.save/list/delete` 与 `reading.saveProgress/getProgress` 改为结构化错误；空 id/bookId
+    走 `invalidArgument`，SQLite/锁错误走 `storageError`。
+- `src/platform/protocol.ts` 与 `docs/resource-library-plan/8_桥接协议_v0.1.md` 同步说明：
+  当前 `opds.*`、`library.*`、`book.*`、`chapter.get`、`annotation.*`、`reading.*`
+  已采用 `{ code, message, details? }` 结构化错误形态。
+- 本轮不新增错误码、不改版权/获取边界、不改 OPDS acquire 行为。
+
+已验证：
+
+- `cargo check --workspace` 通过。
+- `node scripts/check-arch.mjs` 通过。
+- `node --check scripts/tauri-opds-smoke.mjs` 通过。
+- `node scripts/check-dev-memory.mjs` 通过。
+- `npm.cmd run build` 通过。
+- `cargo test --workspace` 通过（reading-core 84 passed）。
+- `git diff --check` 通过；仅有 Windows 换行提示。
+
+下一步：
+
+- 提交并推送 `codex/remaining-bridge-errors`，开 PR。
+- 之后继续协议冻结审计：批量/预取语义、资源通道核对，以及后续新增命令是否默认使用 `BridgeError`。
+
 ## 2026-06-21：定位升级为轻小说平台
 
 变更：

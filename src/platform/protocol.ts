@@ -6,7 +6,8 @@
 export const PROTOCOL_VERSION = '0.1'
 
 // ---- 结构化错误码 ----
-// 部分桥接方法（v0.6 起的 opds.* 与 library.* 网络/存储类命令）拒绝时，rejection 值是一个结构化
+// 桥接方法拒绝时，v0.6 起逐步使用结构化 BridgeError；当前 book/chapter/library/annotation/reading/opds
+// 已迁移，rejection 值是一个结构化
 // BridgeError 对象而非裸字符串，便于引擎据 code 分流（如网络错误可重试、httpStatus 可显示状态）。
 // 仍兼容旧的"以字符串消息返回"约定：BridgeError 总带 message，引擎 `e?.message || e` 一律可读。
 // 与 reading-core 侧 src-tauri 的 serde 结构（camelCase）一一对应。
