@@ -10,6 +10,7 @@ pub mod html_sanitizer;
 pub mod library;
 pub mod migrations;
 pub mod parse_cache;
+pub mod plugin_manifest;
 pub mod storage;
 
 // 壳需要与 core 共用同一个 rusqlite（类型必须同源），统一从这里取。

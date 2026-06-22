@@ -1,5 +1,43 @@
 # 下一步任务队列
 
+## 📌 交接留言（2026-06-22，v0.7 插件 manifest 策略骨架进行中）
+
+先同步 GitHub：
+
+```powershell
+cd E:\workspace\game-cooperative-plan\lightnovel-reader
+git fetch --all --prune
+git checkout main
+git pull --ff-only
+git status -sb
+```
+
+当前事实：
+
+- `main` 已包含协议 `1.0-rc.1` 冻结候选与 `scripts/check-protocol-freeze.mjs` 守门脚本。
+- 当前分支 `codex/plugin-manifest-policy` 从最新 `main` 创建，开始推进 v0.7 插件运行时的宿主侧策略骨架。
+- 已新增 `reading-core::plugin_manifest`：解析/校验 manifest、精确域名白名单、权限/能力去重、`user-declared` 明示确认、`official-free + acquire` ToS warning。
+- 已同步 `plugin-sdk/manifest.schema.json` 的 `capabilities` 字段，并补充 `source-plugin.d.ts` 可选能力方法。
+- 本轮不新增桥接消息、不引入 QuickJS、不执行插件、不接正文抓取源；只打宿主侧安装/权限/合规门控地基。
+- 合法边界不变：Bangumi / なろう 只做 metadata + 外链；`library.acquireRemote` 只允许青空公共版权条目；OPDS 下载只允许 `open_license`。
+
+已验证：
+
+- `node scripts/check-arch.mjs` 通过。
+- `node scripts/check-dev-memory.mjs` 通过。
+- `node scripts/check-protocol-freeze.mjs` 通过。
+- `npm.cmd run build` 通过。
+- `cargo test --workspace` 通过（reading-core 92 passed）。
+- `node -e "JSON.parse(...)"` 校验 plugin-sdk schema 与示例 manifest 通过。
+- `git diff --check` 通过；仅有 Windows 换行提示。
+- `cargo fmt --check` 未作为本轮门槛：当前仓库既有多处 Rust 文件会被 rustfmt 改写，已仅对本轮新增的 `plugin_manifest.rs` 做局部 `rustfmt`，避免无关格式噪声。
+
+下一步优先级：
+
+1. 提交、推送 `codex/plugin-manifest-policy`，开 PR 后合入主线。
+2. 后续 v0.7 下一块建议做插件安装包读取/权限确认 UI 草图或 host API 纯 Rust 接口；仍不要把正文/章节类来源塞回内核连接器。
+3. 分发线仍需目标机器便携包下载/解压/启动抽检；安装版仍需 NSIS 安装/卸载并确认不删除 `%APPDATA%` 用户书库数据。
+
 ## 📌 交接留言（2026-06-22，协议冻结自动守门进行中）
 
 先同步 GitHub：

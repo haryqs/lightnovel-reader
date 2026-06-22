@@ -22,6 +22,7 @@
 - Calibre 作为导入来源。
 - 单本/多本 EPUB 直接导入书库。
 - 插件 SDK 契约草案。
+- 插件 manifest 宿主侧校验骨架（`reading-core::plugin_manifest`）。
 - 项目记忆与开发流程工具。
 
 当前定位修订（2026-06-21）：
@@ -204,6 +205,7 @@ v0.3 本地书库闭环
 
 - QuickJS 桌面运行时。
 - `plugin-sdk` manifest 校验。
+  - 已起步：`reading-core::plugin_manifest` 解析/校验 manifest、权限/能力去重、精确域名白名单与合规提示。
 - `host.http` 域名白名单。
 - `host.html` 解析能力。
 - `host.kv` 私有存储。

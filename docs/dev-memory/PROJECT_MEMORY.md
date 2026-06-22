@@ -47,6 +47,8 @@
   `BridgeError { code, message, details? }`，新增 `platformError` 表示系统浏览器/外部阅读器等平台能力失败。
 - 2026-06-22：新增 `scripts/check-protocol-freeze.mjs` 并接入 `check:project` / `npm.cmd run build`，自动核对
   `PROTOCOL_VERSION`、`BridgeErrorCode`、Rust `BridgeError` 错误码与协议文档 8 的一致性。协议进入 rc 后，新增错误码或改版本必须让这条检查通过。
+- 2026-06-22：v0.7 插件运行时开始落地第一块宿主侧策略骨架：`reading-core::plugin_manifest` 负责解析/校验 manifest、
+  精确域名白名单、权限/能力去重、`user-declared` 明示确认与 `official-free + acquire` ToS warning；当前仍不执行插件、不新增桥接消息。
 - 2026-06-21：产品定位升级为“本地优先轻小说平台”。阅读器是核心模块，但平台边界包括发现、
   索引、收藏、整理、合法获取入口、来源记录、阅读方式选择与未来插件生态。后续 UI 应提供
   浏览器 / 内置阅读器 / 外部本地阅读器等明确阅读方式。

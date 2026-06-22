@@ -13,6 +13,7 @@
 - **站内合法阅读**：公共版权或开放授权资源可以在明确授权与来源校验后获取正文，转为本地 cached asset 后用内置阅读器打开。
 - **阅读方式选择**：每个可读条目最终应允许用户选择用内置阅读器、系统浏览器或本机其它阅读器打开。
 - **远程条目整理**：远程 metadata 条目可人工关联到本地资产，保留阅读进度和标注锚点。
+- **插件生态地基**：`plugin-sdk` 已有 manifest/schema/host API 契约；`reading-core` 已开始提供 manifest 校验、权限/能力声明和域名白名单策略骨架。
 - **分发脚本**：便携测试包、Web 下载器安装器、Tauri NSIS 安装包配置。
 
 ## 合规边界
@@ -104,4 +105,4 @@ npm.cmd run tauri build
 
 ## 当前开发线
 
-当前主线在 v0.6：OPDS、结构化错误码和平台化书库能力收口中。`opds.*` 与 `library.*` 命令已返回结构化 `BridgeError { code, message, details? }`，前端通过 `formatError` 统一展示。OPDS `open_license` 条目已把 `acquisitionUrl` 持久化到来源记录，书架远程 OPDS 条目可直接获取并按阅读偏好打开。下一步重点是继续跑实机冒烟，并迁移 `book.*`、`annotation.*`、`reading.*`。
+当前主线已推进到协议 `1.0-rc.1` 冻结候选：Tauri command 与 shell promise 错误已统一为结构化 `BridgeError { code, message, details? }`，并由 `scripts/check-protocol-freeze.mjs` 守住协议版本/错误码/文档一致性。功能线下一步进入 v0.7 插件运行时地基：先完成 manifest、权限、域名白名单和 ToS 门控，再考虑 QuickJS host API；分发线仍需继续便携包目标机器抽检和 NSIS 卸载保留数据验证。

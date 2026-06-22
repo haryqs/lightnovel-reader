@@ -2,6 +2,22 @@
 
 > 记录影响未来开发方向的取舍。格式：日期 / 决策 / 理由 / 后果。
 
+## 2026-06-22：v0.7 插件先落宿主侧 manifest 策略，不先执行插件代码
+
+决策：v0.7 插件运行时的第一步只在 `reading-core` 落地 manifest/权限/合规策略模型：解析和校验 manifest、精确域名白名单、能力声明、`user-declared` 明示确认、`official-free + acquire` ToS warning。暂不引入 QuickJS、不新增桥接消息、不运行第三方插件代码。
+
+理由：
+
+- 插件生态的核心风险不是“能不能执行 JS”，而是执行前是否把域名、权限、授权性质和用户确认做成宿主侧硬门。
+- 协议已进入 `1.0-rc.1`，此时不应为了插件探索扩大桥接消息面。
+- 先让 SDK schema、示例 manifest 和 Rust core 校验互相牵住，后续安装 UI 与 QuickJS host API 才有稳定底座。
+
+后果：
+
+- `plugin-sdk/manifest.schema.json` 的 `capabilities` 与 `reading-core::plugin_manifest` 必须继续保持一致。
+- 任何 acquire 型插件能力都不能只信插件返回值；宿主必须按 manifest、rights/status、ToS 与限速策略二次裁决。
+- `user-declared` 插件只能用户自装，安装时必须明示确认，官方仓库/官方 UI 不得把它表现成背书来源。
+
 ## 2026-06-22：桥接协议进入 1.0-rc.1 冻结候选
 
 决策：将 `src/platform/protocol.ts` 的 `PROTOCOL_VERSION` 从 `0.1` 推进到 `1.0-rc.1`。官方 Tauri
