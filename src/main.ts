@@ -904,7 +904,14 @@ function renderInstalledPlugins(plugins: InstalledPlugin[]) {
     toggle.addEventListener('click', () => {
       void setInstalledPluginEnabled(plugin.manifest.id, !plugin.enabled)
     })
-    side.append(badge, toggle)
+    const uninstall = document.createElement('button')
+    uninstall.className = 'btn btn-danger'
+    uninstall.textContent = '卸载'
+    uninstall.title = '删除本地插件文件'
+    uninstall.addEventListener('click', () => {
+      void uninstallInstalledPlugin(plugin)
+    })
+    side.append(badge, toggle, uninstall)
     row.append(main, side)
     pluginInstalledList.appendChild(row)
   }
@@ -916,6 +923,20 @@ async function setInstalledPluginEnabled(pluginId: string, enabled: boolean) {
     await refreshInstalledPlugins()
   } catch (e: any) {
     showPluginPanelMessage(`更新插件状态失败：${formatError(e)}`, true)
+  }
+}
+
+async function uninstallInstalledPlugin(plugin: InstalledPlugin) {
+  const label = `${plugin.manifest.name} ${plugin.manifest.version}`
+  if (!window.confirm(`确定卸载源插件「${label}」？\n\n这会删除本地插件文件，但不会影响书库数据。`)) {
+    return
+  }
+  try {
+    await bridge.uninstallPlugin(plugin.manifest.id)
+    prependPluginSummary(`已卸载源插件：${label}`)
+    await refreshInstalledPlugins()
+  } catch (e: any) {
+    showPluginPanelMessage(`卸载插件失败：${formatError(e)}`, true)
   }
 }
 

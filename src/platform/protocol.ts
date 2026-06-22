@@ -309,6 +309,8 @@ export interface ReaderBridge {
   listInstalledPlugins(): Promise<InstalledPlugin[]>
   /** plugin.setEnabled — 启用/停用已安装源插件；不执行插件代码 */
   setPluginEnabled(pluginId: string, enabled: boolean): Promise<InstalledPlugin>
+  /** plugin.uninstall — 卸载已安装源插件，删除本地插件目录；不执行插件代码 */
+  uninstallPlugin(pluginId: string): Promise<void>
   // ── OPDS v0.6 ──
   /** opds.addSource — 添加一个 OPDS 书源 */
   opdsAddSource(name: string, url: string): Promise<OpdsSource>

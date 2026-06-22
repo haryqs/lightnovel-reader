@@ -54,6 +54,9 @@ pub fn install_plugin_package(
     };
 
     let dir = plugin_dir(plugin_root, &package.manifest.id);
+    if dir.exists() {
+        fs::remove_dir_all(&dir).map_err(|e| format!("remove old plugin directory failed: {e}"))?;
+    }
     fs::create_dir_all(&dir).map_err(|e| format!("create plugin directory failed: {e}"))?;
 
     let manifest_json = serde_json::to_string_pretty(&package.manifest)
@@ -126,6 +129,17 @@ pub fn set_installed_plugin_enabled(
     fs::write(&install_path, install_json)
         .map_err(|e| format!("write plugin install metadata failed: {e}"))?;
     Ok(plugin)
+}
+
+pub fn uninstall_plugin(plugin_root: &Path, plugin_id: &str) -> Result<(), String> {
+    if !is_safe_plugin_id(plugin_id) {
+        return Err("invalid plugin id".into());
+    }
+    let dir = plugin_dir(plugin_root, plugin_id);
+    if !dir.exists() {
+        return Err("plugin install metadata not found".into());
+    }
+    fs::remove_dir_all(&dir).map_err(|e| format!("remove plugin directory failed: {e}"))
 }
 
 fn plugin_dir(root: &Path, id: &str) -> PathBuf {
@@ -248,6 +262,43 @@ mod tests {
         let root = temp_plugin_root("unsafe");
         let err = set_installed_plugin_enabled(&root, "../sample-source", false).unwrap_err();
         assert!(err.contains("invalid plugin id"));
+    }
+
+    #[test]
+    fn uninstalls_plugin_directory() {
+        let root = temp_plugin_root("uninstall");
+        let bytes = zip_bytes(&[
+            ("manifest.json", &manifest("plugin.js", "public-domain")),
+            ("plugin.js", "export default {}"),
+        ]);
+        install_plugin_package(&root, &bytes, false, 42).unwrap();
+
+        uninstall_plugin(&root, "sample-source").unwrap();
+        assert!(!root.join("sample-source").exists());
+        let plugins = list_installed_plugins(&root).unwrap();
+        assert!(plugins.is_empty());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn reinstall_cleans_stale_entry_file() {
+        let root = temp_plugin_root("reinstall");
+        let first = zip_bytes(&[
+            ("manifest.json", &manifest("old.js", "public-domain")),
+            ("old.js", "export default {}"),
+        ]);
+        let second = zip_bytes(&[
+            ("manifest.json", &manifest("plugin.js", "public-domain")),
+            ("plugin.js", "export default { search() {} }"),
+        ]);
+
+        install_plugin_package(&root, &first, false, 42).unwrap();
+        assert!(root.join("sample-source").join("old.js").exists());
+        install_plugin_package(&root, &second, false, 43).unwrap();
+
+        assert!(!root.join("sample-source").join("old.js").exists());
+        assert!(root.join("sample-source").join("plugin.js").exists());
+        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]
