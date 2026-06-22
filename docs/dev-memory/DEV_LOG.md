@@ -1,5 +1,28 @@
 # 开发日志
 
+## 2026-06-22：v0.7 插件 zip 安装包读取骨架落入 reading-core
+
+变更：
+
+- 新增 `crates/reading-core/src/plugin_package.rs`，在 core 侧读取插件 zip 包并复用 `plugin_manifest` 策略。
+- `load_plugin_package_zip` 支持根目录包与单层目录包，读取唯一 `manifest.json`、校验 manifest、确认入口 JS 存在并返回入口文本。
+- 安全约束：拒绝空包、非 zip、多 manifest、缺入口、入口为空、路径穿越、绝对路径、目录入口、非 UTF-8 文本。
+- 单测覆盖 root/nested 包、缺入口、多 manifest、路径穿越、user-declared flags、非 zip。
+- `plugin-sdk/README.md` 与文档 9 同步插件 zip 包格式与“安装前不执行插件代码”的规则。
+
+已验证：
+
+- `node scripts/check-arch.mjs` 通过。
+- `node scripts/check-dev-memory.mjs` 通过。
+- `node scripts/check-protocol-freeze.mjs` 通过。
+- `npm.cmd run build` 通过。
+- `cargo test --workspace` 通过（reading-core 99 passed）。
+- `git diff --check` 通过（仅 Windows 换行提示）。
+
+下一步：
+
+- 后续 v0.7 可继续做插件安装 UI/权限确认，或补 host API 纯 Rust 接口；仍不接正文抓取源。
+
 ## 2026-06-22：v0.7 插件 manifest 策略骨架落入 reading-core
 
 变更：

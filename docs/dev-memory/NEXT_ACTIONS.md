@@ -1,5 +1,39 @@
 # 下一步任务队列
 
+## 📌 交接留言（2026-06-22，v0.7 插件 zip 安装包读取骨架完成）
+
+先同步 GitHub：
+
+```powershell
+cd E:\workspace\game-cooperative-plan\lightnovel-reader
+git fetch --all --prune
+git checkout main
+git pull --ff-only
+git status -sb
+```
+
+当前事实：
+
+- `main` 已包含 PR #37：`reading-core::plugin_manifest` manifest/权限/合规策略骨架。
+- v0.7 插件安装地基继续推进：已新增 `reading-core::plugin_package`，从 zip 字节读取唯一 `manifest.json`，复用 manifest 校验，确认入口 JS 存在并返回入口文本。
+- 插件包规则：支持根目录或单层目录 zip；只允许一个 manifest；入口脚本必须与 manifest 同目录，且是单个 `.js` 文件名；安装前只读取/校验，不执行插件代码。
+- 本轮仍不新增桥接消息、不引入 QuickJS、不执行插件、不接正文抓取源。
+
+已验证：
+
+- `node scripts/check-arch.mjs` 通过。
+- `node scripts/check-dev-memory.mjs` 通过。
+- `node scripts/check-protocol-freeze.mjs` 通过。
+- `npm.cmd run build` 通过。
+- `cargo test --workspace` 通过（reading-core 99 passed）。
+- `git diff --check` 通过（仅 Windows 换行提示）。
+
+下一步优先级：
+
+1. 做插件安装 UI/权限确认：选择 zip、展示 manifest 能力/域名/合规声明、要求用户确认后才写入本地插件存储。
+2. 或先补 host API 纯 Rust 接口草案：围绕 `search` / `browse` / `fetchMetadata` / `resolveUrl` / `acquire` 做输入输出结构，不执行 JS。
+3. 继续保持边界：正文/章节抓取类来源不要塞回内核连接器；合法开放资源与用户自有资源才允许站内获取/阅读。
+
 ## 📌 交接留言（2026-06-22，v0.7 插件 manifest 策略骨架进行中）
 
 先同步 GitHub：
