@@ -1,18 +1,18 @@
-// 桥接协议 v0.1 —— reader-engine 与 reading-core 之间的全部通信面。
+// 桥接协议 v1.0-rc.1 —— reader-engine 与 reading-core 之间的全部通信面。
 // 任何平台壳(Tauri 桌面 / 将来的 Android、iOS、鸿蒙壳)只要实现 ReaderBridge,
 // 引擎即可原样运行。修改本文件 = 修改协议:需同步更新方案文档《8_桥接协议_v0.1》
 // 与 reading-core 侧的 serde 结构。
 
-export const PROTOCOL_VERSION = '0.1'
+export const PROTOCOL_VERSION = '1.0-rc.1'
 
 // ---- 结构化错误码 ----
-// 桥接方法拒绝时，v0.6 起逐步使用结构化 BridgeError；当前 book/chapter/library/annotation/reading/opds
+// 桥接方法拒绝时，v0.6 起逐步使用结构化 BridgeError；当前 book/chapter/library/annotation/reading/opds/shell
 // 已迁移，rejection 值是一个结构化
 // BridgeError 对象而非裸字符串，便于引擎据 code 分流（如网络错误可重试、httpStatus 可显示状态）。
 // 仍兼容旧的"以字符串消息返回"约定：BridgeError 总带 message，引擎 `e?.message || e` 一律可读。
 // 与 reading-core 侧 src-tauri 的 serde 结构（camelCase）一一对应。
 
-/** 结构化错误码枚举。新增 code 必须同步 Rust 侧 BridgeError 构造器与文档 8。 */
+/** 结构化错误码枚举。新增 code 必须同步文档 8；Rust command 使用的新 code 还必须同步 Rust 构造器。 */
 export type BridgeErrorCode =
   | 'invalidArgument'
   | 'storageError'
@@ -21,6 +21,7 @@ export type BridgeErrorCode =
   | 'httpStatus'
   | 'notFound'
   | 'forbidden'
+  | 'platformError'
 
 export interface BridgeError {
   /** 错误分类，供引擎分流（见 BridgeErrorCode）。 */

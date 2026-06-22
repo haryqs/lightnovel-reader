@@ -1,5 +1,30 @@
 # 开发日志
 
+## 2026-06-22：桥接协议推进到 1.0-rc.1 冻结候选
+
+变更：
+
+- 合并 PR #33（`codex/protocol-freeze-audit`）到 `main`，把预取语义与资源通道审计结论带入主线。
+- 新建 `codex/protocol-error-freeze-audit`，继续协议冻结前最后一轮错误面收口。
+- `src/platform/protocol.ts`：`PROTOCOL_VERSION` 从 `0.1` 推进到 `1.0-rc.1`；`BridgeErrorCode` 新增 `platformError`；当前结构化错误覆盖范围记录为 `book/chapter/library/annotation/reading/opds/shell`。
+- `src/platform/tauri.ts`：为 `shell.openExternal` / `shell.openPathExternal` 增加壳侧包装，空 URL/path 返回 `invalidArgument`，系统浏览器或外部阅读器打开失败返回 `platformError`。
+- `src/platform/index.ts`：无原生 bridge 的浏览器兜底改为抛 `BridgeError` 形态的 `platformError`，避免协议面继续出现裸 `Error`。
+- `docs/resource-library-plan/8_桥接协议_v0.1.md`：标题同步为 v1.0-rc.1，记录文件名沿用原因、shell 错误语义、`platformError` 与冻结候选规则；冻结前检查清单第 3 项标记完成。
+- `docs/dev-memory/DECISIONS.md` / `NEXT_ACTIONS.md` / `PROJECT_MEMORY.md` / `AGENTS.md` / `docs/README.md` 同步当前协议状态与下一步交接。
+
+已验证：
+
+- `npm.cmd run build` 通过。
+- `node scripts/check-arch.mjs` 通过。
+- `node scripts/check-dev-memory.mjs` 通过。
+- `cargo test --workspace` 通过（reading-core 84 passed）。
+- `git diff --check` 通过；仅有 Windows 换行提示。
+
+下一步：
+
+- 提交并推送 `codex/protocol-error-freeze-audit`，打开 PR。
+- PR 合并后进入协议冻结候选 review；功能线继续评估 v0.7 插件运行时 / ToS 门控，分发线继续目标机器便携包抽检与 NSIS 卸载保留数据验证。
+
 ## 2026-06-22：协议冻结审计收口预取与资源通道
 
 变更：

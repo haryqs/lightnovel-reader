@@ -4,6 +4,7 @@ import { convertFileSrc, invoke } from '@tauri-apps/api/core'
 import { openPath, openUrl } from '@tauri-apps/plugin-opener'
 import type {
   Annotation,
+  BridgeError,
   BookInfo,
   CalibreBook,
   ImportOutcome,
@@ -19,6 +20,36 @@ import type {
 
 export const isTauriRuntime = () =>
   Boolean((window as any).__TAURI_INTERNALS__)
+
+function bridgeError(code: BridgeError['code'], message: string, details?: unknown): BridgeError {
+  return {
+    code,
+    message,
+    details: details === undefined ? undefined : String(details),
+  }
+}
+
+async function openUrlExternal(url: string): Promise<void> {
+  if (!url || !url.trim()) {
+    throw bridgeError('invalidArgument', 'URL is required')
+  }
+  try {
+    await openUrl(url)
+  } catch (err) {
+    throw bridgeError('platformError', '打开外部链接失败', err instanceof Error ? err.message : err)
+  }
+}
+
+async function openLocalPathExternal(path: string): Promise<void> {
+  if (!path || !path.trim()) {
+    throw bridgeError('invalidArgument', 'path is required')
+  }
+  try {
+    await openPath(path)
+  } catch (err) {
+    throw bridgeError('platformError', '打开本地文件失败', err instanceof Error ? err.message : err)
+  }
+}
 
 export const tauriBridge: ReaderBridge = {
   openBookFromBytes: (data) => invoke<BookInfo>('open_book_bytes', { data }),
@@ -53,8 +84,8 @@ export const tauriBridge: ReaderBridge = {
   getProgress: (bookId) =>
     invoke<ReadingProgress | null>('get_progress', { bookId }),
   resolveFileUrl: (path) => convertFileSrc(path),
-  openExternal: (url) => openUrl(url),
-  openPathExternal: (path) => openPath(path),
+  openExternal: (url) => openUrlExternal(url),
+  openPathExternal: (path) => openLocalPathExternal(path),
   // ── OPDS v0.6 ──
   opdsAddSource: (name, url) =>
     invoke<OpdsSource>('opds_add_source', { name, url }),
