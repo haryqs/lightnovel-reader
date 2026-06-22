@@ -131,7 +131,7 @@ fn resolve_app_data_dir(app: &tauri::App) -> PathBuf {
     app.path().app_data_dir().expect("无法解析 app data 目录")
 }
 
-fn load_book_from_data(state: &AppState, data: Vec<u8>) -> Result<OpenedBook, String> {
+fn load_book_from_data(state: &AppState, data: Vec<u8>) -> Result<OpenedBook, BridgeError> {
     let book_id = compute_book_id(&data);
     let cache_root = &state.cache_dir;
 
@@ -139,7 +139,7 @@ fn load_book_from_data(state: &AppState, data: Vec<u8>) -> Result<OpenedBook, St
     let book_info = match parse_cache::load_book_info(cache_root, &book_id) {
         Some(info) => info,
         None => {
-            let info = epub_parser::parse_book_info(&data)?;
+            let info = epub_parser::parse_book_info(&data).map_err(BridgeError::parse)?;
             parse_cache::store_book_info(cache_root, &book_id, &info);
             info
         }
@@ -170,7 +170,10 @@ fn load_book_from_data(state: &AppState, data: Vec<u8>) -> Result<OpenedBook, St
         book_info: book_info.clone(),
         chapters: Mutex::new(chapters),
     };
-    *state.book.lock().map_err(|e| e.to_string())? = Some(loaded);
+    *state
+        .book
+        .lock()
+        .map_err(|e| BridgeError::storage(e.to_string()))? = Some(loaded);
     Ok(OpenedBook {
         info: book_info,
         book_id,
@@ -183,21 +186,32 @@ fn load_book_from_data(state: &AppState, data: Vec<u8>) -> Result<OpenedBook, St
 async fn open_book_bytes(
     state: tauri::State<'_, AppState>,
     data: Vec<u8>,
-) -> Result<BookInfo, String> {
+) -> Result<BookInfo, BridgeError> {
+    if data.is_empty() {
+        return Err(BridgeError::invalid_argument("EPUB data is empty"));
+    }
     Ok(load_book_from_data(&state, data)?.info)
 }
 
 #[tauri::command]
-fn get_chapter(state: tauri::State<AppState>, href: String) -> Result<String, String> {
+fn get_chapter(state: tauri::State<AppState>, href: String) -> Result<String, BridgeError> {
     if href.trim().is_empty() {
-        return Err("章节 href 为空".to_string());
+        return Err(BridgeError::invalid_argument("章节 href 为空"));
     }
-    let book_guard = state.book.lock().map_err(|e| e.to_string())?;
-    let book = book_guard.as_ref().ok_or("尚未打开任何书籍")?;
+    let book_guard = state
+        .book
+        .lock()
+        .map_err(|e| BridgeError::storage(e.to_string()))?;
+    let book = book_guard
+        .as_ref()
+        .ok_or_else(|| BridgeError::not_found("尚未打开任何书籍"))?;
 
     // 检查缓存
     {
-        let chapters = book.chapters.lock().map_err(|e| e.to_string())?;
+        let chapters = book
+            .chapters
+            .lock()
+            .map_err(|e| BridgeError::storage(e.to_string()))?;
         if let Some(html) = chapters.get(&href) {
             eprintln!("  缓存命中 (精确)");
             return Ok(html.clone());
@@ -216,17 +230,21 @@ fn get_chapter(state: tauri::State<AppState>, href: String) -> Result<String, St
     if let Some(html) = parse_cache::load_chapter(&state.cache_dir, &book.book_id, &href) {
         book.chapters
             .lock()
-            .map_err(|e| e.to_string())?
+            .map_err(|e| BridgeError::storage(e.to_string()))?
             .insert(href.clone(), html.clone());
         return Ok(html);
     }
 
     // 全部未命中——按需解析 + 清洗，写回内存与磁盘缓存
     eprintln!("  缓存未命中，按需解析");
-    let html = epub_parser::parse_single_chapter(&book.bytes[..], &href, &book.book_info)?;
+    let html = epub_parser::parse_single_chapter(&book.bytes[..], &href, &book.book_info)
+        .map_err(BridgeError::parse)?;
     parse_cache::store_chapter(&state.cache_dir, &book.book_id, &href, &html);
 
-    let mut chapters = book.chapters.lock().map_err(|e| e.to_string())?;
+    let mut chapters = book
+        .chapters
+        .lock()
+        .map_err(|e| BridgeError::storage(e.to_string()))?;
     chapters.insert(href.clone(), html.clone());
 
     Ok(html)
@@ -244,8 +262,11 @@ struct OpenedBook {
 async fn open_book_path(
     state: tauri::State<'_, AppState>,
     path: String,
-) -> Result<OpenedBook, String> {
-    let data = std::fs::read(&path).map_err(|e| e.to_string())?;
+) -> Result<OpenedBook, BridgeError> {
+    if path.trim().is_empty() {
+        return Err(BridgeError::invalid_argument("book path is required"));
+    }
+    let data = std::fs::read(&path).map_err(|e| BridgeError::storage(e.to_string()))?;
     load_book_from_data(&state, data)
 }
 
@@ -900,7 +921,7 @@ async fn library_open(
     };
     let data = std::fs::read(&file_path)
         .map_err(|e| BridgeError::storage(format!("读取书库文件失败: {}", e)))?;
-    load_book_from_data(&state, data).map_err(BridgeError::parse)
+    load_book_from_data(&state, data)
 }
 
 #[tauri::command]
@@ -916,8 +937,11 @@ fn library_touch_last_read(state: tauri::State<AppState>, id: String) -> Result<
 }
 
 #[tauri::command]
-fn close_book(state: tauri::State<AppState>) -> Result<(), String> {
-    let mut book = state.book.lock().map_err(|e| e.to_string())?;
+fn close_book(state: tauri::State<AppState>) -> Result<(), BridgeError> {
+    let mut book = state
+        .book
+        .lock()
+        .map_err(|e| BridgeError::storage(e.to_string()))?;
     *book = None;
     Ok(())
 }
@@ -928,24 +952,45 @@ fn close_book(state: tauri::State<AppState>) -> Result<(), String> {
 fn save_annotation(
     state: tauri::State<AppState>,
     annotation: storage::Annotation,
-) -> Result<(), String> {
-    let db = state.db.lock().map_err(|e| e.to_string())?;
-    storage::save(&db, &annotation).map_err(|e| e.to_string())
+) -> Result<(), BridgeError> {
+    if annotation.id.trim().is_empty() {
+        return Err(BridgeError::invalid_argument("annotation id is required"));
+    }
+    if annotation.book_id.trim().is_empty() {
+        return Err(BridgeError::invalid_argument("book id is required"));
+    }
+    let db = state
+        .db
+        .lock()
+        .map_err(|e| BridgeError::storage(e.to_string()))?;
+    storage::save(&db, &annotation).map_err(|e| BridgeError::storage(e.to_string()))
 }
 
 #[tauri::command]
 fn list_annotations(
     state: tauri::State<AppState>,
     book_id: String,
-) -> Result<Vec<storage::Annotation>, String> {
-    let db = state.db.lock().map_err(|e| e.to_string())?;
-    storage::list(&db, &book_id).map_err(|e| e.to_string())
+) -> Result<Vec<storage::Annotation>, BridgeError> {
+    if book_id.trim().is_empty() {
+        return Err(BridgeError::invalid_argument("book id is required"));
+    }
+    let db = state
+        .db
+        .lock()
+        .map_err(|e| BridgeError::storage(e.to_string()))?;
+    storage::list(&db, &book_id).map_err(|e| BridgeError::storage(e.to_string()))
 }
 
 #[tauri::command]
-fn delete_annotation(state: tauri::State<AppState>, id: String) -> Result<(), String> {
-    let db = state.db.lock().map_err(|e| e.to_string())?;
-    storage::delete(&db, &id).map_err(|e| e.to_string())
+fn delete_annotation(state: tauri::State<AppState>, id: String) -> Result<(), BridgeError> {
+    if id.trim().is_empty() {
+        return Err(BridgeError::invalid_argument("annotation id is required"));
+    }
+    let db = state
+        .db
+        .lock()
+        .map_err(|e| BridgeError::storage(e.to_string()))?;
+    storage::delete(&db, &id).map_err(|e| BridgeError::storage(e.to_string()))
 }
 
 // —— 阅读进度命令 ——
@@ -954,18 +999,30 @@ fn delete_annotation(state: tauri::State<AppState>, id: String) -> Result<(), St
 fn save_progress(
     state: tauri::State<AppState>,
     progress: storage::ReadingProgress,
-) -> Result<(), String> {
-    let db = state.db.lock().map_err(|e| e.to_string())?;
-    storage::save_progress(&db, &progress).map_err(|e| e.to_string())
+) -> Result<(), BridgeError> {
+    if progress.book_id.trim().is_empty() {
+        return Err(BridgeError::invalid_argument("book id is required"));
+    }
+    let db = state
+        .db
+        .lock()
+        .map_err(|e| BridgeError::storage(e.to_string()))?;
+    storage::save_progress(&db, &progress).map_err(|e| BridgeError::storage(e.to_string()))
 }
 
 #[tauri::command]
 fn get_progress(
     state: tauri::State<AppState>,
     book_id: String,
-) -> Result<Option<storage::ReadingProgress>, String> {
-    let db = state.db.lock().map_err(|e| e.to_string())?;
-    storage::get_progress(&db, &book_id).map_err(|e| e.to_string())
+) -> Result<Option<storage::ReadingProgress>, BridgeError> {
+    if book_id.trim().is_empty() {
+        return Err(BridgeError::invalid_argument("book id is required"));
+    }
+    let db = state
+        .db
+        .lock()
+        .map_err(|e| BridgeError::storage(e.to_string()))?;
+    storage::get_progress(&db, &book_id).map_err(|e| BridgeError::storage(e.to_string()))
 }
 
 // ── OPDS v0.6 命令 ──

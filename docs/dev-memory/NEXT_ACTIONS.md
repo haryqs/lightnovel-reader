@@ -1,5 +1,45 @@
 # 下一步任务队列
 
+## 📌 交接留言（2026-06-22，剩余阅读/标注命令 BridgeError 迁移）
+
+当前分支：
+
+- `codex/remaining-bridge-errors`，从 `main` 快进到 GitHub 最新 `0b027bf` 后创建。
+
+本轮已完成：
+
+- 已同步 GitHub：`git fetch --all --prune` 拉到 `origin/main 0b027bf`，`git pull --ff-only`
+  快进本地 `main`；远端 `codex/source-record-panel` 已删除，PR #22 已合并事实不变。
+- `src-tauri/src/lib.rs`：剩余阅读/标注相关命令已迁移到结构化 `BridgeError`：
+  - `book.open` / `book.openPath` / `book.close`
+  - `chapter.get`
+  - `annotation.save` / `annotation.list` / `annotation.delete`
+  - `reading.saveProgress` / `reading.getProgress`
+- 错误分类沿用既有 7 个 code，不新增 code：
+  - 空参数：`invalidArgument`
+  - 未开书/找不到目标：`notFound`
+  - EPUB/章节解析：`parseError`
+  - Mutex/SQLite/文件读取等本地状态问题：`storageError`
+- `src/platform/protocol.ts` 与 `docs/resource-library-plan/8_桥接协议_v0.1.md` 已同步结构化错误码覆盖范围。
+- 合规/获取边界不变：Bangumi / なろう 仍只做 metadata + 外链；青空 `public_domain` 与 OPDS
+  `open_license` 的正文获取硬门不变。
+
+已验证：
+
+- `cargo check --workspace` 通过。
+- `node scripts/check-arch.mjs` 通过。
+- `node --check scripts/tauri-opds-smoke.mjs` 通过。
+- `node scripts/check-dev-memory.mjs` 通过。
+- `npm.cmd run build` 通过。
+- `cargo test --workspace` 通过（reading-core 84 passed）。
+- `git diff --check` 通过；仅有 Windows 换行提示。
+
+下一步优先级：
+
+1. 提交并推送 `codex/remaining-bridge-errors`，开 PR。
+2. 继续协议冻结审计：批量/预取语义、资源通道核对、后续新增命令默认使用 `BridgeError`。
+3. 若准备分发，重跑 `npm.cmd run package:beta` 并做解压/启动检查。
+
 ## 📌 交接留言（2026-06-21，OPDS acquisition URL 持久化已落地）
 
 当前分支：
