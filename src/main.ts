@@ -1,5 +1,5 @@
 import { ReaderCore, type PageMode, type ReaderLayoutSettings, type TocItem } from './reader-core'
-import { bridge, hasNativeBridge, isBridgeError, type InstalledPlugin, type LibraryBook, type LibrarySourceRecord, type OpdsEntry, type OpdsFeed, type OpdsSource, type PluginInstallPreview, type RemoteLibrarySource } from './platform'
+import { bridge, hasNativeBridge, isBridgeError, type InstalledPlugin, type LibraryBook, type LibrarySourceRecord, type OpdsEntry, type OpdsFeed, type OpdsSource, type PluginInstallPreview, type PluginRepositoryEntry, type RemoteLibrarySource } from './platform'
 import type { ThemeName } from './themes'
 
 const reader = new ReaderCore()
@@ -575,12 +575,16 @@ const opdsFeedIngestAllBtn = $<HTMLButtonElement>('#btn-opds-feed-ingest-all')
 const libraryPluginPanel = $<HTMLDetailsElement>('#library-plugin-panel')
 const pluginSelectPackageBtn = $<HTMLButtonElement>('#btn-plugin-select-package')
 const pluginRefreshBtn = $<HTMLButtonElement>('#btn-plugin-refresh')
+const pluginRepositoryUrlInput = $<HTMLInputElement>('#plugin-repository-url')
+const pluginRepositoryLoadBtn = $<HTMLButtonElement>('#btn-plugin-repository-load')
+const pluginRepositoryList = $('#plugin-repository-list')
 const pluginInstallPreview = $('#plugin-install-preview')
 const pluginInstalledList = $('#plugin-installed-list')
 // OPDS session state: track current browsing context
 let opdsFeedCache: OpdsFeed | null = null
 let opdsSourceCache: OpdsSource | null = null
 let pendingPluginPackagePath = ''
+let pendingRepositoryPackage: { packageUrl: string; packageSha256: string } | null = null
 let pendingPluginPreview: PluginInstallPreview | null = null
 let dismissedOpdsUrlHint = ''
 let libraryBooks: LibraryBook[] = []
@@ -653,6 +657,10 @@ libraryPluginPanel.addEventListener('toggle', () => {
 })
 pluginSelectPackageBtn.addEventListener('click', () => void selectPluginPackage())
 pluginRefreshBtn.addEventListener('click', () => void refreshInstalledPlugins())
+pluginRepositoryLoadBtn.addEventListener('click', () => void loadPluginRepository())
+pluginRepositoryUrlInput.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter') void loadPluginRepository()
+})
 
 function detectOpdsFeedUrl(value: string): string | null {
   const raw = value.trim()
@@ -732,6 +740,7 @@ async function selectPluginPackage() {
     const path = await bridge.selectPluginPackagePath()
     if (!path) return
     pendingPluginPackagePath = path
+    pendingRepositoryPackage = null
     pendingPluginPreview = await bridge.inspectPluginPackage(path)
     renderPluginInstallPreview(pendingPluginPreview, path)
   } catch (e: any) {
@@ -739,6 +748,114 @@ async function selectPluginPackage() {
   } finally {
     pluginSelectPackageBtn.disabled = false
     pluginSelectPackageBtn.textContent = '选择插件 zip'
+  }
+}
+
+async function loadPluginRepository() {
+  if (!isTauriRuntime()) {
+    renderPluginRepositoryMessage('官方索引需要 Tauri 桌面窗口。', true)
+    return
+  }
+  const url = pluginRepositoryUrlInput.value.trim()
+  if (!url) {
+    renderPluginRepositoryMessage('请输入官方插件索引 JSON URL。', true)
+    return
+  }
+  pluginRepositoryLoadBtn.disabled = true
+  pluginRepositoryLoadBtn.textContent = '加载中…'
+  pluginRepositoryList.innerHTML = '<div class="plugin-empty">读取官方索引…</div>'
+  try {
+    const catalog = await bridge.loadPluginRepositoryIndex(url)
+    renderPluginRepository(catalog.index.entries, catalog.validation.warnings)
+  } catch (e: any) {
+    renderPluginRepositoryMessage(`加载官方索引失败：${formatError(e)}`, true)
+  } finally {
+    pluginRepositoryLoadBtn.disabled = false
+    pluginRepositoryLoadBtn.textContent = '加载官方索引'
+  }
+}
+
+function renderPluginRepository(entries: PluginRepositoryEntry[], warnings: string[]) {
+  pluginRepositoryList.innerHTML = ''
+  if (warnings.length > 0) {
+    const warning = document.createElement('div')
+    warning.className = 'plugin-message'
+    warning.textContent = warnings.join(' · ')
+    pluginRepositoryList.appendChild(warning)
+  }
+  if (entries.length === 0) {
+    const empty = document.createElement('div')
+    empty.className = 'plugin-empty'
+    empty.textContent = '官方索引暂无插件。'
+    pluginRepositoryList.appendChild(empty)
+    return
+  }
+  for (const entry of entries) {
+    const row = document.createElement('div')
+    row.className = 'plugin-repository-row'
+
+    const main = document.createElement('div')
+    main.className = 'plugin-installed-main'
+    const name = document.createElement('div')
+    name.className = 'plugin-installed-name'
+    name.textContent = `${entry.manifest.name} ${entry.manifest.version}`
+    const meta = document.createElement('div')
+    meta.className = 'plugin-installed-meta'
+    meta.textContent = [
+      entry.manifest.id,
+      pluginLegalLabel(entry.manifest.legal.kind),
+      entry.manifest.capabilities.map(pluginCapabilityLabel).join(', ') || '基础搜索',
+      entry.packageSize ? formatBytes(entry.packageSize) : '未知大小',
+    ].join(' · ')
+    main.append(name, meta)
+
+    const actions = document.createElement('div')
+    actions.className = 'plugin-installed-actions'
+    const inspect = document.createElement('button')
+    inspect.className = 'btn btn-primary'
+    inspect.textContent = '校验包'
+    inspect.addEventListener('click', () => {
+      void inspectRepositoryEntry(entry, inspect)
+    })
+    actions.appendChild(inspect)
+    if (entry.sourceUrl) {
+      const source = document.createElement('button')
+      source.className = 'btn'
+      source.textContent = '源码'
+      source.addEventListener('click', () => void bridge.openExternal(entry.sourceUrl as string))
+      actions.appendChild(source)
+    }
+
+    row.append(main, actions)
+    pluginRepositoryList.appendChild(row)
+  }
+}
+
+function renderPluginRepositoryMessage(message: string, error = false) {
+  pluginRepositoryList.innerHTML = ''
+  const item = document.createElement('div')
+  item.className = error ? 'plugin-message plugin-message-error' : 'plugin-message'
+  item.textContent = message
+  pluginRepositoryList.appendChild(item)
+}
+
+async function inspectRepositoryEntry(entry: PluginRepositoryEntry, button: HTMLButtonElement) {
+  button.disabled = true
+  button.textContent = '校验中…'
+  try {
+    const preview = await bridge.inspectRepositoryPluginPackage(entry.packageUrl, entry.packageSha256)
+    pendingPluginPackagePath = ''
+    pendingRepositoryPackage = {
+      packageUrl: entry.packageUrl,
+      packageSha256: entry.packageSha256,
+    }
+    pendingPluginPreview = preview
+    renderPluginInstallPreview(preview, entry.packageUrl)
+  } catch (e: any) {
+    showPluginPanelMessage(`校验官方插件包失败：${formatError(e)}`, true)
+  } finally {
+    button.disabled = false
+    button.textContent = '校验包'
   }
 }
 
@@ -822,14 +939,19 @@ function pluginFact(label: string, value: string): HTMLElement {
 }
 
 async function installPendingPlugin(confirmUserLegal: boolean) {
-  if (!pendingPluginPackagePath || !pendingPluginPreview) return
+  if ((!pendingPluginPackagePath && !pendingRepositoryPackage) || !pendingPluginPreview) return
   const installBtn = pluginInstallPreview.querySelector<HTMLButtonElement>('.plugin-preview-actions .btn-primary')
   if (installBtn) {
     installBtn.disabled = true
     installBtn.textContent = '安装中…'
   }
   try {
-    const installed = await bridge.installPluginPackage(pendingPluginPackagePath, confirmUserLegal)
+    const installed = pendingRepositoryPackage
+      ? await bridge.installRepositoryPluginPackage(
+        pendingRepositoryPackage.packageUrl,
+        pendingRepositoryPackage.packageSha256,
+      )
+      : await bridge.installPluginPackage(pendingPluginPackagePath, confirmUserLegal)
     clearPluginPreview()
     prependPluginSummary(`已安装源插件：${installed.manifest.name} ${installed.manifest.version}`)
     await refreshInstalledPlugins()
@@ -845,6 +967,7 @@ async function installPendingPlugin(confirmUserLegal: boolean) {
 
 function clearPluginPreview() {
   pendingPluginPackagePath = ''
+  pendingRepositoryPackage = null
   pendingPluginPreview = null
   pluginInstallPreview.hidden = true
   pluginInstallPreview.innerHTML = ''

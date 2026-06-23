@@ -7,7 +7,10 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use reading_core::connectors;
 use reading_core::epub_parser::{self, BookInfo};
-use reading_core::{compute_book_id, library, parse_cache, plugin_store, rusqlite, storage};
+use reading_core::plugin_manifest::{PluginCapability, PluginLegalKind};
+use reading_core::{
+    compute_book_id, library, parse_cache, plugin_repository, plugin_store, rusqlite, storage,
+};
 use tauri::Manager;
 
 struct LoadedBook {
@@ -378,6 +381,13 @@ fn library_import_bytes(
 
 // —— 插件安装预览（v0.7 地基）：只读取/校验/写入插件目录，不执行插件 JS。——
 
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PluginRepositoryCatalog {
+    index: plugin_repository::PluginRepositoryIndex,
+    validation: plugin_repository::PluginRepositoryValidation,
+}
+
 fn plugin_package_error(message: String) -> BridgeError {
     if message.contains("legal confirmation") {
         BridgeError::forbidden(message)
@@ -393,6 +403,62 @@ fn plugin_package_error(message: String) -> BridgeError {
     } else {
         BridgeError::parse(message)
     }
+}
+
+fn plugin_repository_error(message: String) -> BridgeError {
+    if message.contains("not eligible")
+        || message.contains("official-free acquire")
+        || message.contains("must be https")
+        || message.contains("signature")
+    {
+        BridgeError::forbidden(message)
+    } else {
+        BridgeError::parse(message)
+    }
+}
+
+fn ensure_https_plugin_url(url: &str, label: &str) -> Result<(), BridgeError> {
+    let parsed = reqwest::Url::parse(url)
+        .map_err(|e| BridgeError::invalid_argument(format!("{label} 不是合法 URL: {e}")))?;
+    if parsed.scheme() != "https" {
+        return Err(BridgeError::forbidden(format!("{label} 必须使用 HTTPS")));
+    }
+    Ok(())
+}
+
+async fn download_verified_plugin_package(
+    package_url: &str,
+    package_sha256: &str,
+) -> Result<Vec<u8>, BridgeError> {
+    ensure_https_plugin_url(package_url, "插件包地址")?;
+    let bytes = fetch_bytes(package_url, "插件包").await?;
+    if bytes.len() as u64 > plugin_repository::MAX_PACKAGE_SIZE_BYTES {
+        return Err(BridgeError::forbidden("插件包超过 50 MiB 上限"));
+    }
+    plugin_repository::verify_package_sha256(&bytes, package_sha256)
+        .map_err(|e| BridgeError::forbidden(format!("插件包校验失败: {e}")))?;
+    Ok(bytes)
+}
+
+fn ensure_official_package_preview(
+    preview: &plugin_store::PluginInstallPreview,
+) -> Result<(), BridgeError> {
+    if !preview.validation.official_repository_eligible {
+        return Err(BridgeError::forbidden(
+            "该插件包 manifest 不符合官方仓库收录条件",
+        ));
+    }
+    if preview.manifest.legal.kind == PluginLegalKind::OfficialFree
+        && preview
+            .manifest
+            .capabilities
+            .contains(&PluginCapability::Acquire)
+    {
+        return Err(BridgeError::forbidden(
+            "official-free + acquire 在 ToS/限速/用户确认门控落地前不能通过官方仓库安装",
+        ));
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -450,6 +516,47 @@ fn plugin_uninstall(state: tauri::State<AppState>, plugin_id: String) -> Result<
         return Err(BridgeError::invalid_argument("plugin id is required"));
     }
     plugin_store::uninstall_plugin(&state.plugin_dir, &plugin_id).map_err(plugin_package_error)
+}
+
+#[tauri::command]
+async fn plugin_load_repository_index(url: String) -> Result<PluginRepositoryCatalog, BridgeError> {
+    let url = url.trim();
+    if url.is_empty() {
+        return Err(BridgeError::invalid_argument(
+            "plugin repository URL is required",
+        ));
+    }
+    ensure_https_plugin_url(url, "插件仓库索引地址")?;
+    let text = fetch_text(url, "插件仓库索引").await?;
+    let index =
+        plugin_repository::parse_repository_index(&text).map_err(plugin_repository_error)?;
+    let validation =
+        plugin_repository::validate_repository_index(&index).map_err(plugin_repository_error)?;
+    Ok(PluginRepositoryCatalog { index, validation })
+}
+
+#[tauri::command]
+async fn plugin_inspect_repository_package(
+    package_url: String,
+    package_sha256: String,
+) -> Result<plugin_store::PluginInstallPreview, BridgeError> {
+    let bytes = download_verified_plugin_package(&package_url, &package_sha256).await?;
+    let preview = plugin_store::inspect_plugin_package(&bytes).map_err(plugin_package_error)?;
+    ensure_official_package_preview(&preview)?;
+    Ok(preview)
+}
+
+#[tauri::command]
+async fn plugin_install_repository_package(
+    state: tauri::State<'_, AppState>,
+    package_url: String,
+    package_sha256: String,
+) -> Result<plugin_store::InstalledPlugin, BridgeError> {
+    let bytes = download_verified_plugin_package(&package_url, &package_sha256).await?;
+    let preview = plugin_store::inspect_plugin_package(&bytes).map_err(plugin_package_error)?;
+    ensure_official_package_preview(&preview)?;
+    plugin_store::install_plugin_package(&state.plugin_dir, &bytes, false, now_ms())
+        .map_err(plugin_package_error)
 }
 
 #[tauri::command]
@@ -1431,6 +1538,9 @@ pub fn run() {
             plugin_list_installed,
             plugin_set_enabled,
             plugin_uninstall,
+            plugin_load_repository_index,
+            plugin_inspect_repository_package,
+            plugin_install_repository_package,
             library_list,
             library_search,
             library_source_records,

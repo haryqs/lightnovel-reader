@@ -1,5 +1,27 @@
 # 开发日志
 
+## 2026-06-23：v0.7 官方插件仓库下载校验安装链路
+
+变更：
+
+- 书库“源插件（v0.7 预览）”面板新增官方插件仓库索引 URL 输入、加载按钮与候选插件列表。
+- 新增 `plugin.repository.load` / `plugin.repository.inspectPackage` / `plugin.repository.installPackage` 桥接能力；前端仍只通过 `src/platform`，Tauri command 负责 HTTPS 下载与参数搬运，校验/预览/安装仍在 `reading-core`。
+- 官方索引加载会先走 `reading-core::plugin_repository` 校验；候选插件逐条下载 zip 后核对 `packageSha256`，再复用 `plugin_package` / `plugin_store` 生成安装预览。
+- 安装官方仓库插件时会重新下载 zip 并再次核对 SHA-256，不信任预览阶段临时结果。
+- 官方仓库包仍拒绝 `user-declared` 与 `official-free + acquire`，直到 ToS/限速/用户确认门控补齐；当前仍不执行插件 JS，不引入 QuickJS。
+- 同步桥接协议文档、DECISIONS、PROJECT_MEMORY、NEXT_ACTIONS。
+
+已验证：
+
+- `npm.cmd run build` 通过。
+- `cargo test --workspace` 通过（reading-core 123 passed）。
+- 本轮开始时因 main 新增 `tauri-plugin-dialog` 依赖，先运行 `npm.cmd install` 与联网 Cargo 拉取依赖；依赖拉取完成后 workspace 测试通过。
+
+下一步：
+
+- 给官方索引安装流补真实 Tauri 窗口 smoke：测试索引加载、包校验、安装确认、已安装列表刷新。
+- 真正做签名验签前先设计 keyring/验签策略；当前 signature 字段仍只是元数据预留。
+
 ## 2026-06-23：v0.7 官方插件仓库索引骨架
 
 变更：

@@ -52,6 +52,9 @@ const noBridge: ReaderBridge = {
   listInstalledPlugins: async () => unavailable('plugin.listInstalled'),
   setPluginEnabled: async () => unavailable('plugin.setEnabled'),
   uninstallPlugin: async () => unavailable('plugin.uninstall'),
+  loadPluginRepositoryIndex: async () => unavailable('plugin.repository.load'),
+  inspectRepositoryPluginPackage: async () => unavailable('plugin.repository.inspectPackage'),
+  installRepositoryPluginPackage: async () => unavailable('plugin.repository.installPackage'),
   // OPDS v0.6
   opdsAddSource: async () => unavailable('opds.addSource'),
   opdsRemoveSource: async () => unavailable('opds.removeSource'),
