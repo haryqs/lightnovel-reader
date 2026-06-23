@@ -19,8 +19,12 @@
 已验证：
 
 - `npm.cmd run smoke:plugin-repository-fixtures -- --out-dir .\tmp-plugin-repository-smoke --base-url https://plugins.example.invalid/smoke` 通过；测试产物已删除。
+- `node scripts/check-arch.mjs` 通过。
+- `node scripts/check-dev-memory.mjs` 通过。
+- `node scripts/check-protocol-freeze.mjs` 通过。
 - `npm.cmd run build` 通过。
 - `cargo test --workspace` 通过（reading-core 123 passed）。
+- `git diff --check` 通过（仅 Windows 换行提示）。
 - 本轮开始时因 main 新增 `tauri-plugin-dialog` 依赖，先运行 `npm.cmd install` 与联网 Cargo 拉取依赖；依赖拉取完成后 workspace 测试通过。
 
 下一步：

@@ -27,10 +27,13 @@ git status -sb
 
 已验证：
 
+- `node scripts/check-arch.mjs` 通过。
+- `node scripts/check-dev-memory.mjs` 通过。
+- `node scripts/check-protocol-freeze.mjs` 通过。
 - `npm.cmd run build` 通过。
 - `cargo test --workspace` 通过（reading-core 123 passed）。
 - `npm.cmd run smoke:plugin-repository-fixtures -- --out-dir .\tmp-plugin-repository-smoke --base-url https://plugins.example.invalid/smoke` 通过，测试产物已删除。
-- 收工前仍需重跑：`node scripts/check-arch.mjs`、`node scripts/check-dev-memory.mjs`、`node scripts/check-protocol-freeze.mjs`、`git diff --check`。
+- `git diff --check` 通过（仅 Windows 换行提示）。
 
 下一步优先级：
 
