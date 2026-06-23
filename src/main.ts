@@ -761,6 +761,7 @@ async function loadPluginRepository() {
     renderPluginRepositoryMessage('请输入官方插件索引 JSON URL。', true)
     return
   }
+  clearPluginPreview()
   pluginRepositoryLoadBtn.disabled = true
   pluginRepositoryLoadBtn.textContent = '加载中…'
   pluginRepositoryList.innerHTML = '<div class="plugin-empty">读取官方索引…</div>'

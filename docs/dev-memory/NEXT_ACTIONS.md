@@ -23,6 +23,7 @@ git status -sb
 - 当前仍不执行插件 JS，不引入 QuickJS；官方仓库下载的是插件包元数据/入口文件安装流，不是正文抓取流。
 - 已新增 `npm.cmd run smoke:plugin-repository-fixtures`：生成合法插件 zip、SHA-256 与 `repository.json`，用于后续真实窗口 smoke；它不会启动 HTTPS 服务。
 - 官方仓库候选“源码”按钮已补错误回显，平台外链打开失败会显示到插件面板。
+- 加载新的官方索引会先清空旧安装预览，避免索引上下文切换后误安装上一轮已校验包。
 
 已验证：
 
