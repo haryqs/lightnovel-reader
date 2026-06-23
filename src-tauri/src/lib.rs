@@ -426,11 +426,39 @@ fn ensure_https_plugin_url(url: &str, label: &str) -> Result<(), BridgeError> {
     Ok(())
 }
 
+fn ensure_plugin_package_sha256(package_sha256: &str) -> Result<&str, BridgeError> {
+    let package_sha256 = package_sha256.trim();
+    if package_sha256.len() != 64 || !package_sha256.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err(BridgeError::invalid_argument(
+            "插件包 SHA-256 必须是 64 位十六进制字符串",
+        ));
+    }
+    Ok(package_sha256)
+}
+
+#[cfg(test)]
+mod plugin_repository_command_tests {
+    use super::*;
+
+    #[test]
+    fn plugin_package_sha256_is_checked_before_download() {
+        let hash = " e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 ";
+        assert_eq!(
+            ensure_plugin_package_sha256(hash).unwrap(),
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        );
+
+        let err = ensure_plugin_package_sha256("not-a-sha").unwrap_err();
+        assert_eq!(err.code, "invalidArgument");
+    }
+}
+
 async fn download_verified_plugin_package(
     package_url: &str,
     package_sha256: &str,
 ) -> Result<Vec<u8>, BridgeError> {
     ensure_https_plugin_url(package_url, "插件包地址")?;
+    let package_sha256 = ensure_plugin_package_sha256(package_sha256)?;
     let bytes = fetch_bytes(package_url, "插件包").await?;
     if bytes.len() as u64 > plugin_repository::MAX_PACKAGE_SIZE_BYTES {
         return Err(BridgeError::forbidden("插件包超过 50 MiB 上限"));
