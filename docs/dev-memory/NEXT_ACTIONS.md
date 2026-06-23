@@ -21,16 +21,19 @@ git status -sb
 - 仓库包预览和安装都会校验 `packageSha256`；安装命令会重新下载并再次校验，不信任预览缓存。
 - 签名字段当前只校验 `ed25519/keyId/value` 形状并返回 warning，不做密码学验签；不要对外宣称“已签名验证”。
 - 当前仍不执行插件 JS，不引入 QuickJS；官方仓库下载的是插件包元数据/入口文件安装流，不是正文抓取流。
+- 已新增 `npm.cmd run smoke:plugin-repository-fixtures`：生成合法插件 zip、SHA-256 与 `repository.json`，用于后续真实窗口 smoke；它不会启动 HTTPS 服务。
+- 官方仓库候选“源码”按钮已补错误回显，平台外链打开失败会显示到插件面板。
 
 已验证：
 
 - `npm.cmd run build` 通过。
 - `cargo test --workspace` 通过（reading-core 123 passed）。
+- `npm.cmd run smoke:plugin-repository-fixtures -- --out-dir .\tmp-plugin-repository-smoke --base-url https://plugins.example.invalid/smoke` 通过，测试产物已删除。
 - 收工前仍需重跑：`node scripts/check-arch.mjs`、`node scripts/check-dev-memory.mjs`、`node scripts/check-protocol-freeze.mjs`、`git diff --check`。
 
 下一步优先级：
 
-1. 优先给官方索引安装流补真实窗口 smoke：构造本地/测试 HTTPS 索引与 zip，验证加载索引、校验包、安装确认、已安装列表刷新。
+1. 优先给官方索引安装流补真实窗口 smoke：复用 `smoke:plugin-repository-fixtures` 产物，接入测试 HTTPS server 或可信 HTTPS fixture URL，验证加载索引、校验包、安装确认、已安装列表刷新。
 2. 继续保持用户自装插件与官方白名单插件视觉区分；UI 后续可补官方来源 badge、索引 warning 展示细节和源码入口文案。
 3. 真正做签名验签前，需要单独实现 keyring/验签逻辑并更新 DECISIONS；当前 signature 只是元数据预留。
 4. 如要放行某个 `official_free` 源正文获取，先补源站 ToS 记录、限速策略、用户确认与单源测试；不要把正文抓取放进内核连接器。

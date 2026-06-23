@@ -822,7 +822,9 @@ function renderPluginRepository(entries: PluginRepositoryEntry[], warnings: stri
       const source = document.createElement('button')
       source.className = 'btn'
       source.textContent = '源码'
-      source.addEventListener('click', () => void bridge.openExternal(entry.sourceUrl as string))
+      source.addEventListener('click', () => {
+        void openPluginRepositorySource(entry.sourceUrl as string)
+      })
       actions.appendChild(source)
     }
 
@@ -837,6 +839,14 @@ function renderPluginRepositoryMessage(message: string, error = false) {
   item.className = error ? 'plugin-message plugin-message-error' : 'plugin-message'
   item.textContent = message
   pluginRepositoryList.appendChild(item)
+}
+
+async function openPluginRepositorySource(url: string) {
+  try {
+    await bridge.openExternal(url)
+  } catch (e: any) {
+    showPluginPanelMessage(`打开源码地址失败：${formatError(e)}`, true)
+  }
 }
 
 async function inspectRepositoryEntry(entry: PluginRepositoryEntry, button: HTMLButtonElement) {
