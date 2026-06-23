@@ -2,6 +2,26 @@
 
 > 记录影响未来开发方向的取舍。格式：日期 / 决策 / 理由 / 后果。
 
+## 2026-06-22：插件 host API 先做 Rust 策略门，不放行 official-free 正文缓存
+
+决策：v0.7 插件运行时继续按“先宿主策略，后 JS 执行”推进。本轮在 `reading-core::plugin_host`
+落地 host API DTO 与运行前门控：停用插件不得运行；可选方法必须声明 capability；`host.http`
+必须有 `http` 权限且 URL 精确命中 manifest 域名；保留请求头由宿主忽略；`host.kv` 必须有 `kv`
+权限并受 key/value 尺寸限制；`acquire` 提案只能由宿主最终裁决。下载/缓存正文的第一版只放行
+`public_domain` 与 `open_license`，`official_free` 在源站 ToS、限速和用户确认门控落地前保持 metadata + 官方外链。
+
+理由：
+
+- 插件执行风险主要来自宿主能力，而不是 JS 语法本身；HTTP、KV、正文获取必须在 Rust 侧形成可单测硬门。
+- `official_free` 只说明“官方可免费访问”，不自动等于允许批量下载、缓存或站内重分发；需要按源站 ToS 单独处理。
+- 协议已处于 `1.0-rc.1`，本轮不新增桥接消息、不引入 QuickJS，避免在冻结候选阶段扩大消息面。
+
+后果：
+
+- 后续 QuickJS/JavaScriptCore host 必须复用 `plugin_host` 的策略函数，不能绕过到平台壳直接发 HTTP 或写 KV。
+- 真正放行某个 `official_free` 源的正文获取前，必须补源站级 ToS 记录、限速策略和测试，再更新本文档。
+- 插件 SDK 注释与契约文档同步为“插件返回 acquire proposal，宿主做最终下载/缓存裁决”。
+
 ## 2026-06-22：插件安装 UI 用原生文件选择器走路径，不传 zip 字节
 
 决策：v0.7 插件安装预览引入官方 `@tauri-apps/plugin-dialog` / `tauri-plugin-dialog`，由桌面壳打开原生文件选择器取得 zip 路径；`plugin.inspectPackage` / `plugin.installPackage` 只传路径与确认布尔值，壳侧读取文件后交给 `reading-core::plugin_store` 校验/写入。

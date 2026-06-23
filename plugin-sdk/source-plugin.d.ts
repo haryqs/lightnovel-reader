@@ -20,7 +20,12 @@ declare global {
     resolveUrl?(url: string): Promise<SearchResult | null>
     /** Optional: metadata-only lookup. Requires manifest.capabilities: fetchMetadata. */
     fetchMetadata?(remoteId: string): Promise<BookDetail | null>
-    /** Optional: propose acquisition. Requires manifest.capabilities: acquire; host still enforces legal gates. */
+    /**
+     * Optional: propose acquisition. Requires manifest.capabilities: acquire.
+     * The host still enforces domain, rights and ToS gates. In v0.7 policy,
+     * download/cacheForReading is only allowed for public_domain/open_license;
+     * official_free stays metadata/external-link only until a source-specific ToS/rate-limit gate exists.
+     */
     acquire?(remoteId: string, mode: AcquireMode): Promise<AcquireProposal>
   }
 

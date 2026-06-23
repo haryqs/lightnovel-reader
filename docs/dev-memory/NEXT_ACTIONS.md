@@ -1,6 +1,6 @@
 # 下一步任务队列
 
-## 📌 交接留言（2026-06-22，v0.7 插件管理闭环完成）
+## 📌 交接留言（2026-06-22，v0.7 插件 host API 策略层进行中）
 
 先同步 GitHub：
 
@@ -14,26 +14,27 @@ git status -sb
 
 当前事实：
 
-- 当前工作分支：`codex/plugin-management-complete`。
-- 已新增 `plugin.uninstall(pluginId)` 协议能力、Tauri command 与书库 UI 卸载按钮。
-- `reading-core::plugin_store::uninstall_plugin` 会按安全插件 id 删除 app data 下对应插件目录。
-- 重新安装同 id 插件时会先清理旧目录再写入新包，避免旧入口文件残留。
-- 卸载只删除插件文件，不影响书库数据；当前仍不执行插件 JS。
+- 当前工作分支：`codex/plugin-host-api-policy`。
+- 已新增 `reading-core::plugin_host`：源插件方法 DTO、搜索/书籍/章节/acquire DTO、`host.http` 请求计划、KV 与 acquire 策略门。
+- 运行前策略已覆盖：停用插件不得运行；`browse/resolveUrl/fetchMetadata/acquire` 必须声明对应 capability；`host.http` 必须有 `http` 权限、精确命中 manifest 域名、超时 1..=60000ms、忽略 User-Agent/Referer/Cookie/Authorization/Host/Origin 等保留头。
+- `host.kv` 必须有 `kv` 权限，key 最大 128 字符，value 最大 64 KiB。
+- `acquire` 仍只是插件提案：`metadataOnly` 不下载；`download/cacheForReading` 第一版只放行 `public_domain` 与 `open_license`，`official_free` 在 ToS/限速门控落地前继续 metadata + 官方外链。
+- 当前仍不执行插件 JS，不新增桥接协议消息，不引入 QuickJS。
 
-已验证：
+本轮验证待收工填写：
 
-- `node scripts/check-arch.mjs` 通过。
-- `node scripts/check-dev-memory.mjs` 通过。
-- `node scripts/check-protocol-freeze.mjs` 通过。
-- `npm.cmd run build` 通过。
-- `cargo test --workspace` 通过（reading-core 106 passed）。
-- `git diff --check` 通过（仅 Windows 换行提示）。
+- `node scripts/check-arch.mjs`
+- `node scripts/check-dev-memory.mjs`
+- `node scripts/check-protocol-freeze.mjs`
+- `npm.cmd run build`
+- `cargo test --workspace`
+- `git diff --check`
 
 下一步优先级：
 
-1. 继续 v0.7 host API 纯 Rust 输入输出结构。
-2. 后续运行时落地时必须跳过停用插件，且不得加载已卸载插件。
-3. 继续保持边界：插件可管理不等于可执行，执行前先补 host API 权限门控与域名白名单测试。
+1. 后续 v0.7 运行时落地时，QuickJS/JavaScriptCore host 必须复用 `plugin_host` 策略函数，不能绕过到壳侧直接发 HTTP/写 KV。
+2. 设计官方插件仓库索引/签名草案，仍保持用户自装插件与官方白名单插件视觉区分。
+3. 如要放行某个 `official_free` 源的正文获取，先补源站 ToS 记录、限速策略、用户确认与单源测试。
 
 ## 📌 交接留言（2026-06-22，v0.7 插件启用状态骨架完成）
 

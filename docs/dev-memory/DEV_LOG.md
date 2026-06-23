@@ -1,5 +1,29 @@
 # 开发日志
 
+## 2026-06-22：v0.7 插件 host API 策略层
+
+变更：
+
+- 新增 `reading-core::plugin_host`，定义源插件方法、搜索结果、书籍详情、章节正文、`host.http`、`host.kv` 与 `acquire` 的 Rust DTO。
+- 新增运行前策略门：停用插件不得运行；`browse/resolveUrl/fetchMetadata/acquire` 必须声明对应 capability。
+- 新增 `host.http` 请求计划校验：必须有 `http` 权限、URL 精确命中 manifest 域名、超时限制为 1..=60000ms、忽略 User-Agent/Referer/Cookie/Authorization/Host/Origin 等保留头。
+- 新增 `host.kv` 权限与尺寸门控：必须有 `kv` 权限，key 最大 128 字符，value 最大 64 KiB。
+- 新增 `acquire` 宿主裁决：`metadataOnly` 不下载；`download/cacheForReading` 第一版只放行公共版权与开放授权，`official_free` 在 ToS/限速门控落地前仍只做 metadata + 官方外链。
+- 同步插件 SDK 注释、插件契约、决策日志、项目记忆与下一步队列；当前仍不执行插件 JS、不新增桥接协议。
+
+已验证：
+
+- `node scripts/check-arch.mjs` 通过。
+- `node scripts/check-dev-memory.mjs` 通过。
+- `node scripts/check-protocol-freeze.mjs` 通过。
+- `npm.cmd run build` 通过。
+- `cargo test --workspace` 通过（reading-core 115 passed）。
+- `git diff --check` 通过（仅 Windows 换行提示）。
+
+下一步：
+
+- 后续接 QuickJS/JavaScriptCore host 时必须复用 `plugin_host` 策略函数；不要绕过到平台壳直接发 HTTP、写 KV 或缓存正文。
+
 ## 2026-06-22：v0.7 插件卸载与覆盖安装收口
 
 变更：
