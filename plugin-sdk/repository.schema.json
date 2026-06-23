@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://reader.invalid/plugin-sdk/repository.schema.json",
+  "title": "阅读器官方源插件仓库索引",
+  "description": "官方白名单插件仓库的索引格式。索引只声明合法插件元数据、HTTPS zip 包、SHA-256 与可选签名元数据；不代表自动安装或自动执行。",
+  "type": "object",
+  "required": ["schemaVersion", "entries"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "enum": ["0.1"],
+      "description": "官方插件仓库索引 schema 版本"
+    },
+    "generatedAt": {
+      "type": "integer",
+      "description": "索引生成时间，Unix epoch milliseconds"
+    },
+    "entries": {
+      "type": "array",
+      "maxItems": 500,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "required": ["manifest", "packageUrl", "packageSha256"],
+        "additionalProperties": false,
+        "properties": {
+          "manifest": { "$ref": "manifest.schema.json" },
+          "packageUrl": {
+            "type": "string",
+            "pattern": "^https://[^\\s]+$",
+            "description": "插件 zip 包下载地址。必须是 HTTPS；下载后仍需核对 packageSha256。"
+          },
+          "packageSha256": {
+            "type": "string",
+            "pattern": "^[A-Fa-f0-9]{64}$",
+            "description": "插件 zip 包的 SHA-256 hex。安装前必须逐字节核对。"
+          },
+          "packageSize": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 52428800,
+            "description": "可选包大小提示，最大 50 MiB"
+          },
+          "sourceUrl": {
+            "type": "string",
+            "pattern": "^https://[^\\s]+$",
+            "description": "可选源代码/审阅页面。必须是 HTTPS。"
+          },
+          "signature": {
+            "type": "object",
+            "required": ["algorithm", "keyId", "value"],
+            "additionalProperties": false,
+            "description": "预留签名元数据。当前 core 只校验形状，不做密码学验签。",
+            "properties": {
+              "algorithm": { "type": "string", "enum": ["ed25519"] },
+              "keyId": { "type": "string", "minLength": 1, "maxLength": 128 },
+              "value": { "type": "string", "minLength": 1, "maxLength": 512 }
+            }
+          }
+        }
+      }
+    }
+  }
+}

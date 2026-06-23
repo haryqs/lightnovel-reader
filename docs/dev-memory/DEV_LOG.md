@@ -1,5 +1,31 @@
 # 开发日志
 
+## 2026-06-23：v0.7 官方插件仓库索引骨架
+
+变更：
+
+- 新增 `reading-core::plugin_repository`，定义官方插件仓库索引 DTO、索引校验与插件 zip SHA-256 校验。
+- 官方索引校验覆盖：`schemaVersion=0.1`、最多 500 条、manifest 复用 `plugin_manifest` 策略、拒绝重复插件 id、拒绝 `user-declared`。
+- 包校验覆盖：`packageUrl/sourceUrl` 必须 HTTPS，`packageSha256` 必须 64 hex，`packageSize` 必须在 1..=50 MiB。
+- 合规边界：`official-free + acquire` 在 ToS/限速/用户确认门控落地前不得进入官方索引；签名字段只校验 `ed25519/keyId/value` 形状并返回 warning，不做密码学验签。
+- 新增 `plugin-sdk/repository.schema.json`，同步 README、插件契约、DECISIONS、PROJECT_MEMORY、NEXT_ACTIONS。
+- 当前仍不下载、不安装、不执行插件 JS，不新增桥接协议。
+
+已验证：
+
+- `node -e "JSON.parse(...plugin-sdk/repository.schema.json...)"` 通过。
+- `cargo test -p reading-core plugin_repository -- --nocapture` 通过（8 passed）。
+- `node scripts/check-arch.mjs` 通过。
+- `node scripts/check-dev-memory.mjs` 通过。
+- `node scripts/check-protocol-freeze.mjs` 通过。
+- `npm.cmd run build` 通过。
+- `cargo test --workspace` 通过（reading-core 123 passed）。
+- `git diff --check` 通过（仅 Windows 换行提示）。
+
+下一步：
+
+- 后续可做官方索引 UI/下载校验链路：索引校验 → 壳下载 zip → SHA-256 校验 → 安装预览/用户确认。
+
 ## 2026-06-22：v0.7 插件 host API 策略层
 
 变更：

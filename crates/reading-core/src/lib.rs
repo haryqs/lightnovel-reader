@@ -13,6 +13,7 @@ pub mod parse_cache;
 pub mod plugin_host;
 pub mod plugin_manifest;
 pub mod plugin_package;
+pub mod plugin_repository;
 pub mod plugin_store;
 pub mod storage;
 

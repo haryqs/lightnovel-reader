@@ -22,6 +22,7 @@ my-source/
 | 文件 | 作用 |
 |---|---|
 | `manifest.schema.json` | manifest 的 JSON Schema,安装时逐项展示给用户 |
+| `repository.schema.json` | 官方白名单插件仓库索引的 JSON Schema,声明 HTTPS zip、SHA-256 与可选签名元数据 |
 | `host-api.d.ts` | 插件能用的全部宿主能力:`host.http` / `host.html` / `host.kv` / `host.log` |
 | `source-plugin.d.ts` | 插件必须实现的接口:`search` / `getBook` / `getChapter` |
 
@@ -45,3 +46,13 @@ my-source/
 `user-declared` 插件只能用户自装,安装时必须做明示确认,UI 上也必须与官方插件区分。
 v0.7 第一版下载/缓存正文只放行 `public_domain` 与 `open_license`；
 `official_free` 在 ToS/限速门控落地前仍只做元数据与官方外链。
+
+## 官方仓库索引
+
+官方仓库索引采用 `repository.schema.json`，每个条目包含完整 manifest、`packageUrl`、
+`packageSha256`、可选 `packageSize/sourceUrl/signature`。`reading-core::plugin_repository`
+会校验索引版本、官方仓库资格、重复 id、HTTPS URL、SHA-256 形状、包大小和签名元数据形状。
+签名字段当前只是预留，core 不做密码学验签；下载后的 zip 仍必须先核对 SHA-256，再走
+`plugin_package` / `plugin_store` 的安装前校验与用户确认。
+
+官方仓库不收 `user-declared` 插件；`official-free + acquire` 在 ToS/限速/用户确认门控落地前也不得进入官方索引。
