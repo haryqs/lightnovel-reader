@@ -1,6 +1,6 @@
 # 下一步任务队列
 
-## 📌 交接留言（2026-06-22，v0.7 插件 host API 策略层进行中）
+## 📌 交接留言（2026-06-23，v0.7 官方插件仓库索引骨架进行中）
 
 先同步 GitHub：
 
@@ -14,27 +14,29 @@ git status -sb
 
 当前事实：
 
-- 当前工作分支：`codex/plugin-host-api-policy`。
-- 已新增 `reading-core::plugin_host`：源插件方法 DTO、搜索/书籍/章节/acquire DTO、`host.http` 请求计划、KV 与 acquire 策略门。
-- 运行前策略已覆盖：停用插件不得运行；`browse/resolveUrl/fetchMetadata/acquire` 必须声明对应 capability；`host.http` 必须有 `http` 权限、精确命中 manifest 域名、超时 1..=60000ms、忽略 User-Agent/Referer/Cookie/Authorization/Host/Origin 等保留头。
-- `host.kv` 必须有 `kv` 权限，key 最大 128 字符，value 最大 64 KiB。
-- `acquire` 仍只是插件提案：`metadataOnly` 不下载；`download/cacheForReading` 第一版只放行 `public_domain` 与 `open_license`，`official_free` 在 ToS/限速门控落地前继续 metadata + 官方外链。
-- 当前仍不执行插件 JS，不新增桥接协议消息，不引入 QuickJS。
+- 当前工作分支：`codex/plugin-repository-index`。
+- 已新增 `reading-core::plugin_repository`：官方插件仓库索引 DTO、索引校验、包 SHA-256 校验。
+- 已新增 `plugin-sdk/repository.schema.json`：官方白名单插件仓库索引 schema，条目包含完整 manifest、`packageUrl`、`packageSha256`、可选 `packageSize/sourceUrl/signature`。
+- 官方索引额外门槛：拒绝 `user-declared`；拒绝重复插件 id；包地址/源码地址必须 HTTPS；包 SHA-256 必须 64 hex；包大小最大 50 MiB；`official-free + acquire` 在 ToS/限速/用户确认门控落地前不得进入官方索引。
+- 签名字段当前只校验 `ed25519/keyId/value` 形状并返回 warning，不做密码学验签；不要对外宣称“已签名验证”。
+- 当前仍不下载、不安装、不执行插件 JS，不新增桥接协议消息，不引入 QuickJS。
 
-本轮验证待收工填写：
+已验证：
 
-- `node scripts/check-arch.mjs`
-- `node scripts/check-dev-memory.mjs`
-- `node scripts/check-protocol-freeze.mjs`
-- `npm.cmd run build`
-- `cargo test --workspace`
-- `git diff --check`
+- `node -e "JSON.parse(...plugin-sdk/repository.schema.json...)"` 通过。
+- `cargo test -p reading-core plugin_repository -- --nocapture` 通过（8 passed）。
+- `node scripts/check-arch.mjs` 通过。
+- `node scripts/check-dev-memory.mjs` 通过。
+- `node scripts/check-protocol-freeze.mjs` 通过。
+- `npm.cmd run build` 通过。
+- `cargo test --workspace` 通过（reading-core 123 passed）。
+- `git diff --check` 通过（仅 Windows 换行提示）。
 
 下一步优先级：
 
-1. 后续 v0.7 运行时落地时，QuickJS/JavaScriptCore host 必须复用 `plugin_host` 策略函数，不能绕过到壳侧直接发 HTTP/写 KV。
-2. 设计官方插件仓库索引/签名草案，仍保持用户自装插件与官方白名单插件视觉区分。
-3. 如要放行某个 `official_free` 源的正文获取，先补源站 ToS 记录、限速策略、用户确认与单源测试。
+1. 后续可做官方索引 UI/下载校验：先拉索引 → core 校验 → 壳下载 zip → `verify_package_sha256` → `plugin_package` 预览 → `plugin_store` 安装确认。
+2. 真正做签名验签前，需要单独实现 keyring/验签逻辑并更新 DECISIONS；当前 signature 只是元数据预留。
+3. 继续保持用户自装插件与官方白名单插件视觉区分；如要放行某个 `official_free` 源正文获取，先补源站 ToS 记录、限速策略、用户确认与单源测试。
 
 ## 📌 交接留言（2026-06-22，v0.7 插件启用状态骨架完成）
 
