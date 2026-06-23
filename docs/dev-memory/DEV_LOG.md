@@ -10,6 +10,7 @@
 - 安装官方仓库插件时会重新下载 zip 并再次核对 SHA-256，不信任预览阶段临时结果。
 - 官方仓库包仍拒绝 `user-declared` 与 `official-free + acquire`，直到 ToS/限速/用户确认门控补齐；当前仍不执行插件 JS，不引入 QuickJS。
 - 新增 `scripts/new-smoke-plugin-repository.mjs` 与 `npm.cmd run smoke:plugin-repository-fixtures`，可生成合法插件 zip、SHA-256 与 `repository.json`，为后续真实 Tauri 窗口官方仓库 smoke 提供稳定夹具。
+- 夹具生成器只清理自己生成的 `package/`、zip 与 `repository.json`，不递归删除整个 `--out-dir`，避免参数误传造成目录级破坏。
 - 修复官方仓库候选“源码”按钮的错误展示：外链打开失败时回显到插件面板。
 - 加载新的官方仓库索引前会清空旧安装预览，避免用户在新索引上下文中误安装上一轮校验过的包。
 - 同步桥接协议文档、DECISIONS、PROJECT_MEMORY、NEXT_ACTIONS。
