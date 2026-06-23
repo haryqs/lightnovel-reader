@@ -248,6 +248,37 @@ export interface InstalledPlugin extends PluginInstallPreview {
   enabled: boolean
 }
 
+export interface PluginPackageSignature {
+  algorithm: string
+  keyId: string
+  value: string
+}
+
+export interface PluginRepositoryEntry {
+  manifest: PluginManifest
+  packageUrl: string
+  packageSha256: string
+  packageSize?: number
+  sourceUrl?: string
+  signature?: PluginPackageSignature
+}
+
+export interface PluginRepositoryIndex {
+  schemaVersion: string
+  generatedAt?: number
+  entries: PluginRepositoryEntry[]
+}
+
+export interface PluginRepositoryValidation {
+  entries: number
+  warnings: string[]
+}
+
+export interface PluginRepositoryCatalog {
+  index: PluginRepositoryIndex
+  validation: PluginRepositoryValidation
+}
+
 // ---- 桥接接口:每个方法对应协议里的一条消息 ----
 
 export interface ReaderBridge {
@@ -311,6 +342,12 @@ export interface ReaderBridge {
   setPluginEnabled(pluginId: string, enabled: boolean): Promise<InstalledPlugin>
   /** plugin.uninstall — 卸载已安装源插件，删除本地插件目录；不执行插件代码 */
   uninstallPlugin(pluginId: string): Promise<void>
+  /** plugin.repository.load — 拉取官方插件仓库索引并由 core 校验；不下载插件包 */
+  loadPluginRepositoryIndex(url: string): Promise<PluginRepositoryCatalog>
+  /** plugin.repository.inspectPackage — 下载官方索引包、校验 SHA-256 并返回安装前预览；不执行插件代码 */
+  inspectRepositoryPluginPackage(packageUrl: string, packageSha256: string): Promise<PluginInstallPreview>
+  /** plugin.repository.installPackage — 重新下载官方索引包、校验 SHA-256 后安装；不执行插件代码 */
+  installRepositoryPluginPackage(packageUrl: string, packageSha256: string): Promise<InstalledPlugin>
   // ── OPDS v0.6 ──
   /** opds.addSource — 添加一个 OPDS 书源 */
   opdsAddSource(name: string, url: string): Promise<OpdsSource>

@@ -1089,7 +1089,27 @@ body.statusbar-visible .statusbar,
   flex-wrap: wrap;
   gap: 8px;
 }
+.plugin-repository {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) auto;
+  gap: 8px;
+}
+.plugin-repository input {
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--fg);
+  font: inherit;
+}
+.plugin-repository input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent);
+}
 .plugin-install-preview,
+.plugin-repository-list,
 .plugin-installed-list {
   display: grid;
   gap: 8px;
@@ -1098,6 +1118,7 @@ body.statusbar-visible .statusbar,
   display: none;
 }
 .plugin-preview-header,
+.plugin-repository-row,
 .plugin-installed-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -1107,6 +1128,9 @@ body.statusbar-visible .statusbar,
   border: 1px solid var(--border);
   border-radius: 8px;
   background: color-mix(in srgb, var(--soft) 55%, var(--surface));
+}
+.plugin-repository-row {
+  border-style: dashed;
 }
 .plugin-preview-title,
 .plugin-installed-name {

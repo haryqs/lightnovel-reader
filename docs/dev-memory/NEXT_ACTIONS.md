@@ -1,6 +1,6 @@
 # 下一步任务队列
 
-## 📌 交接留言（2026-06-23，v0.7 官方插件仓库索引骨架进行中）
+## 📌 交接留言（2026-06-23，v0.7 官方插件仓库下载校验链路进行中）
 
 先同步 GitHub：
 
@@ -14,29 +14,33 @@ git status -sb
 
 当前事实：
 
-- 当前工作分支：`codex/plugin-repository-index`。
-- 已新增 `reading-core::plugin_repository`：官方插件仓库索引 DTO、索引校验、包 SHA-256 校验。
-- 已新增 `plugin-sdk/repository.schema.json`：官方白名单插件仓库索引 schema，条目包含完整 manifest、`packageUrl`、`packageSha256`、可选 `packageSize/sourceUrl/signature`。
-- 官方索引额外门槛：拒绝 `user-declared`；拒绝重复插件 id；包地址/源码地址必须 HTTPS；包 SHA-256 必须 64 hex；包大小最大 50 MiB；`official-free + acquire` 在 ToS/限速/用户确认门控落地前不得进入官方索引。
+- 当前工作分支：`codex/plugin-repository-install-flow`。
+- 本轮在官方插件仓库索引骨架上补了 UI/下载/校验/安装确认链路：书库“源插件（v0.7 预览）”面板可输入官方索引 JSON URL、加载候选插件、逐条校验包并复用现有安装预览/确认区域。
+- 新增桥接能力：`plugin.repository.load`、`plugin.repository.inspectPackage`、`plugin.repository.installPackage`；前端仍只通过 `src/platform/ReaderBridge`，Tauri command 只做 HTTPS 下载、大小检查和参数搬运，core 负责索引/包校验、预览、落盘。
+- 官方索引仍额外门槛：拒绝 `user-declared`；拒绝重复插件 id；包地址/源码地址必须 HTTPS；包 SHA-256 必须 64 hex；包大小最大 50 MiB；`official-free + acquire` 在 ToS/限速/用户确认门控落地前不得进入官方索引或安装。
+- 仓库包预览和安装都会校验 `packageSha256`；安装命令会重新下载并再次校验，不信任预览缓存。
 - 签名字段当前只校验 `ed25519/keyId/value` 形状并返回 warning，不做密码学验签；不要对外宣称“已签名验证”。
-- 当前仍不下载、不安装、不执行插件 JS，不新增桥接协议消息，不引入 QuickJS。
+- 当前仍不执行插件 JS，不引入 QuickJS；官方仓库下载的是插件包元数据/入口文件安装流，不是正文抓取流。
+- 已新增 `npm.cmd run smoke:plugin-repository-fixtures`：生成合法插件 zip、SHA-256 与 `repository.json`，用于后续真实窗口 smoke；它不会启动 HTTPS 服务。
+- 官方仓库候选“源码”按钮已补错误回显，平台外链打开失败会显示到插件面板。
+- 加载新的官方索引会先清空旧安装预览，避免索引上下文切换后误安装上一轮已校验包。
 
 已验证：
 
-- `node -e "JSON.parse(...plugin-sdk/repository.schema.json...)"` 通过。
-- `cargo test -p reading-core plugin_repository -- --nocapture` 通过（8 passed）。
 - `node scripts/check-arch.mjs` 通过。
 - `node scripts/check-dev-memory.mjs` 通过。
 - `node scripts/check-protocol-freeze.mjs` 通过。
 - `npm.cmd run build` 通过。
 - `cargo test --workspace` 通过（reading-core 123 passed）。
+- `npm.cmd run smoke:plugin-repository-fixtures -- --out-dir .\tmp-plugin-repository-smoke --base-url https://plugins.example.invalid/smoke` 通过，测试产物已删除。
 - `git diff --check` 通过（仅 Windows 换行提示）。
 
 下一步优先级：
 
-1. 后续可做官方索引 UI/下载校验：先拉索引 → core 校验 → 壳下载 zip → `verify_package_sha256` → `plugin_package` 预览 → `plugin_store` 安装确认。
-2. 真正做签名验签前，需要单独实现 keyring/验签逻辑并更新 DECISIONS；当前 signature 只是元数据预留。
-3. 继续保持用户自装插件与官方白名单插件视觉区分；如要放行某个 `official_free` 源正文获取，先补源站 ToS 记录、限速策略、用户确认与单源测试。
+1. 优先给官方索引安装流补真实窗口 smoke：复用 `smoke:plugin-repository-fixtures` 产物，接入测试 HTTPS server 或可信 HTTPS fixture URL，验证加载索引、校验包、安装确认、已安装列表刷新。
+2. 继续保持用户自装插件与官方白名单插件视觉区分；UI 后续可补官方来源 badge、索引 warning 展示细节和源码入口文案。
+3. 真正做签名验签前，需要单独实现 keyring/验签逻辑并更新 DECISIONS；当前 signature 只是元数据预留。
+4. 如要放行某个 `official_free` 源正文获取，先补源站 ToS 记录、限速策略、用户确认与单源测试；不要把正文抓取放进内核连接器。
 
 ## 📌 交接留言（2026-06-22，v0.7 插件启用状态骨架完成）
 

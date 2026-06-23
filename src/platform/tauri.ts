@@ -16,6 +16,7 @@ import type {
   OpdsSource,
   OpenedBook,
   PluginInstallPreview,
+  PluginRepositoryCatalog,
   ReaderBridge,
   ReadingProgress,
   RemoteLibrarySource,
@@ -106,6 +107,12 @@ export const tauriBridge: ReaderBridge = {
     invoke<InstalledPlugin>('plugin_set_enabled', { pluginId, enabled }),
   uninstallPlugin: (pluginId) =>
     invoke('plugin_uninstall', { pluginId }),
+  loadPluginRepositoryIndex: (url) =>
+    invoke<PluginRepositoryCatalog>('plugin_load_repository_index', { url }),
+  inspectRepositoryPluginPackage: (packageUrl, packageSha256) =>
+    invoke<PluginInstallPreview>('plugin_inspect_repository_package', { packageUrl, packageSha256 }),
+  installRepositoryPluginPackage: (packageUrl, packageSha256) =>
+    invoke<InstalledPlugin>('plugin_install_repository_package', { packageUrl, packageSha256 }),
   // ── OPDS v0.6 ──
   opdsAddSource: (name, url) =>
     invoke<OpdsSource>('opds_add_source', { name, url }),
