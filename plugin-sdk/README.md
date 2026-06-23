@@ -27,6 +27,9 @@ my-source/
 
 `manifest.capabilities` 只声明可选能力:`browse`、`resolveUrl`、`fetchMetadata`、`acquire`。
 宿主会根据 manifest、授权性质和 ToS 门控决定是否显示/放行这些能力；插件返回值不能自行决定可缓存正文。
+`reading-core::plugin_host` 已提供运行前策略层：停用插件不运行，未声明 capability 的可选方法不运行，
+`host.http` 只允许 manifest 域名并会忽略 User-Agent/Referer/Cookie/Authorization 等保留头，
+`host.kv` 有插件私有桶与尺寸限制。当前仍不执行插件 JS。
 
 ## 安全模型(写插件前必读)
 
@@ -40,3 +43,5 @@ my-source/
 官方插件仓库只收 `legal.kind` 为 `public-domain` / `open-license` / `official-free`
 的源,且 `official-free` 必须遵守源站 ToS(含抓取频率)。内核不内置任何源。
 `user-declared` 插件只能用户自装,安装时必须做明示确认,UI 上也必须与官方插件区分。
+v0.7 第一版下载/缓存正文只放行 `public_domain` 与 `open_license`；
+`official_free` 在 ToS/限速门控落地前仍只做元数据与官方外链。

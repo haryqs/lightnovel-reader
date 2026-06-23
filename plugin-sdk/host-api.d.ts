@@ -23,12 +23,15 @@ declare global {
   }
 
   interface HostHttp {
-    /** GET 请求。url 的域名必须在 manifest.domains 内,否则 reject。 */
+    /**
+     * GET 请求。url 的域名必须在 manifest.domains 内,否则 reject。
+     * User-Agent/Referer/Cookie/Authorization/Host/Origin 由宿主保留;插件传入时会被忽略。
+     */
     get(url: string, opts?: HttpOptions): Promise<HttpResponse>
   }
 
   interface HttpOptions {
-    /** 附加请求头。User-Agent/Referer 等由宿主统一控制,这里设置无效。 */
+    /** 附加请求头。保留头由宿主统一控制,这里设置无效。最多 32 个,单值最大 1024 字节。 */
     headers?: Record<string, string>
     /** 超时毫秒,默认 15000,上限 60000。 */
     timeoutMs?: number
@@ -63,8 +66,9 @@ declare global {
   }
 
   interface HostKv {
-    /** 插件私有键值存储(按插件 id 隔离),用于缓存 token、目录页等。 */
+    /** 插件私有键值存储(按插件 id 隔离),用于缓存 token、目录页等。key 最大 128 字符。 */
     get(key: string): Promise<string | null>
+    /** value 最大 64 KiB。 */
     set(key: string, value: string): Promise<void>
     delete(key: string): Promise<void>
   }

@@ -10,6 +10,7 @@ pub mod html_sanitizer;
 pub mod library;
 pub mod migrations;
 pub mod parse_cache;
+pub mod plugin_host;
 pub mod plugin_manifest;
 pub mod plugin_package;
 pub mod plugin_store;
