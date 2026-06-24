@@ -58,7 +58,8 @@
 - 2026-06-22：`reading-core::plugin_host` 已落地 v0.7 host API DTO 与运行前策略门：停用插件不运行、可选 capability 必须声明、`host.http` 精确域名/权限/保留头/超时门控、`host.kv` 权限与尺寸门控、`acquire` 下载/缓存只先放行公共版权/开放授权；仍不执行插件 JS。
 - 2026-06-23：`reading-core::plugin_repository` 与 `plugin-sdk/repository.schema.json` 已落地官方白名单插件仓库索引骨架：校验 schemaVersion、manifest 官方资格、重复 id、HTTPS 包地址、SHA-256、包大小、源码地址和签名元数据形状；不下载、不安装、不执行，签名字段只是预留，尚未密码学验签。
 - 2026-06-23：官方插件仓库下载校验安装链路开始接入 UI 与桥接协议：书库插件面板可加载 HTTPS 索引、逐条下载 zip、核对 SHA-256、预览并确认安装；安装时会重新下载再校验。当前仍不执行插件 JS，不引入 QuickJS，`official-free + acquire` 继续等 ToS/限速/用户确认门控。
-- 2026-06-23：官方插件仓库 smoke 夹具生成器已补：`npm.cmd run smoke:plugin-repository-fixtures` 可生成合法插件 zip、SHA-256 与 `repository.json`；下一步仍需接测试 HTTPS server 或可信 HTTPS fixture URL 做真实窗口端到端 smoke。
+- 2026-06-23：官方插件仓库 smoke 夹具生成器已补：`npm.cmd run smoke:plugin-repository-fixtures` 可生成合法插件 zip、SHA-256 与 `repository.json`；下一步仍需接测试 HTTPS server 或可信 HTTPS fixture URL 做真实窗口端到端 smoke（已于 2026-06-24 完成）。
+- 2026-06-24：官方插件仓库安装链路已有真窗口 smoke `npm.cmd run smoke:plugin-repository`，覆盖加载索引→校验包→确认安装→已安装列表刷新（桥接 + UI 双断言），不执行插件 JS。夹具 canonical 在仓库 `smoke-fixtures/plugin-repository/`，因仓库 PRIVATE 且 `reqwest::Client::new()`（rustls/webpki）无法信任自签证书、也无法认证访问私有 raw，故镜像到 public gist（`gist.githubusercontent.com`，GitHub 证书）供 smoke 加载；决策见 DECISIONS.md。
 - 2026-06-21：产品定位升级为“本地优先轻小说平台”。阅读器是核心模块，但平台边界包括发现、
   索引、收藏、整理、合法获取入口、来源记录、阅读方式选择与未来插件生态。后续 UI 应提供
   浏览器 / 内置阅读器 / 外部本地阅读器等明确阅读方式。

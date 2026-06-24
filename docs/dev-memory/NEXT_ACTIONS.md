@@ -1,5 +1,45 @@
 # 下一步任务队列
 
+## 📌 交接留言（2026-06-24，v0.7 官方插件仓库真窗口 smoke 完成）
+
+先同步 GitHub：
+
+```powershell
+cd E:\workspace\game-cooperative-plan\lightnovel-reader
+git fetch --all --prune
+git checkout main
+git pull --ff-only
+git status -sb
+```
+
+当前事实：
+
+- 当前工作分支：`codex/plugin-repository-smoke`（尚未合并；含 2 个提交）。
+- v0.7 官方插件仓库安装链路已有真窗口 smoke：`npm.cmd run smoke:plugin-repository` 驱动真实 Tauri 窗口走
+  加载索引 → 校验包 → 确认安装 → 已安装列表刷新，桥接层 `plugin_list_installed` 与 UI 双断言，全程不执行插件 JS。
+- 夹具 canonical 在仓库 `smoke-fixtures/plugin-repository/`；因仓库 PRIVATE 且 `reqwest::Client::new()`（rustls/webpki）
+  无法信任自签证书、也无法认证访问私有 raw，夹具**镜像到 public gist**（`gist.githubusercontent.com`，
+  GitHub 证书、webpki 信任）供 smoke 加载。`gh gist create` 拒绝二进制，gist 作为 git 仓库走 `git push` 镜像 zip。
+- smoke 对 load / 校验包 / 确认安装三个联网动作加了 CDN/网络失效重试。当前仍不执行插件 JS、不引入 QuickJS、不改
+  reqwest 信任模型、不引入测试用跳过 TLS 的后门。
+
+已验证：
+
+- `node --check scripts/tauri-plugin-repository-smoke.mjs` 通过。
+- `node scripts/check-arch.mjs` / `check-dev-memory.mjs` / `check-protocol-freeze.mjs` 通过。
+- `npm.cmd run build` 通过。
+- `cargo test --workspace` 通过（reading-core 123 passed）。
+- `git diff --check` 通过（仅 Windows 换行提示）。
+- `npm.cmd run smoke:plugin-repository` 实跑通过（gist 夹具，Aozora Smoke Source，installed enabled=true）。
+
+下一步优先级：
+
+1. 真正做签名验签前先设计 keyring/验签策略并更新 DECISIONS；当前 `signature` 字段仍只是元数据预留，不能宣称已验签。
+2. 继续保持用户自装插件与官方白名单插件视觉区分；UI 后续可补官方来源 badge、索引 warning 展示细节与源码入口文案。
+3. 如要放行某个 `official_free` 源正文获取，先补源站 ToS 记录、限速策略、用户确认与单源测试；不要把正文抓取放进内核连接器。
+4. 仓库日后转公开时，可把 `smoke:plugin-repository` 默认 URL 切回 `raw.githubusercontent.com/.../main/...`
+   （canonical 夹具已是源真相）；或保留 gist 镜像。
+
 ## 📌 交接留言（2026-06-23，v0.7 官方插件仓库下载校验链路进行中）
 
 先同步 GitHub：

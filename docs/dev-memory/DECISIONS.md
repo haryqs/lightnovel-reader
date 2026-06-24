@@ -2,6 +2,30 @@
 
 > 记录影响未来开发方向的取舍。格式：日期 / 决策 / 理由 / 后果。
 
+## 2026-06-24：官方插件仓库真窗口 smoke 夹具用公开 gist 镜像提供可信 HTTPS
+
+决策：`smoke:plugin-repository` 的夹具（合法 `public-domain` 源插件 zip + `repository.json`）
+canonical 保存在仓库 `smoke-fixtures/plugin-repository/`，并镜像到一个 **public gist**；
+smoke 默认从 `gist.githubusercontent.com/<gist>/raw/...` 真实 HTTPS 加载索引与 zip。
+
+理由：
+
+- 官方仓库下载命令用 `reqwest::Client::new()`（`rustls-tls` + webpki 捆绑根），**不能信任自签
+  本地 HTTPS**，也无法注入认证 token；而仓库当前是 **PRIVATE**，`raw.githubusercontent.com`
+  对无认证访问 404，本机又未装 cloudflared/ngrok/mkcert。
+- public gist 由 GitHub 提供真实可信证书（webpki 信任），无需改 reqwest 信任模型、无需新依赖、
+  无需把仓库转公开，即可让 smoke 走与生产一致的 HTTPS + SHA-256 下载校验链路。
+- `gh gist create` 拒绝二进制，但 gist 本质是 git 仓库，走 `git clone`/`git push` 可正确镜像 zip blob；
+  仓库内仍保留 canonical 副本，gist 仅作公开服务镜像，二者字节一致。
+
+后果：
+
+- smoke 多了一个仓库外依赖（该 public gist）；gist 被删则 smoke 失败。gist id 与重建流程已写入
+  `smoke-fixtures/plugin-repository/README.md`。
+- 仓库日后转公开时，可把 smoke 默认 URL 切回 `raw.githubusercontent.com/.../main/...`，
+  canonical 副本已是源真相，无需改夹具内容。
+- 不引入「测试用跳过 TLS 校验」之类的安全后门；官方仓库下载链路的 HTTPS/SHA-256 门控保持不变。
+
 ## 2026-06-23：官方仓库插件安装采用下载后哈希双校验，不信任预览缓存
 
 决策：官方插件仓库 UI 先采用“索引校验 → 壳侧 HTTPS 下载 zip → SHA-256 校验 → core 预览 → 用户确认 → 重新下载并再次 SHA-256 校验 → core 安装”的链路。`plugin.repository.inspectPackage` 和 `plugin.repository.installPackage` 都只传 `packageUrl` 与 `packageSha256`；Tauri 壳负责 HTTP 下载与大小上限检查，`reading-core` 负责索引/包校验、预览与写入。

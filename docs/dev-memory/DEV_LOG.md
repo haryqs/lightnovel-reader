@@ -1,5 +1,45 @@
 # 开发日志
 
+## 2026-06-24：v0.7 官方插件仓库真窗口 smoke
+
+变更：
+
+- 新增 `scripts/tauri-plugin-repository-smoke.mjs` 与 `npm.cmd run smoke:plugin-repository`：
+  驱动真实 Tauri 窗口走「加载官方索引 → 校验包 → 确认安装 → 已安装列表刷新」全链路，前端只经
+  书库「源插件（v0.7 预览）」UI、不绕过桥接；对 load / 校验包 / 确认安装三个联网动作加
+  CDN/网络失效重试。桥接层 `plugin_list_installed` 与 UI（已安装行「已启用」+「可白名单」badge）
+  双断言。
+- 新增 `smoke-fixtures/plugin-repository/` canonical 夹具：合法 `public-domain` 源插件 zip +
+  `repository.json`（`packageSha256` 与 zip 字节自洽）。
+- 夹具公开服务方式：仓库当前 PRIVATE，`raw.githubusercontent.com` 对无认证 `reqwest::Client::new()`
+  返回 404，本机又未装 cloudflared/ngrok/mkcert；故把夹具镜像到一个 public gist
+  （`gist.githubusercontent.com`，GitHub 证书、webpki 信任），smoke 默认从该 gist raw 加载。
+  `gh gist create` 拒绝二进制，gist 本质是 git 仓库，走 `git clone`/`git push` 镜像 zip blob，
+  raw 字节 SHA 与 canonical 副本一致。仓库内 `repository.json` 的 `packageUrl` 同步指向 gist zip raw。
+- 决策见 `DECISIONS.md`（公开 gist 镜像提供可信 HTTPS）；夹具重建/镜像流程见
+  `smoke-fixtures/plugin-repository/README.md`。当前仍不执行插件 JS，不引入 QuickJS。
+
+已验证：
+
+- `node --check scripts/tauri-plugin-repository-smoke.mjs` 通过。
+- `node scripts/check-arch.mjs` / `check-dev-memory.mjs` / `check-protocol-freeze.mjs` 通过。
+- `npm.cmd run build` 通过。
+- `cargo test --workspace` 通过（reading-core 123 passed）。
+- `git diff --check` 通过（仅 Windows 换行提示）。
+- `npm.cmd run tauri -- build --debug --no-bundle` 重新构建（旧 reader.exe 早于 PR #44），生成最新
+  `target/debug/reader.exe`。
+- gist raw zip SHA = `5727f4d4…`（与 canonical zip 一致），gist raw `repository.json` 可解析且
+  `packageUrl` 指向 gist zip。
+- `npm.cmd run smoke:plugin-repository` 实跑通过：加载 gist 索引 → 渲染候选「Aozora Smoke Source」→
+  校验包（域名 example.org）→ 确认安装 → `plugin_list_installed` 返回 `aozora-smoke-source`
+  （enabled=true），UI 已安装行显示「已启用」+「可白名单」。
+
+下一步：
+
+- 真正做签名验签前先设计 keyring/验签策略（当前 signature 字段仍只是元数据预留）。
+- 继续保持用户自装插件与官方白名单插件的视觉区分（官方来源 badge、索引 warning 展示细节）。
+- 仓库日后转公开时，可把 smoke 默认 URL 切回 `raw.githubusercontent.com/.../main/...`。
+
 ## 2026-06-23：v0.7 官方插件仓库下载校验安装链路
 
 变更：
