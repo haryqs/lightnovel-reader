@@ -1,0 +1,33 @@
+{
+  "schemaVersion": "0.1",
+  "generatedAt": 1782274830902,
+  "entries": [
+    {
+      "manifest": {
+        "apiVersion": "0.1",
+        "id": "aozora-smoke-source",
+        "name": "Aozora Smoke Source",
+        "version": "0.1.0",
+        "description": "Smoke-test source plugin fixture. It is installed for policy and UI verification only.",
+        "entry": "plugin.js",
+        "domains": [
+          "example.org"
+        ],
+        "permissions": [
+          "http"
+        ],
+        "capabilities": [
+          "browse",
+          "fetchMetadata"
+        ],
+        "legal": {
+          "kind": "public-domain"
+        }
+      },
+      "packageUrl": "https://raw.githubusercontent.com/haryqs/lightnovel-reader/codex/plugin-repository-smoke/smoke-fixtures/plugin-repository/aozora-smoke-source.zip",
+      "packageSha256": "5727f4d4af6ed5c6c267a8d130d0bc0693cb63ecd7e56795411a53eb4a0a5f38",
+      "packageSize": 540,
+      "sourceUrl": "https://github.com/haryqs/lightnovel-reader"
+    }
+  ]
+}
