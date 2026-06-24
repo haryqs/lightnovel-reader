@@ -7,10 +7,15 @@ import { fileURLToPath } from 'node:url'
 
 // Real Tauri window smoke for the official plugin repository install flow.
 //
-// It loads a frozen official index over real HTTPS (raw.githubusercontent.com,
-// the same webpki-trusted path production uses), verifies the candidate plugin,
-// confirms install, and checks the installed list refreshes — all through the
-// library “源插件（v0.7 预览）” UI, never executing plugin JS.
+// It loads a frozen official index over real HTTPS, verifies the candidate
+// plugin, confirms install, and checks the installed list refreshes — all
+// through the library “源插件（v0.7 预览）” UI, never executing plugin JS.
+//
+// The fixture is served from a public gist (gist.githubusercontent.com, a
+// GitHub cert that rustls/webpki trusts) so the smoke works while the repo
+// itself stays private. The canonical fixture also lives in-repo at
+// smoke-fixtures/plugin-repository/ and is mirrored to that gist; see the
+// fixture README for how to regenerate/mirror.
 //
 // Build the app first:  npm.cmd run tauri -- build --debug --no-bundle
 // Then run:             npm.cmd run smoke:plugin-repository
@@ -55,7 +60,7 @@ const nativePort = Number(readOption('--native-port', process.env.TAURI_NATIVE_D
 const repositoryUrl = readOption(
   '--repository-url',
   process.env.PLUGIN_REPOSITORY_SMOKE_URL ||
-    'https://raw.githubusercontent.com/haryqs/lightnovel-reader/main/smoke-fixtures/plugin-repository/repository.json',
+    'https://gist.githubusercontent.com/haryqs/a20cbbeecfb11a744b2650c776f0b615/raw/repository.json',
 )
 const expectedName = readOption('--name', process.env.PLUGIN_REPOSITORY_SMOKE_NAME || 'Aozora Smoke Source')
 const expectedPluginId = readOption('--plugin-id', process.env.PLUGIN_REPOSITORY_SMOKE_PLUGIN_ID || 'aozora-smoke-source')
