@@ -128,4 +128,9 @@ export const tauriBridge: ReaderBridge = {
     invoke<LibraryBook[]>('opds_ingest_entries', { sourceId, feed }),
   opdsDownloadEpub: (editionId, acquisitionUrl) =>
     invoke<LibraryBook>('opds_download_epub', { editionId, acquisitionUrl }),
+  // sync v1 (Phase 2) — Tauri 端暂存，等 Rust command 实现
+  syncPair: (_code) => Promise.reject({ code: 'platformError' as const, message: 'sync.pair: 桌面端暂未实现' }),
+  syncStatus: () => Promise.resolve({ paired: false, lastSyncAt: null, pendingChanges: 0, libraryId: null }),
+  syncNow: async () => {},
+  syncUnpair: async () => {},
 }

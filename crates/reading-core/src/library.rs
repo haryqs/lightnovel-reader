@@ -328,6 +328,60 @@ END;
 const SOURCE_RECORD_ACQUISITION_V6: &str =
     "ALTER TABLE source_record ADD COLUMN acquisition_url TEXT;";
 
+const SYNC_SCHEMA_V7: &str = "\
+ALTER TABLE edition ADD COLUMN last_modified INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE edition ADD COLUMN sync_version INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE edition ADD COLUMN deleted_at INTEGER;
+ALTER TABLE edition ADD COLUMN device_id TEXT NOT NULL DEFAULT '';
+
+ALTER TABLE asset ADD COLUMN last_modified INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE asset ADD COLUMN sync_version INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE asset ADD COLUMN deleted_at INTEGER;
+ALTER TABLE asset ADD COLUMN device_id TEXT NOT NULL DEFAULT '';
+
+CREATE TABLE IF NOT EXISTS sync_outbox (
+    cursor      INTEGER PRIMARY KEY AUTOINCREMENT,
+    entity_type TEXT NOT NULL,
+    entity_id   TEXT NOT NULL,
+    op          TEXT NOT NULL,
+    payload     TEXT NOT NULL,
+    device_id   TEXT NOT NULL,
+    created_at  INTEGER NOT NULL
+);
+
+CREATE TRIGGER IF NOT EXISTS tr_edition_sync AFTER INSERT ON edition
+BEGIN
+    INSERT INTO sync_outbox (entity_type, entity_id, op, payload, device_id, created_at)
+    VALUES ('edition', NEW.id, 'upsert',
+        json_object('id',NEW.id,'volume_id',NEW.volume_id,
+            'language',NEW.language,'edition_name',NEW.edition_name,
+            'rights_status',NEW.rights_status,'created_at',NEW.created_at,
+            'updated_at',NEW.updated_at,
+            'last_modified',NEW.last_modified,'sync_version',NEW.sync_version,
+            'deleted_at',NEW.deleted_at,'device_id',NEW.device_id),
+        NEW.device_id, CAST((julianday('now')-2440587.5)*86400000 AS INTEGER));
+END;
+
+CREATE TRIGGER IF NOT EXISTS tr_edition_sync_upd AFTER UPDATE ON edition
+BEGIN
+    INSERT INTO sync_outbox (entity_type, entity_id, op, payload, device_id, created_at)
+    VALUES ('edition', NEW.id, 'upsert',
+        json_object('id',NEW.id,'volume_id',NEW.volume_id,
+            'language',NEW.language,'edition_name',NEW.edition_name,
+            'rights_status',NEW.rights_status,'created_at',NEW.created_at,
+            'updated_at',NEW.updated_at,
+            'last_modified',NEW.last_modified,'sync_version',NEW.sync_version,
+            'deleted_at',NEW.deleted_at,'device_id',NEW.device_id),
+        NEW.device_id, CAST((julianday('now')-2440587.5)*86400000 AS INTEGER));
+END;
+
+CREATE TRIGGER IF NOT EXISTS tr_edition_sync_del AFTER DELETE ON edition
+BEGIN
+    INSERT INTO sync_outbox (entity_type, entity_id, op, payload, device_id, created_at)
+    VALUES ('edition', OLD.id, 'delete', json_object('id',OLD.id), '', 0);
+END;
+";
+
 const MIGRATIONS: &[Migration] = &[
     Migration {
         version: 1,
@@ -357,6 +411,11 @@ const MIGRATIONS: &[Migration] = &[
     Migration {
         version: 6,
         sql: SOURCE_RECORD_ACQUISITION_V6,
+    },
+    // v7: sync support — add sync columns to synced tables + sync_outbox journal.
+    Migration {
+        version: 7,
+        sql: SYNC_SCHEMA_V7,
     },
 ];
 
@@ -1411,12 +1470,12 @@ mod tests {
         let path = dir.join("library.sqlite");
 
         let conn = open_library(&path).unwrap();
-        assert_eq!(crate::migrations::current_version(&conn).unwrap(), 6);
+        assert_eq!(crate::migrations::current_version(&conn).unwrap(), 7);
         drop(conn);
 
         // 重开已有库：迁移幂等跳过，版本不变、数据仍在。
         let conn = open_library(&path).unwrap();
-        assert_eq!(crate::migrations::current_version(&conn).unwrap(), 6);
+        assert_eq!(crate::migrations::current_version(&conn).unwrap(), 7);
 
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -1519,7 +1578,7 @@ mod tests {
 
         // 重开 → 跑 v3-v5，回填实体链并建立 catalog_fts。
         let conn = open_library(&path).unwrap();
-        assert_eq!(migrations::current_version(&conn).unwrap(), 6);
+        assert_eq!(migrations::current_version(&conn).unwrap(), 7);
 
         let asset_id: String = conn
             .query_row("SELECT id FROM asset WHERE id = 'hash123'", [], |r| {
@@ -1571,7 +1630,7 @@ mod tests {
         }
 
         let conn = open_library(&path).unwrap();
-        assert_eq!(migrations::current_version(&conn).unwrap(), 6);
+        assert_eq!(migrations::current_version(&conn).unwrap(), 7);
         let hit = search_books(&conn, "旧远程标题").unwrap();
         assert_eq!(hit.len(), 1);
         assert_eq!(hit[0].id, "ed:remote-old");

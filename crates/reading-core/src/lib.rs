@@ -14,6 +14,7 @@ pub mod library;
 pub mod migrations;
 pub mod pagination;
 pub mod parse_cache;
+pub mod sync;
 #[cfg(feature = "native")]
 pub mod plugin_host;
 #[cfg(feature = "native")]

@@ -624,3 +624,23 @@
 - WASM 包体积从 74KB（仅分页）增加到 500KB（含完整 EPUB 解析），后续可评估 code splitting。
 - 浏览器端不支持插件、OPDS 连接器等需要 shell 能力的功能，需在 UI 层提示。
 - webBridge 依赖 WASM 惰性初始化，首次打开书有 ~1s 冷启动延迟（WASM 加载+初始化）。
+
+## 2026-06-27：Phase 2 同步服务 v1 架构决策
+
+决策：
+1. 同步服务器为独立 Rust 二进制（crates/sync-server），用户自托管，项目方不运营。
+2. 变更日志模型（sync_outbox 追加写）作为同步事实来源，不用全表 diff。
+3. 冲突策略分层：阅读进度 LWW + 标注行级 LWW+墓碑复活 + EPUB 内容寻址天然去重。
+4. 身份认证用设备配对码（6位数字），不做账号系统 v1。
+5. annotations/reading_state sync 列存 storage DB 独立 migration v2，不与 library DB 混。
+
+理由：
+- 自托管与 AGPL 协议契合，用户拥有数据。
+- sync_outbox O(变更量) 比全量 diff O(全库) 高效，断线 3 天重连只需增量。
+- 冲突算法纯函数（无 I/O），wasm feature 下网页端用同一份代码做离线乐观合并。
+- 设备配对码降低门槛（不需要邮箱/手机），library_id 预留未来账号系统扩展点。
+- storage DB 独立 migration 避免跨库 ALTER TABLE 失败（annotations 表不在 library DB）。
+
+后果：
+- sync-server 需要用户自行部署（NAS/VPS），增加运维门槛；缓解措施：桌面端内置零配置局域网模式（Phase 3 实现）。
+- sync_outbox 触发器增加写入开销，但单条 INSERT 额外写一条 outbox 行，量级可接受。

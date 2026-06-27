@@ -49,10 +49,28 @@ CREATE TABLE IF NOT EXISTS reading_state (
 
 /// 标注 + 阅读进度库的迁移序列。基线即现有 SCHEMA（全部 IF NOT EXISTS，
 /// 框架上线前 user_version=0 的旧库会被幂等补盖并盖戳到 1）。
-const MIGRATIONS: &[Migration] = &[Migration {
-    version: 1,
-    sql: SCHEMA,
-}];
+const STORAGE_SYNC_V2: &str = "\
+ALTER TABLE annotations ADD COLUMN last_modified INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE annotations ADD COLUMN sync_version INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE annotations ADD COLUMN deleted_at INTEGER;
+ALTER TABLE annotations ADD COLUMN device_id TEXT NOT NULL DEFAULT '';
+
+ALTER TABLE reading_state ADD COLUMN last_modified INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE reading_state ADD COLUMN sync_version INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE reading_state ADD COLUMN deleted_at INTEGER;
+ALTER TABLE reading_state ADD COLUMN device_id TEXT NOT NULL DEFAULT '';
+";
+
+const MIGRATIONS: &[Migration] = &[
+    Migration {
+        version: 1,
+        sql: SCHEMA,
+    },
+    Migration {
+        version: 2,
+        sql: STORAGE_SYNC_V2,
+    },
+];
 
 pub fn init(path: &Path) -> rusqlite::Result<Connection> {
     let conn = Connection::open(path)?;

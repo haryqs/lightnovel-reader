@@ -9,6 +9,8 @@ import type {
   OpenedBook,
   ReadingProgress,
   ReaderBridge,
+  SyncCredential,
+  SyncStatus,
   TextAnchor,
 } from '../platform/protocol'
 import * as storage from './web-storage'
@@ -216,6 +218,58 @@ export const webBridge: ReaderBridge = {
   opdsSearchFeed: () => Promise.reject(platformErr('opds')),
   opdsIngestEntries: () => Promise.reject(platformErr('opds')),
   opdsDownloadEpub: () => Promise.reject(platformErr('opds')),
+
+  // -- sync v1 (Phase 2) --
+  syncPair: (code: string) => syncPairImpl(code),
+  syncStatus: () => Promise.resolve(syncStatusImpl()),
+  syncNow: async () => {}, // 网页端暂不支持主动同步
+  syncUnpair: async () => { clearSyncCredential() },
+}
+
+// ---- 同步辅助 ----
+
+const SYNC_STORAGE_KEY = 'lnr-sync-cred'
+
+function getSyncCredential(): SyncCredential | null {
+  try {
+    const raw = localStorage.getItem(SYNC_STORAGE_KEY)
+    return raw ? JSON.parse(raw) : null
+  } catch { return null }
+}
+
+function saveSyncCredential(cred: SyncCredential): void {
+  localStorage.setItem(SYNC_STORAGE_KEY, JSON.stringify(cred))
+}
+
+function clearSyncCredential(): void {
+  localStorage.removeItem(SYNC_STORAGE_KEY)
+}
+
+async function syncPairImpl(code: string): Promise<SyncCredential> {
+  const cred = getSyncCredential()
+  const serverUrl = cred?.serverUrl || ''
+  if (!serverUrl) throw platformErr('sync.pair', '未配置同步服务器地址')
+
+  const res = await fetch(`${serverUrl}/pair/join`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pairing_code: code, device_name: 'web' }),
+  })
+  if (!res.ok) throw { code: 'forbidden' as const, message: '配对码无效' }
+  const data = await res.json()
+  const newCred: SyncCredential = { libraryId: data.library_id, token: data.token, serverUrl }
+  saveSyncCredential(newCred)
+  return newCred
+}
+
+function syncStatusImpl(): SyncStatus {
+  const cred = getSyncCredential()
+  return {
+    paired: cred !== null,
+    lastSyncAt: null,
+    pendingChanges: 0,
+    libraryId: cred?.libraryId || null,
+  }
 }
 
 // ---- 辅助 ----

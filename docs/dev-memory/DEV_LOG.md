@@ -2367,3 +2367,30 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
 下一步：
 
 - Phase 2: 自托管同步服务(axum+sync_outbox)；Phase 3: 桌面端独立化(托盘/文件关联/自动更新)
+
+## 2026-06-27：Phase 2 同步服务 v1: reading-core::sync 模块(277行/6测试)含冲突解决算法(LWW+墓碑复活); migration v7(library DB:edition/asset加sync列+sync_outbox表+触发器)+storage v2(annotations/reading_state加sync列); 新建crates/sync-server(axum+SQLite,457行)含/pair,/sync/changes,/sync/snapshot,/sync/push,/sync/blobs,WebSocket推送; 桥接协议新增syncPair/syncStatus/syncNow/syncUnpair; web-bridge实现sync pair+localStorage存凭据; tauri.ts sync stub; src/web/sync-pairing.ts配对UI
+
+变更：
+
+- Phase 2 同步服务 v1: reading-core::sync 模块(277行/6测试)含冲突解决算法(LWW+墓碑复活); migration v7(library DB:edition/asset加sync列+sync_outbox表+触发器)+storage v2(annotations/reading_state加sync列); 新建crates/sync-server(axum+SQLite,457行)含/pair,/sync/changes,/sync/snapshot,/sync/push,/sync/blobs,WebSocket推送; 桥接协议新增syncPair/syncStatus/syncNow/syncUnpair; web-bridge实现sync pair+localStorage存凭据; tauri.ts sync stub; src/web/sync-pairing.ts配对UI
+
+修改文件：
+
+- 待补充
+
+验证：
+
+- cargo test:137 passed
+- npm run build:18 modules OK
+- tsc:零错误
+- check-arch/check-protocol-freeze:OK
+
+未验证/阻塞：
+
+- 无
+
+下一步：
+
+- Phase 3:桌面端独立化(托盘/文件关联/自动更新)
+- Tauri端实现sync命令对接sync-server
+- 网页端syncNow轮询实现

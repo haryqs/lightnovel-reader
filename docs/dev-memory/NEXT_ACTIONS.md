@@ -1005,30 +1005,22 @@ git status -sb
 - 评估是否创建每日/每周文档审计 automation。
 - 将关键工作拆给子代理前，先明确写入范围和冲突边界。
 
-## 📌 交接留言（2026-06-27，Phase 1 WASM 网页端 MVP 完工）
+## 📌 交接留言（2026-06-27，Phase 2 同步服务 v1 完工）
 
-本轮 Hermes（DeepSeek v4 Pro）主导完成 v1.0 架构方案 Phase 1：
-
-**已完成：**
-- `crates/reading-core` 拆 native/wasm features，新增 `pagination.rs`（347行/8测试）
-- WASM 编译导出 3 函数：paginate / parse_epub_metadata / get_chapter_html
-- Web Worker 接入 WASM 分页（TS fallback 保留）
-- 新建 `src/web/` 层：reading-core-wasm.ts / web-storage.ts（IndexedDB+OPFS）/ web-bridge.ts（ReaderBridge 229行）/ web-import.ts（拖放+文件选择）
-- `src/platform/index.ts` 浏览器模式切换 webBridge（原 noBridge 全抛错→真正可用）
-- `npm run build` 18 modules / 500KB WASM；`cargo test` 131 passed；tsc 零错误
-
-**下一步（Phase 2）：自托管同步服务**
-- 新建 `crates/sync-server`（axum + SQLite）
-- `reading-core::sync` 模块（sync_outbox 变更日志 + 冲突解决算法）
-- 桥接协议新增 sync.* 消息（不破坏已冻结的 1.0-rc.1）
-- 设备配对码认证（不做账号系统 v1）
-- 验收：两台设备配对后一端加书/标注/进度，另一端数秒内可见
+本轮完成 Phase 2：
+- `reading-core::sync` 模块（277行/6测试）：冲突解决算法（LWW+墓碑复活）
+- migration v7（library DB）+ v2（storage DB）：sync 列 + sync_outbox 表 + 触发器
+- `crates/sync-server`（457行）：axum REST + WebSocket，设备配对码认证
+- 桥接协议新增 syncPair/syncStatus/syncNow/syncUnpair，web-bridge 实现，sync-pairing UI
+- `cargo test` 137 passed；`npm run build` 18 modules OK
 
 **下一步（Phase 3）：桌面端独立化**
-- 系统托盘 + 关闭到托盘
+- 系统托盘 + 关闭到托盘（tauri-plugin-tray）
 - .epub 文件关联 + single-instance
 - 自动更新（tauri-updater）
-- 冷启动 < 1s
+- 冷启动 < 1s（预构建 + 延迟加载）
+- Tauri 端实现 sync 命令对接 sync-server
+- 桌面端内置零配置局域网同步模式
 
 **下一步（Phase 4）：性能打磨**
 - GPU 翻页动画（CSS transform 双缓冲）

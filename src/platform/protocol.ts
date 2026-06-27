@@ -363,4 +363,28 @@ export interface ReaderBridge {
   opdsIngestEntries(sourceId: string, feed: OpdsFeed): Promise<LibraryBook[]>
   /** opds.downloadEpub — 下载 OPDS open_license EPUB 并转为本地可读资产 */
   opdsDownloadEpub(editionId: string, acquisitionUrl?: string): Promise<LibraryBook>
+  // ── sync v1 (Phase 2) ──
+  /** sync.pair — 用配对码兑换 token 并写入本地凭据 */
+  syncPair(code: string): Promise<SyncCredential>
+  /** sync.status — 当前同步状态 */
+  syncStatus(): Promise<SyncStatus>
+  /** sync.now — 手动触发一次同步 */
+  syncNow(): Promise<void>
+  /** sync.unpair — 撤销配对 */
+  syncUnpair(): Promise<void>
+}
+
+// ── Sync DTO ──
+
+export interface SyncCredential {
+  libraryId: string
+  token: string
+  serverUrl: string
+}
+
+export interface SyncStatus {
+  paired: boolean
+  lastSyncAt: number | null
+  pendingChanges: number
+  libraryId: string | null
 }
