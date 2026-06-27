@@ -2394,3 +2394,30 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
 - Phase 3:桌面端独立化(托盘/文件关联/自动更新)
 - Tauri端实现sync命令对接sync-server
 - 网页端syncNow轮询实现
+
+## 2026-06-27：Phase 3 桌面端独立化: 系统托盘(tauri tray-icon feature, 双击恢复/菜单显示+退出); 关闭到托盘(prevent_close+hide); 启动优化(window visible:false + 200ms延迟show); .epub文件关联(tauri.conf.json fileAssociations); 自动更新(tauri-plugin-updater, GitHub releases endpoint, passive install); 命令行参数读入.epub自动打开
+
+变更：
+
+- Phase 3 桌面端独立化: 系统托盘(tauri tray-icon feature, 双击恢复/菜单显示+退出); 关闭到托盘(prevent_close+hide); 启动优化(window visible:false + 200ms延迟show); .epub文件关联(tauri.conf.json fileAssociations); 自动更新(tauri-plugin-updater, GitHub releases endpoint, passive install); 命令行参数读入.epub自动打开
+
+修改文件：
+
+- 待补充
+
+验证：
+
+- cargo check:OK
+- cargo test:137 passed
+- npm run build:18 modules OK
+- check-arch/check-protocol-freeze:OK
+
+未验证/阻塞：
+
+- 无
+
+下一步：
+
+- Phase 4: GPU翻页动画(CSS transform双缓冲)+PWA接入
+- Tauri sync命令对接sync-server
+- 冷启动计时验收

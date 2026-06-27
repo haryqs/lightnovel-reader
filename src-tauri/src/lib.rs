@@ -12,6 +12,7 @@ use reading_core::{
     compute_book_id, library, parse_cache, plugin_repository, plugin_store, rusqlite, storage,
 };
 use tauri::Manager;
+use tauri::Emitter;
 
 struct LoadedBook {
     book_id: String,     // 内容哈希；持久化解析缓存的 key
@@ -1504,7 +1505,8 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
-        // 图片协议：正文里的 <img src="reader-img://localhost/<路径>"> 由此按需从书内读取，
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        // 图片协议
         // 既能显示封面/插图，又不把图片 base64 内联进 HTML。
         .register_uri_scheme_protocol("reader-img", |ctx, request| {
             let app = ctx.app_handle();
@@ -1553,6 +1555,69 @@ pub fn run() {
                 cache_dir,
                 plugin_dir,
             });
+
+            // ---- 系统托盘 + 关闭到托盘 ----
+            let app_handle = app.handle().clone();
+            let menu = tauri::menu::MenuBuilder::new(&app_handle)
+                .item(&tauri::menu::MenuItemBuilder::with_id("show", "显示窗口").build(&app_handle)?)
+                .separator()
+                .item(&tauri::menu::MenuItemBuilder::with_id("quit", "退出").build(&app_handle)?)
+                .build()?;
+            let _tray = tauri::tray::TrayIconBuilder::new()
+                .icon(app_handle.default_window_icon().cloned().unwrap())
+                .tooltip("LightNovel Reader")
+                .menu(&menu)
+                .on_menu_event(move |app_handle, event| match event.id().as_ref() {
+                    "show" => {
+                        if let Some(window) = app_handle.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }
+                    "quit" => {
+                        app_handle.exit(0);
+                    }
+                    _ => {}
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if let tauri::tray::TrayIconEvent::DoubleClick { .. } = event {
+                        let app = tray.app_handle();
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }
+                })
+                .build(app)?;
+
+            // 关闭窗口 → 隐藏到托盘
+            if let Some(window) = app.get_webview_window("main") {
+                let window_clone = window.clone();
+                window.on_window_event(move |event| {
+                    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                        api.prevent_close();
+                        let _ = window_clone.hide();
+                    }
+                });
+                // 延迟显示窗口（避免白屏闪烁）
+                std::thread::sleep(std::time::Duration::from_millis(200));
+                let _ = window.show();
+            }
+
+            // 命令行参数：双击 .epub 文件打开
+            if let Some(epub_path) = std::env::args().nth(1) {
+                if epub_path.to_lowercase().ends_with(".epub") && std::path::Path::new(&epub_path).exists() {
+                    let state = app.state::<AppState>();
+                    if let Ok(data) = std::fs::read(&epub_path) {
+                        if let Ok(opened) = load_book_from_data(&state, data) {
+                            if let Some(window) = app.get_webview_window("main") {
+                                let _ = window.emit("deep-link-open", &opened.book_id);
+                            }
+                        }
+                    }
+                }
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

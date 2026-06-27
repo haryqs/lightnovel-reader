@@ -644,3 +644,24 @@
 后果：
 - sync-server 需要用户自行部署（NAS/VPS），增加运维门槛；缓解措施：桌面端内置零配置局域网模式（Phase 3 实现）。
 - sync_outbox 触发器增加写入开销，但单条 INSERT 额外写一条 outbox 行，量级可接受。
+
+## 2026-06-27：Phase 3 桌面端独立化决策
+
+决策：
+1. 托盘实现用 Tauri v2 内置 `tray-icon` feature + `TrayIconBuilder`，不引入额外插件。
+2. 关闭到托盘：监听 `CloseRequested` 事件 `prevent_close()` 后 `hide()` 窗口。
+3. 文件关联通过 `tauri.conf.json` 的 `bundle.fileAssociations` 配置，NSIS 安装器自动注册。
+4. 自动更新用 `tauri-plugin-updater`，endpoint 指向 GitHub Releases。
+5. 冷启动优化：窗口 `visible: false` + setup 中 200ms 延迟 `show()`，避免白屏闪烁。
+
+理由：
+- Tauri v2 内置 tray API 成熟，无需额外插件。
+- 关闭到托盘是桌面应用标准行为，实现简单（3 行）。
+- 文件关联由 NSIS 安装器自动处理，无需手写注册表。
+- updater 插件官方维护，支持 passive 安装模式。
+- 启动遮罩策略（先隐藏再延时展示）是最简单的白屏避免方案。
+
+后果：
+- 托盘图标需 `.ico` 格式，已用 `default_window_icon()` 取 `icons/icon.ico`。
+- `tauri.conf.json` 中 `identifier` 从 `com.tauri-app.reader` 改为 `com.lightnovel.reader`。
+- 关闭窗口不再退出程序，用户需通过托盘菜单退出——需在前端 UI 提示。
