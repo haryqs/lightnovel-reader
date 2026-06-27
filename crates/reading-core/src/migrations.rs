@@ -74,8 +74,14 @@ mod tests {
     fn fresh_db_applies_all_and_stamps_version() {
         let conn = mem();
         let migs = [
-            Migration { version: 1, sql: "CREATE TABLE a(x);" },
-            Migration { version: 2, sql: "CREATE TABLE b(y);" },
+            Migration {
+                version: 1,
+                sql: "CREATE TABLE a(x);",
+            },
+            Migration {
+                version: 2,
+                sql: "CREATE TABLE b(y);",
+            },
         ];
         run(&conn, &migs).unwrap();
         assert_eq!(current_version(&conn).unwrap(), 2);
@@ -86,7 +92,10 @@ mod tests {
     #[test]
     fn rerun_is_idempotent() {
         let conn = mem();
-        let migs = [Migration { version: 1, sql: "CREATE TABLE a(x);" }];
+        let migs = [Migration {
+            version: 1,
+            sql: "CREATE TABLE a(x);",
+        }];
         run(&conn, &migs).unwrap();
         // 第二次跑：v1 已应用，被跳过；不会因 CREATE 重复而报错。
         run(&conn, &migs).unwrap();
@@ -96,21 +105,35 @@ mod tests {
     #[test]
     fn incremental_upgrade_runs_only_new_steps() {
         let conn = mem();
-        run(&conn, &[Migration { version: 1, sql: "CREATE TABLE a(x);" }]).unwrap();
+        run(
+            &conn,
+            &[Migration {
+                version: 1,
+                sql: "CREATE TABLE a(x);",
+            }],
+        )
+        .unwrap();
         assert_eq!(current_version(&conn).unwrap(), 1);
 
         // 追加 v2：只跑 v2，v1 不重跑。
         run(
             &conn,
             &[
-                Migration { version: 1, sql: "CREATE TABLE a(x);" },
-                Migration { version: 2, sql: "ALTER TABLE a ADD COLUMN y;" },
+                Migration {
+                    version: 1,
+                    sql: "CREATE TABLE a(x);",
+                },
+                Migration {
+                    version: 2,
+                    sql: "ALTER TABLE a ADD COLUMN y;",
+                },
             ],
         )
         .unwrap();
         assert_eq!(current_version(&conn).unwrap(), 2);
         // y 列存在 → v2 确实执行
-        conn.execute("INSERT INTO a(x, y) VALUES (1, 2)", []).unwrap();
+        conn.execute("INSERT INTO a(x, y) VALUES (1, 2)", [])
+            .unwrap();
     }
 
     #[test]
@@ -123,7 +146,10 @@ mod tests {
         // 基线迁移用 IF NOT EXISTS → 幂等补盖并盖戳到 1，不报错。
         run(
             &conn,
-            &[Migration { version: 1, sql: "CREATE TABLE IF NOT EXISTS a(x);" }],
+            &[Migration {
+                version: 1,
+                sql: "CREATE TABLE IF NOT EXISTS a(x);",
+            }],
         )
         .unwrap();
         assert_eq!(current_version(&conn).unwrap(), 1);
@@ -132,14 +158,27 @@ mod tests {
     #[test]
     fn failed_migration_rolls_back_and_keeps_version() {
         let conn = mem();
-        run(&conn, &[Migration { version: 1, sql: "CREATE TABLE a(x);" }]).unwrap();
+        run(
+            &conn,
+            &[Migration {
+                version: 1,
+                sql: "CREATE TABLE a(x);",
+            }],
+        )
+        .unwrap();
 
         // v2 先建表再撞上非法语句 → 整条回滚：版本停在 1，b 表不应残留。
         let err = run(
             &conn,
             &[
-                Migration { version: 1, sql: "CREATE TABLE a(x);" },
-                Migration { version: 2, sql: "CREATE TABLE b(y); THIS IS NOT SQL;" },
+                Migration {
+                    version: 1,
+                    sql: "CREATE TABLE a(x);",
+                },
+                Migration {
+                    version: 2,
+                    sql: "CREATE TABLE b(y); THIS IS NOT SQL;",
+                },
             ],
         );
         assert!(err.is_err());

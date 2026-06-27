@@ -41,6 +41,11 @@ export class ReaderCore {
   private pageModelCache = new Map<string, string[]>()
   private readonly maxPageModels = 8
 
+  // Web Worker 后台分页
+  private paginationWorker: Worker | null = null
+  private workerPageCache = new Map<string, string[]>()
+  private workerPending = new Set<string>()
+
   // 标注
   annotations: Annotation[] = []
   private bookId = ''
@@ -205,9 +210,51 @@ export class ReaderCore {
     }
   }
 
+  // 初始化 Worker（惰性，第一次使用才创建）
+  private getOrCreatePaginationWorker(): Worker {
+    if (!this.paginationWorker) {
+      this.paginationWorker = new Worker(
+        new URL('./worker/pagination-worker.ts', import.meta.url),
+        { type: 'module' },
+      )
+      this.paginationWorker.onmessage = (e: MessageEvent) => {
+        const data = e.data
+        if (data?.type === 'paginated') {
+          // Worker 完成分页 → 存入缓存，主线程下次翻页直接命中
+          this.workerPageCache.set(data.key, data.pages)
+          this.workerPending.delete(data.key)
+        }
+      }
+    }
+    return this.paginationWorker
+  }
+
+  // 将分页任务发送到 Worker 后台执行
+  private dispatchPaginationToWorker(key: string, html: string) {
+    try {
+      const worker = this.getOrCreatePaginationWorker()
+      this.workerPending.add(key)
+      const capacity = this.getEstimatedPageCapacity()
+      worker.postMessage({ type: 'paginate', key, html, capacity })
+    } catch {
+      // Worker 创建失败（如 file:// 协议限制），静默 fallback 到同步
+      this.workerPending.delete(key)
+    }
+  }
+
   // 把书内相对链接（可带 #fragment）解析到 spine 章节并跳转。
   private getOrBuildPageModel(href: string, html: string): string[] {
     const key = this.pageModelKey(href)
+
+    // 1. 先查 Worker 后台预分页缓存（不阻塞主线程的结果）
+    const workerPages = this.workerPageCache.get(key)
+    if (workerPages) {
+      this.pageModelCache.set(key, workerPages)
+      this.workerPageCache.delete(key)
+      return workerPages
+    }
+
+    // 2. 再查同步缓存
     const cached = this.pageModelCache.get(key)
     if (cached) {
       this.pageModelCache.delete(key)
@@ -215,7 +262,14 @@ export class ReaderCore {
       return cached
     }
 
+    // 3. 主线程同步分页（fallback，后续 Worker 完成会替换）
     const pages = this.buildVirtualPages(html)
+
+    // 4. 如果还没发给 Worker，现在发（后台预分页，下次命中）
+    if (!this.workerPending.has(key)) {
+      this.dispatchPaginationToWorker(key, html)
+    }
+
     this.pageModelCache.set(key, pages)
     while (this.pageModelCache.size > this.maxPageModels) {
       const first = this.pageModelCache.keys().next().value
@@ -925,6 +979,8 @@ export class ReaderCore {
     this.chapterCache.clear()
     this.chapterInflight.clear()
     this.pageModelCache.clear()
+    this.workerPageCache.clear()
+    this.workerPending.clear()
     if (this.locationFrame !== null) {
       cancelAnimationFrame(this.locationFrame)
       this.locationFrame = null

@@ -1,68 +1,12 @@
 // platform 适配层:reader-engine 与平台壳之间的唯一边界(方案文档 7 的纪律 1)。
 // 引擎代码只允许 import 本目录,不允许直接触碰 @tauri-apps/* 或其他平台 API。
-import type { BridgeError, ReaderBridge } from './protocol'
+import type { ReaderBridge } from './protocol'
 import { isTauriRuntime, tauriBridge } from './tauri'
+import { webBridge } from '../web/web-bridge'
 
 export * from './protocol'
 
 /** 当前是否运行在带 reading-core 的原生壳里(浏览器直开 vite dev 时为 false)。 */
 export const hasNativeBridge = isTauriRuntime
 
-const NO_BRIDGE_HINT = '需要桌面窗口(请运行 npm run tauri dev)'
-
-const unavailable = (method: string): never => {
-  const err: BridgeError = {
-    code: 'platformError',
-    message: `${method} ${NO_BRIDGE_HINT}`,
-  }
-  throw err
-}
-
-// 纯浏览器环境的兜底实现:除路径透传外全部报错,错误信息可直接展示给用户。
-const noBridge: ReaderBridge = {
-  openBookFromBytes: async () => unavailable('book.open'),
-  openBookFromPath: async () => unavailable('book.openPath'),
-  closeBook: async () => {},
-  getChapter: async () => unavailable('chapter.get'),
-  listCalibreBooks: async () => unavailable('library.listCalibre'),
-  importLibraryBook: async () => unavailable('library.import'),
-  importLibraryBookFromBytes: async () => unavailable('library.importBytes'),
-  listLibraryBooks: async () => unavailable('library.list'),
-  searchLibraryBooks: async () => unavailable('library.search'),
-  listLibrarySourceRecords: async () => unavailable('library.listSourceRecords'),
-  searchRemoteLibraryBooks: async () => unavailable('library.searchRemote'),
-  searchRemoteLibraryBooksFromSource: async () => unavailable('library.searchRemoteSource'),
-  acquireRemoteLibraryBook: async () => unavailable('library.acquireRemote'),
-  linkRemoteToLocalLibraryBook: async () => unavailable('library.linkRemoteToLocal'),
-  openLibraryBook: async () => unavailable('library.open'),
-  touchLibraryLastRead: async () => unavailable('library.touchLastRead'),
-  saveAnnotation: async () => unavailable('annotation.save'),
-  listAnnotations: async () => [],
-  deleteAnnotation: async () => unavailable('annotation.delete'),
-  saveProgress: async () => {},
-  getProgress: async () => null,
-  resolveFileUrl: (path) => path,
-  openExternal: async (url) => {
-    window.open(url, '_blank', 'noopener')
-  },
-  openPathExternal: async () => unavailable('shell.openPathExternal'),
-  selectPluginPackagePath: async () => unavailable('plugin.selectPackagePath'),
-  inspectPluginPackage: async () => unavailable('plugin.inspectPackage'),
-  installPluginPackage: async () => unavailable('plugin.installPackage'),
-  listInstalledPlugins: async () => unavailable('plugin.listInstalled'),
-  setPluginEnabled: async () => unavailable('plugin.setEnabled'),
-  uninstallPlugin: async () => unavailable('plugin.uninstall'),
-  loadPluginRepositoryIndex: async () => unavailable('plugin.repository.load'),
-  inspectRepositoryPluginPackage: async () => unavailable('plugin.repository.inspectPackage'),
-  installRepositoryPluginPackage: async () => unavailable('plugin.repository.installPackage'),
-  // OPDS v0.6
-  opdsAddSource: async () => unavailable('opds.addSource'),
-  opdsRemoveSource: async () => unavailable('opds.removeSource'),
-  opdsListSources: async () => unavailable('opds.listSources'),
-  opdsBrowseFeed: async () => unavailable('opds.browseFeed'),
-  opdsSearchFeed: async () => unavailable('opds.searchFeed'),
-  opdsIngestEntries: async () => unavailable('opds.ingestEntries'),
-  opdsDownloadEpub: async () => unavailable('opds.downloadEpub'),
-}
-
-export const bridge: ReaderBridge = isTauriRuntime() ? tauriBridge : noBridge
+export const bridge: ReaderBridge = isTauriRuntime() ? tauriBridge : webBridge

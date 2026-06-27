@@ -30,7 +30,11 @@ fn book_cache_dir(cache_root: &Path, book_id: &str) -> PathBuf {
 /// 章节 href → 文件名安全的短哈希（避免 href 里的 `/`、`#`、查询串等污染路径）。
 fn href_key(href: &str) -> String {
     let digest = Sha256::digest(href.as_bytes());
-    digest.iter().take(16).map(|b| format!("{:02x}", b)).collect()
+    digest
+        .iter()
+        .take(16)
+        .map(|b| format!("{:02x}", b))
+        .collect()
 }
 
 /// 读缓存的 `BookInfo`；未命中或损坏返回 None。
@@ -181,6 +185,8 @@ mod tests {
     fn cache_path_carries_version() {
         let dir = book_cache_dir(Path::new("/root"), "bookid");
         assert!(dir.to_string_lossy().contains("parsed"));
-        assert!(dir.to_string_lossy().contains(&format!("v{}", CACHE_VERSION)));
+        assert!(dir
+            .to_string_lossy()
+            .contains(&format!("v{}", CACHE_VERSION)));
     }
 }

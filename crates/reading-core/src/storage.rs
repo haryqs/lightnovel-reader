@@ -49,7 +49,10 @@ CREATE TABLE IF NOT EXISTS reading_state (
 
 /// 标注 + 阅读进度库的迁移序列。基线即现有 SCHEMA（全部 IF NOT EXISTS，
 /// 框架上线前 user_version=0 的旧库会被幂等补盖并盖戳到 1）。
-const MIGRATIONS: &[Migration] = &[Migration { version: 1, sql: SCHEMA }];
+const MIGRATIONS: &[Migration] = &[Migration {
+    version: 1,
+    sql: SCHEMA,
+}];
 
 pub fn init(path: &Path) -> rusqlite::Result<Connection> {
     let conn = Connection::open(path)?;
@@ -70,8 +73,15 @@ pub fn save(conn: &Connection, a: &Annotation) -> rusqlite::Result<()> {
            (id, book_id, type, color, chapter_href, locator, note, created_at, updated_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
         params![
-            a.id, a.book_id, a.kind, a.color, chapter_href, locator_json, a.note,
-            a.created_at, a.updated_at
+            a.id,
+            a.book_id,
+            a.kind,
+            a.color,
+            chapter_href,
+            locator_json,
+            a.note,
+            a.created_at,
+            a.updated_at
         ],
     )?;
     Ok(())
@@ -84,8 +94,7 @@ pub fn list(conn: &Connection, book_id: &str) -> rusqlite::Result<Vec<Annotation
     )?;
     let rows = stmt.query_map([book_id], |row| {
         let locator_str: String = row.get(4)?;
-        let locator =
-            serde_json::from_str(&locator_str).unwrap_or(serde_json::Value::Null);
+        let locator = serde_json::from_str(&locator_str).unwrap_or(serde_json::Value::Null);
         Ok(Annotation {
             id: row.get(0)?,
             book_id: row.get(1)?,
@@ -122,7 +131,13 @@ pub fn save_progress(conn: &Connection, p: &ReadingProgress) -> rusqlite::Result
         "INSERT OR REPLACE INTO reading_state
            (book_id, chapter_href, chapter_progress, percentage, updated_at)
          VALUES (?1, ?2, ?3, ?4, ?5)",
-        params![p.book_id, p.chapter_href, p.chapter_progress, p.percentage, p.updated_at],
+        params![
+            p.book_id,
+            p.chapter_href,
+            p.chapter_progress,
+            p.percentage,
+            p.updated_at
+        ],
     )?;
     Ok(())
 }
@@ -185,7 +200,11 @@ mod tests {
         assert!((got.chapter_progress - 0.5).abs() < 1e-9);
 
         // 同书覆盖而非新增
-        let p2 = ReadingProgress { chapter_progress: 0.75, updated_at: 2000, ..p };
+        let p2 = ReadingProgress {
+            chapter_progress: 0.75,
+            updated_at: 2000,
+            ..p
+        };
         save_progress(&conn, &p2).unwrap();
         let got = get_progress(&conn, "book1").unwrap().unwrap();
         assert!((got.chapter_progress - 0.75).abs() < 1e-9);

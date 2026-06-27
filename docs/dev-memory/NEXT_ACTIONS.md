@@ -1,5 +1,48 @@
 # 下一步任务队列
 
+## 📌 交接留言（2026-06-27，Hermes 三层架构三线并行收工）
+
+先同步 GitHub：
+
+```bash
+cd /c/Users/Administrator/lightnovel-reader
+git fetch --all --prune
+git checkout main
+git pull --ff-only
+git status -sb
+```
+
+本轮 Hermes（DeepSeek v4 Pro）担任 Tech Lead，调度 Claude Code + OpenCode 三线并行：
+
+**任务 A（Claude Code -p）：QuickJS 集成架构方案**
+- 产出：`docs/resource-library-plan/9_插件运行时_QuickJS集成方案.md`（187 行）
+- 核心决策：选 `rquickjs`（绑定 quickjs-ng），每次调用一个一次性 Runtime，JSON 序列化对接现有 DTO，HTTP 经 `PluginHttpExecutor` trait 穿壳层（保持 core 无网络纪律），双层超时（QuickJS 中断 + tokio::timeout 30s），沙箱只注入四个 host 命名空间
+- 状态：纯方案文档，未实现
+
+**任务 B（OpenCode + Sonnet via OpenRouter）：插件仓库 smoke 测试**
+- 产出：`scripts/tauri-plugin-repository-smoke.mjs`（592 行）+ `docs/testing/plugin-repository-smoke-limitations.md`（109 行）
+- package.json 新增 `smoke:plugin-repo` script
+- 覆盖：插件包检查、安装流程、启用/禁用、卸载、错误处理
+- 限制：HTTPS 强制导致无法测真实网络仓库；不执行插件 JS 代码
+
+**任务 C（OpenCode + DeepSeek）：文档更新** — 失败（幻觉）
+- DeepSeek 模型在 DEV_LOG 中虚构了"完成端到端测试"和"plugin_runtime 模块"——已回滚
+- 教训：文档/记录类任务不交给弱模型，由 Hermes 直接操作
+
+**环境**：Windows 10, Claude Code CLI 2.1.179（Pro OAuth）, OpenCode 1.17.11（DeepSeek API + OpenRouter）
+
+已验证：
+- `node scripts/check-arch.mjs` 通过
+- `node scripts/check-dev-memory.mjs` 通过
+- `node scripts/check-protocol-freeze.mjs` 通过
+- `node --check scripts/tauri-plugin-repository-smoke.mjs` 通过
+
+下一步优先级：
+1. Review QuickJS 集成方案文档 → 确认 rquickjs 选型 → 进入实现（可再委托 Claude Code）
+2. 构建 Tauri debug 版并跑 smoke:plugin-repo（需要 GUI 环境）
+3. 补上用户自装 vs 官方白名单插件视觉区分
+4. 继续用三层架构：Hermes 写 Spec → Claude Code 做复杂实现 → OpenCode 做测试/文档
+
 ## 📌 交接留言（2026-06-23，v0.7 官方插件仓库下载校验链路进行中）
 
 先同步 GitHub：
@@ -961,3 +1004,33 @@ git status -sb
 - 重启 Codex 后确认全局 curated skills 已出现在可用技能列表中。
 - 评估是否创建每日/每周文档审计 automation。
 - 将关键工作拆给子代理前，先明确写入范围和冲突边界。
+
+## 📌 交接留言（2026-06-27，Phase 1 WASM 网页端 MVP 完工）
+
+本轮 Hermes（DeepSeek v4 Pro）主导完成 v1.0 架构方案 Phase 1：
+
+**已完成：**
+- `crates/reading-core` 拆 native/wasm features，新增 `pagination.rs`（347行/8测试）
+- WASM 编译导出 3 函数：paginate / parse_epub_metadata / get_chapter_html
+- Web Worker 接入 WASM 分页（TS fallback 保留）
+- 新建 `src/web/` 层：reading-core-wasm.ts / web-storage.ts（IndexedDB+OPFS）/ web-bridge.ts（ReaderBridge 229行）/ web-import.ts（拖放+文件选择）
+- `src/platform/index.ts` 浏览器模式切换 webBridge（原 noBridge 全抛错→真正可用）
+- `npm run build` 18 modules / 500KB WASM；`cargo test` 131 passed；tsc 零错误
+
+**下一步（Phase 2）：自托管同步服务**
+- 新建 `crates/sync-server`（axum + SQLite）
+- `reading-core::sync` 模块（sync_outbox 变更日志 + 冲突解决算法）
+- 桥接协议新增 sync.* 消息（不破坏已冻结的 1.0-rc.1）
+- 设备配对码认证（不做账号系统 v1）
+- 验收：两台设备配对后一端加书/标注/进度，另一端数秒内可见
+
+**下一步（Phase 3）：桌面端独立化**
+- 系统托盘 + 关闭到托盘
+- .epub 文件关联 + single-instance
+- 自动更新（tauri-updater）
+- 冷启动 < 1s
+
+**下一步（Phase 4）：性能打磨**
+- GPU 翻页动画（CSS transform 双缓冲）
+- PWA 接入（vite-plugin-pwa）
+- 真实文本测量评估（目前仍用字符数启发式）

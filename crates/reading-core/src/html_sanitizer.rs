@@ -247,7 +247,10 @@ fn scrub_one_tag(inner: &str) -> String {
             continue;
         }
         // 中和脚本类 URL 属性
-        if matches!(attr_lower.as_str(), "href" | "src" | "xlink:href" | "formaction" | "action") {
+        if matches!(
+            attr_lower.as_str(),
+            "href" | "src" | "xlink:href" | "formaction" | "action"
+        ) {
             if let Some((_, ref v)) = value {
                 if is_script_url(v) {
                     continue; // 直接丢弃该属性
@@ -393,7 +396,10 @@ fn img_html(src: &str) -> String {
     let url = format!("http://reader-img.localhost/{}", clean);
     #[cfg(not(any(windows, target_os = "android")))]
     let url = format!("reader-img://localhost/{}", clean);
-    format!("<img src=\"{}\" style=\"max-width:100%;height:auto\"/>", url)
+    format!(
+        "<img src=\"{}\" style=\"max-width:100%;height:auto\"/>",
+        url
+    )
 }
 
 /// 在 haystack 中大小写无关地查找 ASCII needle，返回原串中的字节偏移。
@@ -434,7 +440,10 @@ fn rewrite_svg_image_blocks(html: &str) -> String {
                         let mut found_src = None;
                         if let Some(image_start) = find_ci(block, "<image", 0) {
                             let rest = &block[image_start..];
-                            let image_tag_end = rest.find('>').map(|p| image_start + p + 1).unwrap_or(block.len());
+                            let image_tag_end = rest
+                                .find('>')
+                                .map(|p| image_start + p + 1)
+                                .unwrap_or(block.len());
                             let image_tag = &block[image_start..image_tag_end.min(block.len())];
                             if let Some(src) = extract_attr(image_tag, "xlink:href")
                                 .or_else(|| extract_attr(image_tag, "href"))
@@ -445,7 +454,10 @@ fn rewrite_svg_image_blocks(html: &str) -> String {
                         if found_src.is_none() {
                             if let Some(img_start) = find_ci(block, "<img", 0) {
                                 let rest = &block[img_start..];
-                                let img_tag_end = rest.find('>').map(|p| img_start + p + 1).unwrap_or(block.len());
+                                let img_tag_end = rest
+                                    .find('>')
+                                    .map(|p| img_start + p + 1)
+                                    .unwrap_or(block.len());
                                 let img_tag = &block[img_start..img_tag_end.min(block.len())];
                                 if let Some(src) = extract_attr(img_tag, "src") {
                                     found_src = Some(src);
@@ -504,8 +516,16 @@ fn extract_body(raw: &str) -> String {
 
 fn strip_dangerous_styles(html: &str) -> String {
     let dangerous = [
-        "position", "display", "float", "clear", "z-index", "overflow",
-        "visibility", "transform", "animation", "transition",
+        "position",
+        "display",
+        "float",
+        "clear",
+        "z-index",
+        "overflow",
+        "visibility",
+        "transform",
+        "animation",
+        "transition",
     ];
 
     let mut result = String::with_capacity(html.len());
@@ -514,9 +534,7 @@ fn strip_dangerous_styles(html: &str) -> String {
 
     while i < chars.len() {
         // 检测 style="
-        if i + 6 < chars.len()
-            && chars[i..i + 7].iter().collect::<String>() == "style=\""
-        {
+        if i + 6 < chars.len() && chars[i..i + 7].iter().collect::<String>() == "style=\"" {
             result.push_str("style=\"");
             let start = i + 7;
             let mut j = start;
@@ -564,7 +582,10 @@ fn strip_font_tags(html: &str) -> String {
         let remaining = &html[byte_pos..];
 
         if remaining.to_lowercase().starts_with("<font") {
-            let tag_end = remaining.find('>').map(|p| p + 1).unwrap_or(remaining.len());
+            let tag_end = remaining
+                .find('>')
+                .map(|p| p + 1)
+                .unwrap_or(remaining.len());
             let font_tag = &remaining[..tag_end];
 
             // 提取 size 和 color
@@ -574,8 +595,13 @@ fn strip_font_tags(html: &str) -> String {
             let mut styles = Vec::new();
             if let Some(ref s) = size_attr {
                 let fs = match s.as_str() {
-                    "1" => "x-small", "2" => "small", "3" => "medium",
-                    "4" => "large", "5" => "x-large", "6" => "xx-large", "7" => "xxx-large",
+                    "1" => "x-small",
+                    "2" => "small",
+                    "3" => "medium",
+                    "4" => "large",
+                    "5" => "x-large",
+                    "6" => "xx-large",
+                    "7" => "xxx-large",
                     _ => s,
                 };
                 styles.push(format!("font-size:{}", fs));
@@ -617,9 +643,7 @@ fn strip_line_heights(html: &str) -> String {
     let mut i = 0;
 
     while i < chars.len() {
-        if i + 6 < chars.len()
-            && chars[i..i + 7].iter().collect::<String>() == "style=\""
-        {
+        if i + 6 < chars.len() && chars[i..i + 7].iter().collect::<String>() == "style=\"" {
             result.push_str("style=\"");
             let start = i + 7;
             let mut j = start;
@@ -642,7 +666,7 @@ fn strip_line_heights(html: &str) -> String {
             if filtered.is_empty() {
                 // 去掉空的 style=""
                 result.pop(); // 去掉我们推的 style="
-                // result 最后 7 个字符是 "style=""，全回退
+                              // result 最后 7 个字符是 "style=""，全回退
                 result.truncate(result.len().saturating_sub(7));
                 i = j + 1;
             } else {
@@ -699,7 +723,10 @@ fn rewrite_img_tags(html: &str) -> String {
         let (byte_pos, _) = chars[ci];
         let remaining = &html[byte_pos..];
         if remaining.to_lowercase().starts_with("<img") {
-            let tag_end_off = remaining.find('>').map(|p| p + 1).unwrap_or(remaining.len());
+            let tag_end_off = remaining
+                .find('>')
+                .map(|p| p + 1)
+                .unwrap_or(remaining.len());
             let img_tag = &remaining[..tag_end_off];
 
             if let Some(src) = extract_attr(img_tag, "src") {
@@ -731,7 +758,10 @@ mod tests {
         assert!(out.contains("<span"), "应转为 span");
         assert!(out.contains("font-size:x-large"), "size=5 -> x-large");
         assert!(out.contains("color:red"), "color 应保留");
-        assert!(!out.to_lowercase().contains("<font"), "不应有 font 标签残留");
+        assert!(
+            !out.to_lowercase().contains("<font"),
+            "不应有 font 标签残留"
+        );
     }
 
     #[test]
@@ -771,16 +801,25 @@ mod tests {
         let html = r#"<p>前文</p><svg viewBox="0 0 600 800" xmlns="http://www.w3.org/2000/svg"><image width="600" height="800" xlink:href="../Images/cover.jpg"/></svg><p>后文</p>"#;
         let out = rewrite_svg_image_blocks(html);
         // URL 格式因平台而异：Windows http://reader-img.localhost/，其他 reader-img://localhost/
-        assert!(out.contains("reader-img") && out.contains("cover.jpg"), "svg 内图片应改写");
+        assert!(
+            out.contains("reader-img") && out.contains("cover.jpg"),
+            "svg 内图片应改写"
+        );
         assert!(!out.to_lowercase().contains("<svg"), "svg 块应被移除");
-        assert!(out.contains("前文") && out.contains("后文"), "svg 前后正文保留");
+        assert!(
+            out.contains("前文") && out.contains("后文"),
+            "svg 前后正文保留"
+        );
     }
 
     #[test]
     fn rewrites_svg_with_chinese_around() {
         let html = "第一章。<SVG><IMAGE href=\"a.png\"/></SVG>正文内容在这里。";
         let out = rewrite_svg_image_blocks(html);
-        assert!(out.contains("reader-img") && out.contains("a.png"), "svg 内图片应改写");
+        assert!(
+            out.contains("reader-img") && out.contains("a.png"),
+            "svg 内图片应改写"
+        );
         assert!(!out.to_lowercase().contains("<svg"), "svg 块应被移除");
     }
 
@@ -788,7 +827,8 @@ mod tests {
 
     #[test]
     fn removes_script_blocks_with_content() {
-        let html = r#"<p>前</p><script>window.__TAURI__.core.invoke('library_list')</script><p>后</p>"#;
+        let html =
+            r#"<p>前</p><script>window.__TAURI__.core.invoke('library_list')</script><p>后</p>"#;
         let out = sanitize_security(html);
         assert!(!out.to_lowercase().contains("<script"), "script 标签应移除");
         assert!(!out.contains("__TAURI__"), "script 内容应一并移除");
@@ -809,7 +849,10 @@ mod tests {
         let html = r#"<p onclick="steal()" class="x">文</p><div onmouseover="evil()">块</div>"#;
         let out = sanitize_security(html);
         assert!(!out.to_lowercase().contains("onclick"), "onclick 应剥除");
-        assert!(!out.to_lowercase().contains("onmouseover"), "onmouseover 应剥除");
+        assert!(
+            !out.to_lowercase().contains("onmouseover"),
+            "onmouseover 应剥除"
+        );
         assert!(out.contains(r#"class="x""#), "正常属性保留");
         assert!(out.contains("文") && out.contains("块"));
     }
@@ -821,14 +864,20 @@ mod tests {
         let out = sanitize_security(html);
         assert!(!out.to_lowercase().contains("ontoggle"));
         assert!(!out.to_lowercase().contains("onerror"));
-        assert!(out.contains("<details") && out.contains("<summary"), "元素本身保留");
+        assert!(
+            out.contains("<details") && out.contains("<summary"),
+            "元素本身保留"
+        );
     }
 
     #[test]
     fn neutralizes_javascript_href() {
         let html = r#"<a href="javascript:alert(1)">点</a><a href="Text/ch2.xhtml">正常</a>"#;
         let out = sanitize_security(html);
-        assert!(!out.to_lowercase().contains("javascript:"), "js: 链接应去除");
+        assert!(
+            !out.to_lowercase().contains("javascript:"),
+            "js: 链接应去除"
+        );
         assert!(out.contains(r#"href="Text/ch2.xhtml""#), "正常链接保留");
         assert!(out.contains("点") && out.contains("正常"));
     }
@@ -838,7 +887,10 @@ mod tests {
         // 大小写 + 内嵌空白/制表符的绕过手法
         let html = "<a href=\"Java\tScript:evil()\">x</a>";
         let out = sanitize_security(html);
-        assert!(!out.to_lowercase().replace(char::is_whitespace, "").contains("javascript:"));
+        assert!(!out
+            .to_lowercase()
+            .replace(char::is_whitespace, "")
+            .contains("javascript:"));
     }
 
     #[test]
@@ -872,18 +924,25 @@ mod tests {
     fn neutralizes_entity_encoded_js_url() {
         // 浏览器会在属性值里解码实体，故必须先解码再判 scheme。
         let cases = [
-            r#"<a href="javascript&#58;alert(1)">x</a>"#,      // &#58; = ':'
-            r#"<a href="javascript&#x3a;alert(1)">x</a>"#,     // &#x3a; = ':'
-            r#"<a href="java&#115;cript:alert(1)">x</a>"#,     // &#115; = 's'，拆字
-            r#"<a href="javascript&colon;alert(1)">x</a>"#,    // 命名实体
-            r#"<a href="&#106;avascript:alert(1)">x</a>"#,     // &#106; = 'j'
+            r#"<a href="javascript&#58;alert(1)">x</a>"#, // &#58; = ':'
+            r#"<a href="javascript&#x3a;alert(1)">x</a>"#, // &#x3a; = ':'
+            r#"<a href="java&#115;cript:alert(1)">x</a>"#, // &#115; = 's'，拆字
+            r#"<a href="javascript&colon;alert(1)">x</a>"#, // 命名实体
+            r#"<a href="&#106;avascript:alert(1)">x</a>"#, // &#106; = 'j'
         ];
         for c in cases {
             let out = sanitize_security(c);
-            assert!(!out.contains("alert(1)") || !out.to_lowercase().contains("href"),
-                "实体编码的 js: 应被去除: {} -> {}", c, out);
-            assert!(!out.contains(r#"href="javascript"#) && !out.contains("&#58"),
-                "不应残留可解码为 javascript: 的 href: {}", out);
+            assert!(
+                !out.contains("alert(1)") || !out.to_lowercase().contains("href"),
+                "实体编码的 js: 应被去除: {} -> {}",
+                c,
+                out
+            );
+            assert!(
+                !out.contains(r#"href="javascript"#) && !out.contains("&#58"),
+                "不应残留可解码为 javascript: 的 href: {}",
+                out
+            );
         }
     }
 
@@ -892,14 +951,21 @@ mod tests {
         // 正文里的实体（非 URL 属性）不受影响
         let html = "<p>版权所有 &copy; 2026，A &amp; B</p>";
         let out = sanitize_security(html);
-        assert!(out.contains("&copy;") && out.contains("&amp;"), "正文实体保留: {}", out);
+        assert!(
+            out.contains("&copy;") && out.contains("&amp;"),
+            "正文实体保留: {}",
+            out
+        );
     }
 
     #[test]
     fn full_pipeline_strips_script_and_handlers() {
         let raw = r#"<html><head><script>head_evil()</script></head><body><p onclick="evil()">正文</p><script>body_evil()</script></body></html>"#;
         let out = clean_chapter(raw, "", &HashMap::new()).unwrap();
-        assert!(!out.contains("head_evil"), "head script 由 extract_body 去除");
+        assert!(
+            !out.contains("head_evil"),
+            "head script 由 extract_body 去除"
+        );
         assert!(!out.contains("body_evil"), "body script 必须由安全清洗去除");
         assert!(!out.to_lowercase().contains("onclick"), "事件处理属性去除");
         assert!(out.contains("正文"));

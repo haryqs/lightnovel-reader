@@ -2323,3 +2323,47 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
 下一步：
 
 - 继续迁移 `book.*` / `annotation.*` / `reading.*` 到结构化 `BridgeError`；若准备分发，重跑 `package:beta` 并做解压/启动检查。
+
+## 2026-06-27：Hermes 三层架构三线并行：1) Claude Code 完成 QuickJS 集成架构方案(187行)；2) OpenCode+Sonnet 完成插件仓库 smoke 测试(592行) + 限制说明文档；3) 更新 AGENTS.md 当前优先级
+
+变更：
+
+- Hermes 三层架构三线并行：1) Claude Code 完成 QuickJS 集成架构方案(187行)；2) OpenCode+Sonnet 完成插件仓库 smoke 测试(592行) + 限制说明文档；3) 更新 AGENTS.md 当前优先级
+
+修改文件：
+
+- 待补充
+
+验证：
+
+- check-arch/check-dev-memory/check-protocol-freeze/node--check 全绿
+
+未验证/阻塞：
+
+- 无
+
+下一步：
+
+- review QuickJS 集成方案文档 → 确认选型后进入实现；review smoke 测试 → 补真实窗口运行
+
+## 2026-06-27：Phase 1 WASM 网页端 MVP 完工：reading-core 拆 native/wasm features，新增 Rust 分页算法 pagination.rs(347行/8测试)，WASM 编译导出 paginate/parse_epub_metadata/get_chapter_html，Web Worker 接入 WASM 分页(TS fallback)，新建 web-storage(IndexedDB+OPFS)/web-bridge(ReaderBridge 229行)/web-import(拖放+文件选择)，platform/index.ts 浏览器模式切换 webBridge(替代全抛错的 noBridge)
+
+变更：
+
+- Phase 1 WASM 网页端 MVP 完工：reading-core 拆 native/wasm features，新增 Rust 分页算法 pagination.rs(347行/8测试)，WASM 编译导出 paginate/parse_epub_metadata/get_chapter_html，Web Worker 接入 WASM 分页(TS fallback)，新建 web-storage(IndexedDB+OPFS)/web-bridge(ReaderBridge 229行)/web-import(拖放+文件选择)，platform/index.ts 浏览器模式切换 webBridge(替代全抛错的 noBridge)
+
+修改文件：
+
+- 待补充
+
+验证：
+
+- npm run build: 18 modules/500KB WASM 通过；cargo test --workspace: 131 passed；tsc --noEmit: 零错误；check-arch/check-protocol-freeze: OK
+
+未验证/阻塞：
+
+- 无
+
+下一步：
+
+- Phase 2: 自托管同步服务(axum+sync_outbox)；Phase 3: 桌面端独立化(托盘/文件关联/自动更新)

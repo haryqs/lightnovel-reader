@@ -727,9 +727,10 @@ pub fn link_remote_to_local(
         return Err("远程条目和本地条目不能相同".to_string());
     }
 
-    let (remote_edition_id, remote_volume_id, remote_series_id) = remote_link_target(conn, remote_id)
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| "只能关联尚未本地化的远程元数据条目".to_string())?;
+    let (remote_edition_id, remote_volume_id, remote_series_id) =
+        remote_link_target(conn, remote_id)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| "只能关联尚未本地化的远程元数据条目".to_string())?;
     let (local_asset_id, local_edition_id) = local_link_target(conn, local_id)
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "找不到可关联的本地书库条目".to_string())?;
@@ -930,8 +931,8 @@ pub fn attach_remote_epub_bytes(
     std::fs::write(&dest, epub_bytes).map_err(|e| format!("写入对象仓库失败: {e}"))?;
 
     // 尝试从 EPUB 提取封面，但 fail-open（远程条目已有 OPDS 提供的封面）。
-    let (cover_path, thumb_path) = crate::library::save_cover_and_thumb(library_dir, &id, epub_bytes)
-        .unwrap_or((None, None));
+    let (cover_path, thumb_path) =
+        crate::library::save_cover_and_thumb(library_dir, &id, epub_bytes).unwrap_or((None, None));
 
     conn.execute(
         "INSERT INTO asset(id, edition_id, kind, availability, file_path, file_size, cover_path, thumb_path, added_at, last_read_at)
@@ -1748,7 +1749,10 @@ mod tests {
 
         let linked = link_remote_to_local(&conn, "ed:remote-link", &local.book.id, 2000).unwrap();
         assert_eq!(linked.id, local.book.id);
-        assert_eq!(linked.edition_id.as_deref(), Some(local_edition_id.as_str()));
+        assert_eq!(
+            linked.edition_id.as_deref(),
+            Some(local_edition_id.as_str())
+        );
         assert_eq!(linked.availability.as_deref(), Some("local"));
 
         let books = list_books(&conn).unwrap();

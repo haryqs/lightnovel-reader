@@ -2,6 +2,36 @@
 
 > 记录影响未来开发方向的取舍。格式：日期 / 决策 / 理由 / 后果。
 
+## 2026-06-27：QuickJS 引擎选 rquickjs（绑定 quickjs-ng），每次调用一次性 Runtime
+
+决策：v0.7 插件运行时 QuickJS 集成选择 `rquickjs` crate（绑定 quickjs-ng 社区 fork），每次方法调用创建一次性 `Runtime`+`Context`，跑完即弃。沙箱只注入 `host.http`、`host.kv`、`host.html`、`host.log` 四个命名空间 + `URL`/`TextDecoder` 两个 polyfill，不开 `std`/`os` 模块。HTTP 执行经 `PluginHttpExecutor` trait 透传壳层（core 不直接发 HTTP）。
+
+理由：
+- `quickjs-rs` 原始绑定绑定的是 Bellard 原版 QuickJS（已停更两年），MSVC 编译有已知坑；`rquickjs` 绑定 quickjs-ng（活跃维护），自带 Promise/async 桥接省胶水层。
+- 一次性 Runtime 隔离最彻底：一个插件崩不影响其他，跨调用状态强制走 `host.kv`。
+- HTTP 经 trait 转发保持 reading-core "无网络"架构纪律。
+- 沙箱不注入 `fs`/`net`/`process`，不开 `std`/`os` 可选模块——从引擎层杜绝文件系统和网络逃逸。
+
+后果：
+- 每次调用创建/销毁 Runtime 有固定开销（~1-3ms），后续若成为瓶颈可引入 Runtime 池化。
+- QuickJS 内存上限建议 64MB，需要验证实际插件场景（HTML 解析特别吃内存）。
+- `PluginHttpExecutor` trait 给壳层增加了一个实现点，但保持了 core 的可单测性。
+
+## 2026-06-27：采用 Hermes 三层架构（Hermes + Claude Code + OpenCode）进行开发
+
+决策：Hermes 担任 Tech Lead/Orchestrator（DeepSeek v4 Pro，~免费），Claude Code -p 处理复杂架构/安全审查（Pro 额度），OpenCode 按任务复杂度分层模型处理日常实现/测试/文档（OpenRouter，~$0.01-0.30/task）。
+
+理由：
+- Claude Pro 额度有限，不应消耗在日常编码和测试编写上
+- OpenCode 支持多 provider 切换，便宜模型做小事，好模型做中事
+- Hermes 的持久化记忆 + 技能系统适合做跨 session 的 Project Lead
+- DeepSeek 模型在文档/记录类任务中产生幻觉（已证实），此类任务由 Hermes 直接操作
+
+后果：
+- 开发流程增加一层"写 Spec → 委托 → 验证"的环节，但每个环节的 token 消耗显著降低
+- 需要维护 AGENTS.md 作为三个 Agent 的共享上下文入口
+- 弱模型（DeepSeek/Haiku）不适合做需要事实准确性的文档/记录工作
+
 ## 2026-06-23：官方仓库插件安装采用下载后哈希双校验，不信任预览缓存
 
 决策：官方插件仓库 UI 先采用“索引校验 → 壳侧 HTTPS 下载 zip → SHA-256 校验 → core 预览 → 用户确认 → 重新下载并再次 SHA-256 校验 → core 安装”的链路。`plugin.repository.inspectPackage` 和 `plugin.repository.installPackage` 都只传 `packageUrl` 与 `packageSha256`；Tauri 壳负责 HTTP 下载与大小上限检查，`reading-core` 负责索引/包校验、预览与写入。
@@ -573,4 +603,24 @@
 
 - 用户能把 AniList/Bangumi/なろう/青空等远程条目与自己导入的 EPUB 明确绑定。
 - 手动关联不会让本地条目获得站内正文授权；`library.acquireRemote` 仍只允许青空公共版权条目。
-- 后续若做自动推荐，只能作为“候选排序/提示”，不能直接自动写关联。
+- 后续若做自动推荐，只能作为"候选排序/提示"，不能直接自动写关联。
+
+## 2026-06-27：Phase 1 WASM 网页端 MVP 架构决策
+
+决策：
+1. reading-core 拆 native/wasm features（不是 fork 新 crate），共享同一份 lib.rs 模块树，用 #[cfg(feature)] 切。
+2. 浏览器端 EPUB 解析全走 WASM（不引入 JSZip 等外部库），WASM 编译后 500KB。
+3. 浏览器端存储用 IndexedDB（元数据/标注/进度）+ OPFS（EPUB 文件本体），OPFS 不可用时降级全 IndexedDB。
+4. 平台适配层（platform/index.ts）在非 Tauri 环境直接使用 webBridge，替换旧的 noBridge（全抛错）。
+5. zip crate 只用 deflate feature（纯 Rust），避免 bzip2/lzma/zstd 的 C 编译依赖阻断 WASM 构建。
+
+理由：
+- feature 拆分（非 fork）避免"两份核心"的维护噩梦。
+- WASM EPUB 解析复用已有 Rust 代码（epub_parser + html_sanitizer），不引入 JS 端重复实现。
+- OPFS 适合大文件（EPUB 可达几十 MB），IndexedDB 适合结构化小数据。
+- deflate-only zip 消除 cc-rs 找 clang 的 WASM 编译阻断问题。
+
+后果：
+- WASM 包体积从 74KB（仅分页）增加到 500KB（含完整 EPUB 解析），后续可评估 code splitting。
+- 浏览器端不支持插件、OPDS 连接器等需要 shell 能力的功能，需在 UI 层提示。
+- webBridge 依赖 WASM 惰性初始化，首次打开书有 ~1s 冷启动延迟（WASM 加载+初始化）。

@@ -314,8 +314,8 @@ pub mod bangumi {
     ///
     /// Search already asks for book subjects, but parsing still filters non-book rows defensively.
     pub fn parse_search(json: &str) -> Result<Vec<RemoteEntry>, String> {
-        let resp: Resp =
-            serde_json::from_str(json).map_err(|e| format!("parse Bangumi response failed: {e}"))?;
+        let resp: Resp = serde_json::from_str(json)
+            .map_err(|e| format!("parse Bangumi response failed: {e}"))?;
         let subjects = resp.data.unwrap_or_default();
         let mut out = Vec::new();
 
@@ -718,30 +718,30 @@ pub mod opds {
         pub fn to_remote_entry(&self, source_id: &str) -> super::RemoteEntry {
             // Derive a remote_id from the entry's id + source
             let remote_id = format!("{}:{}", source_id, self.id);
-        // Map acquisition link type to rights_status
-        let rights_status = if self
-            .links
-            .iter()
-            .any(|l| l.rel.starts_with(REL_ACQUISITION_PREFIX))
-        {
-            // Has acquisition link → check for free vs restricted
-            let is_free = self.links.iter().any(|l| {
-                l.rel.starts_with(REL_ACQUISITION_PREFIX)
-                    && !l.rel.contains("borrow")
-                    && !l.rel.contains("buy")
-                    && !l.rel.contains("sample")
-                    && l.mime_type
-                        .as_deref()
-                        .is_some_and(|m| m.contains("epub") || m.contains("pdf"))
-            });
-            if is_free {
-                "open_license"
+            // Map acquisition link type to rights_status
+            let rights_status = if self
+                .links
+                .iter()
+                .any(|l| l.rel.starts_with(REL_ACQUISITION_PREFIX))
+            {
+                // Has acquisition link → check for free vs restricted
+                let is_free = self.links.iter().any(|l| {
+                    l.rel.starts_with(REL_ACQUISITION_PREFIX)
+                        && !l.rel.contains("borrow")
+                        && !l.rel.contains("buy")
+                        && !l.rel.contains("sample")
+                        && l.mime_type
+                            .as_deref()
+                            .is_some_and(|m| m.contains("epub") || m.contains("pdf"))
+                });
+                if is_free {
+                    "open_license"
+                } else {
+                    "unknown"
+                }
             } else {
-                "unknown"
-            }
-        } else {
-            "metadata_only"
-        };
+                "metadata_only"
+            };
 
             super::RemoteEntry {
                 remote_id,
@@ -816,43 +816,23 @@ pub mod opds {
                         let rel = e
                             .attributes()
                             .filter_map(|a| a.ok())
-                            .find(|a| {
-                                String::from_utf8_lossy(a.key.as_ref()).as_ref() == "rel"
-                            })
-                            .and_then(|a| {
-                                String::from_utf8(a.value.to_vec())
-                                    .ok()
-                            });
+                            .find(|a| String::from_utf8_lossy(a.key.as_ref()).as_ref() == "rel")
+                            .and_then(|a| String::from_utf8(a.value.to_vec()).ok());
                         let href = e
                             .attributes()
                             .filter_map(|a| a.ok())
-                            .find(|a| {
-                                String::from_utf8_lossy(a.key.as_ref()).as_ref() == "href"
-                            })
-                            .and_then(|a| {
-                                String::from_utf8(a.value.to_vec())
-                                    .ok()
-                            });
+                            .find(|a| String::from_utf8_lossy(a.key.as_ref()).as_ref() == "href")
+                            .and_then(|a| String::from_utf8(a.value.to_vec()).ok());
                         let mime_type = e
                             .attributes()
                             .filter_map(|a| a.ok())
-                            .find(|a| {
-                                String::from_utf8_lossy(a.key.as_ref()).as_ref() == "type"
-                            })
-                            .and_then(|a| {
-                                String::from_utf8(a.value.to_vec())
-                                    .ok()
-                            });
+                            .find(|a| String::from_utf8_lossy(a.key.as_ref()).as_ref() == "type")
+                            .and_then(|a| String::from_utf8(a.value.to_vec()).ok());
                         let link_title = e
                             .attributes()
                             .filter_map(|a| a.ok())
-                            .find(|a| {
-                                String::from_utf8_lossy(a.key.as_ref()).as_ref() == "title"
-                            })
-                            .and_then(|a| {
-                                String::from_utf8(a.value.to_vec())
-                                    .ok()
-                            });
+                            .find(|a| String::from_utf8_lossy(a.key.as_ref()).as_ref() == "title")
+                            .and_then(|a| String::from_utf8(a.value.to_vec()).ok());
 
                         if let (Some(rel), Some(href)) = (rel, href) {
                             let link = OpdsLink {
@@ -899,14 +879,8 @@ pub mod opds {
                         // Find best cover image
                         let cover_url = entry_links
                             .iter()
-                            .find(|l| {
-                                l.rel == REL_IMAGE_THUMBNAIL || l.rel == REL_IMAGE
-                            })
-                            .or_else(|| {
-                                entry_links
-                                    .iter()
-                                    .find(|l| l.rel == REL_IMAGE_THUMBNAIL)
-                            })
+                            .find(|l| l.rel == REL_IMAGE_THUMBNAIL || l.rel == REL_IMAGE)
+                            .or_else(|| entry_links.iter().find(|l| l.rel == REL_IMAGE_THUMBNAIL))
                             .map(|l| l.href.clone());
 
                         // Find best acquisition URL (prefer EPUB)
@@ -914,9 +888,7 @@ pub mod opds {
                             .iter()
                             .find(|l| {
                                 l.rel == REL_ACQUISITION_PREFIX
-                                    && l.mime_type
-                                        .as_deref()
-                                        .is_some_and(|m| m.contains("epub"))
+                                    && l.mime_type.as_deref().is_some_and(|m| m.contains("epub"))
                             })
                             .or_else(|| {
                                 entry_links
@@ -966,7 +938,10 @@ pub mod opds {
                 Ok(Event::Eof) => break,
                 Ok(_) => {}
                 Err(e) => {
-                    return Err(format!("OPDS XML parse error at position {}: {e}", reader.buffer_position()));
+                    return Err(format!(
+                        "OPDS XML parse error at position {}: {e}",
+                        reader.buffer_position()
+                    ));
                 }
             }
             buf.clear();
@@ -1055,10 +1030,7 @@ pub mod opds {
                 // Group self links as nav entries
                 if let Some(group_links) = group_val.get("links").and_then(|v| v.as_array()) {
                     for link_val in group_links {
-                        let href = link_val
-                            .get("href")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("");
+                        let href = link_val.get("href").and_then(|v| v.as_str()).unwrap_or("");
                         let lt = link_val
                             .get("title")
                             .and_then(|v| v.as_str())
@@ -1112,8 +1084,14 @@ pub mod opds {
                 } else {
                     rel
                 };
-                let mime_type = link.get("type").and_then(|v| v.as_str()).map(|s| s.to_string());
-                let title = link.get("title").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let mime_type = link
+                    .get("type")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+                let title = link
+                    .get("title")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
                 Some(OpdsLink {
                     rel,
                     href: href.to_string(),
@@ -1160,14 +1138,12 @@ pub mod opds {
 
         let author = meta.and_then(|m| m.get("author")).and_then(|v| {
             // author can be a string or object with "name" field
-            v.as_str()
-                .map(|s| s.to_string())
-                .or_else(|| {
-                    v.get("name")
-                        .and_then(|n| n.as_str())
-                        .or_else(|| v.get("en").and_then(|n| n.as_str()))
-                        .map(|s| s.to_string())
-                })
+            v.as_str().map(|s| s.to_string()).or_else(|| {
+                v.get("name")
+                    .and_then(|n| n.as_str())
+                    .or_else(|| v.get("en").and_then(|n| n.as_str()))
+                    .map(|s| s.to_string())
+            })
         });
 
         let summary = meta
@@ -1191,9 +1167,9 @@ pub mod opds {
                 // Prefer thumbnail, then any cover image
                 imgs.iter()
                     .find(|img| {
-                        img.get("rel")
-                            .and_then(|r| r.as_str())
-                            .is_some_and(|r| r == "http://opds-spec.org/image/thumbnail" || r == "thumbnail")
+                        img.get("rel").and_then(|r| r.as_str()).is_some_and(|r| {
+                            r == "http://opds-spec.org/image/thumbnail" || r == "thumbnail"
+                        })
                     })
                     .or_else(|| {
                         imgs.iter().find(|img| {
@@ -1212,9 +1188,7 @@ pub mod opds {
             .iter()
             .find(|l| {
                 l.rel.starts_with(REL_ACQUISITION_PREFIX)
-                    && l.mime_type
-                        .as_deref()
-                        .is_some_and(|m| m.contains("epub"))
+                    && l.mime_type.as_deref().is_some_and(|m| m.contains("epub"))
             })
             .or_else(|| {
                 links
@@ -1516,7 +1490,9 @@ mod tests {
     #[test]
     fn bangumi_parse_search_handles_empty_and_garbage() {
         assert!(bangumi::parse_search(r#"{"data":[]}"#).unwrap().is_empty());
-        assert!(bangumi::parse_search(r#"{"data":null}"#).unwrap().is_empty());
+        assert!(bangumi::parse_search(r#"{"data":null}"#)
+            .unwrap()
+            .is_empty());
         assert!(bangumi::parse_search("not json").is_err());
     }
 
@@ -1791,10 +1767,7 @@ mod tests {
         assert_eq!(e1.title, "Classic Literature");
         assert!(e1.is_navigation);
         assert_eq!(e1.links.len(), 1);
-        assert_eq!(
-            e1.links[0].href,
-            "https://example.com/opds/classics.xml"
-        );
+        assert_eq!(e1.links[0].href, "https://example.com/opds/classics.xml");
 
         let e2 = &feed.entries[1];
         assert_eq!(e2.title, "Science Fiction");
@@ -1828,9 +1801,10 @@ mod tests {
 
     #[test]
     fn opds_parse_handles_empty_and_garbage() {
-        let empty =
-            opds::parse_opds_1x(r#"<feed xmlns="http://www.w3.org/2005/Atom"><title>Empty</title></feed>"#)
-                .unwrap();
+        let empty = opds::parse_opds_1x(
+            r#"<feed xmlns="http://www.w3.org/2005/Atom"><title>Empty</title></feed>"#,
+        )
+        .unwrap();
         assert_eq!(empty.title, "Empty");
         assert!(empty.entries.is_empty());
 
@@ -1866,7 +1840,10 @@ mod tests {
         let books = library::list_books(&conn).unwrap();
         assert_eq!(books.len(), 3);
 
-        let pp = books.iter().find(|b| b.title == "Pride and Prejudice").unwrap();
+        let pp = books
+            .iter()
+            .find(|b| b.title == "Pride and Prejudice")
+            .unwrap();
         assert_eq!(pp.availability.as_deref(), Some("remote"));
         assert_eq!(pp.rights_status.as_deref(), Some("open_license"));
         assert_eq!(pp.author.as_deref(), Some("Jane Austen"));
@@ -1885,10 +1862,7 @@ mod tests {
             Some("https://example.com/download/pp.epub")
         );
 
-        let mo = books
-            .iter()
-            .find(|b| b.title == "Metadata Only")
-            .unwrap();
+        let mo = books.iter().find(|b| b.title == "Metadata Only").unwrap();
         assert_eq!(mo.rights_status.as_deref(), Some("metadata_only"));
 
         // Verify source_record entries
@@ -2069,15 +2043,27 @@ mod tests {
         assert_eq!(feed.title, "Library Catalog");
 
         // Publication entries should have group-prefixed titles
-        let fiction = feed.entries.iter().find(|e| !e.is_navigation && e.title.contains("Fiction")).unwrap();
+        let fiction = feed
+            .entries
+            .iter()
+            .find(|e| !e.is_navigation && e.title.contains("Fiction"))
+            .unwrap();
         assert_eq!(fiction.title, "Fiction › 1984");
         assert_eq!(fiction.author.as_deref(), Some("George Orwell"));
 
-        let nonfiction = feed.entries.iter().find(|e| !e.is_navigation && e.title.contains("Non-Fiction")).unwrap();
+        let nonfiction = feed
+            .entries
+            .iter()
+            .find(|e| !e.is_navigation && e.title.contains("Non-Fiction"))
+            .unwrap();
         assert_eq!(nonfiction.title, "Non-Fiction › Sapiens");
 
         // Navigation entry from group
-        let hist = feed.entries.iter().find(|e| e.is_navigation && e.title.contains("History")).unwrap();
+        let hist = feed
+            .entries
+            .iter()
+            .find(|e| e.is_navigation && e.title.contains("History"))
+            .unwrap();
         assert!(hist.title.contains("Non-Fiction"));
         assert!(hist.title.contains("History"));
     }

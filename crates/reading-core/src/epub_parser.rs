@@ -1353,7 +1353,10 @@ mod tests {
             toc: vec![],
             spine: vec![],
         };
-        assert!(parse_single_chapter(b"", "   ", &info).is_err(), "空 href 应报错");
+        assert!(
+            parse_single_chapter(b"", "   ", &info).is_err(),
+            "空 href 应报错"
+        );
     }
 
     #[test]
