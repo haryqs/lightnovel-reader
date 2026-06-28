@@ -2574,3 +2574,27 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
 - 前端tauri.ts接入sync命令
 - sync-pairing UI对接
 - 端到端桌面+网页同步测试
+
+## 2026-06-28：前端sync对接:tauri.ts替换sync stub为真实invoke(sync_pair_join/sync_status/sync_push/sync_pull/sync_unpair);syncPair通过localStorage获取serverUrl;syncNow执行push+pull;syncUnpair清理localStorage
+
+变更：
+
+- 前端sync对接:tauri.ts替换sync stub为真实invoke(sync_pair_join/sync_status/sync_push/sync_pull/sync_unpair);syncPair通过localStorage获取serverUrl;syncNow执行push+pull;syncUnpair清理localStorage
+
+修改文件：
+
+- 待补充
+
+验证：
+
+- tsc零错误
+- npm run build:18 modules OK
+
+未验证/阻塞：
+
+- 无
+
+下一步：
+
+- 端到端桌面+网页同步实测(需运行sync-server)
+- syncNow自动同步轮询

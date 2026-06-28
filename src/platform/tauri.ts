@@ -128,9 +128,30 @@ export const tauriBridge: ReaderBridge = {
     invoke<LibraryBook[]>('opds_ingest_entries', { sourceId, feed }),
   opdsDownloadEpub: (editionId, acquisitionUrl) =>
     invoke<LibraryBook>('opds_download_epub', { editionId, acquisitionUrl }),
-  // sync v1 (Phase 2) — Tauri 端暂存，等 Rust command 实现
-  syncPair: (_code) => Promise.reject({ code: 'platformError' as const, message: 'sync.pair: 桌面端暂未实现' }),
-  syncStatus: () => Promise.resolve({ paired: false, lastSyncAt: null, pendingChanges: 0, libraryId: null }),
-  syncNow: async () => {},
-  syncUnpair: async () => {},
+  // sync v1 (Phase 2) — 对接 sync-server
+  syncPair: async (code: string) => {
+    // code is actually the pairing code from another device
+    // server URL stored in localStorage (set by UI)
+    const serverUrl = localStorage.getItem('lnr-sync-server-url') || ''
+    if (!serverUrl) throw { code: 'invalidArgument' as const, message: '请先设置同步服务器地址' }
+    const result = await invoke<{ library_id: string; pairing_code: string; token: string }>(
+      'sync_pair_join',
+      { serverUrl, pairingCode: code, deviceName: 'desktop' }
+    )
+    return { libraryId: result.library_id, token: result.token, serverUrl }
+  },
+  syncStatus: async () => {
+    const s = await invoke<{ paired: boolean; lastSyncAt: number | null; pendingChanges: number; libraryId: string | null }>('sync_status')
+    return { paired: s.paired, lastSyncAt: s.lastSyncAt, pendingChanges: s.pendingChanges, libraryId: s.libraryId }
+  },
+  syncNow: async () => {
+    // push local changes then pull remote
+    await invoke('sync_push', { changes: [] })
+    await invoke('sync_pull', { since: null })
+  },
+  syncUnpair: async () => {
+    await invoke('sync_unpair')
+    localStorage.removeItem('lnr-sync-server-url')
+    localStorage.removeItem('lnr-sync-cred')
+  },
 }
