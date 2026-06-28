@@ -2598,3 +2598,28 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
 
 - 端到端桌面+网页同步实测(需运行sync-server)
 - syncNow自动同步轮询
+
+## 2026-06-28：QuickJS插件测试UI:已安装插件列表加'测试'按钮;testPluginRun()调plugin_test_run命令(走platform/tauri invoke,不碰@tauri-apps);Rust侧新增plugin_test_run命令(读entry.js→PluginRuntime→call方法);tauri.ts导出invoke
+
+变更：
+
+- QuickJS插件测试UI:已安装插件列表加'测试'按钮;testPluginRun()调plugin_test_run命令(走platform/tauri invoke,不碰@tauri-apps);Rust侧新增plugin_test_run命令(读entry.js→PluginRuntime→call方法);tauri.ts导出invoke
+
+修改文件：
+
+- 待补充
+
+验证：
+
+- npm run build:check-arch OK+18 modules+PWA
+- cargo test:137 passed
+
+未验证/阻塞：
+
+- 无
+
+下一步：
+
+- 插件的search/getBook/getChapter完整流程
+- 插件运行结果UI展示
+- 自动同步轮询

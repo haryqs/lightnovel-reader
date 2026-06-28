@@ -550,6 +550,37 @@ fn plugin_uninstall(state: tauri::State<AppState>, plugin_id: String) -> Result<
     plugin_store::uninstall_plugin(&state.plugin_dir, &plugin_id).map_err(plugin_package_error)
 }
 
+/// 测试运行已安装插件（QuickJS 执行）。
+#[tauri::command]
+fn plugin_test_run(
+    state: tauri::State<'_, AppState>,
+    plugin_id: String,
+    method: String,
+    args_json: String,
+) -> Result<String, BridgeError> {
+    let installed = plugin_store::list_installed_plugins(&state.plugin_dir)
+        .map_err(|e| BridgeError::storage(e))?;
+    let plugin = installed
+        .iter()
+        .find(|p| p.manifest.id == plugin_id)
+        .ok_or_else(|| BridgeError::not_found(format!("插件未安装: {plugin_id}")))?;
+    if !plugin.enabled {
+        return Err(BridgeError::forbidden("插件已停用"));
+    }
+    let entry_path = state.plugin_dir.join(&plugin_id).join(&plugin.manifest.entry);
+    let entry_js = std::fs::read_to_string(&entry_path)
+        .map_err(|e| BridgeError::storage(format!("读取插件入口失败: {e}")))?;
+
+    let rt = reading_core::plugin_runtime::PluginRuntime::new(
+        plugin.manifest.clone(),
+        entry_js,
+        Box::new(crate::plugin_executor::ReqwestExecutor),
+        state.plugin_dir.clone(),
+        plugin_id,
+    );
+    rt.call(&method, &args_json).map_err(|e| BridgeError::parse(e))
+}
+
 #[tauri::command]
 async fn plugin_load_repository_index(url: String) -> Result<PluginRepositoryCatalog, BridgeError> {
     let url = url.trim();
@@ -1646,6 +1677,7 @@ pub fn run() {
             plugin_load_repository_index,
             plugin_inspect_repository_package,
             plugin_install_repository_package,
+            plugin_test_run,
             library_list,
             library_search,
             library_source_records,

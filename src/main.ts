@@ -1045,7 +1045,14 @@ function renderInstalledPlugins(plugins: InstalledPlugin[]) {
     uninstall.addEventListener('click', () => {
       void uninstallInstalledPlugin(plugin)
     })
-    side.append(badge, toggle, uninstall)
+    const testBtn = document.createElement('button')
+    testBtn.className = 'btn btn-small'
+    testBtn.textContent = '测试'
+    testBtn.title = '用测试查询运行插件 search 方法'
+    testBtn.addEventListener('click', () => {
+      void testPluginRun(plugin.manifest.id)
+    })
+    side.append(badge, toggle, uninstall, testBtn)
     row.append(main, side)
     pluginInstalledList.appendChild(row)
   }
@@ -1070,8 +1077,24 @@ async function uninstallInstalledPlugin(plugin: InstalledPlugin) {
     prependPluginSummary(`已卸载源插件：${label}`)
     await refreshInstalledPlugins()
   } catch (e: any) {
-    showPluginPanelMessage(`卸载插件失败：${formatError(e)}`, true)
+    showPluginPanelMessage(`卸载失败：${formatError(e)}`, true)
   }
+}
+
+async function testPluginRun(pluginId: string) {
+  showPluginPanelMessage(`正在测试运行插件 ${pluginId}...`, false)
+  try {
+    const result = await invokePluginTest(pluginId, 'search', '{"query":"test"}')
+    showPluginPanelMessage(`插件运行结果:\n${JSON.stringify(result, null, 2)}`, false)
+  } catch (e: any) {
+    showPluginPanelMessage(`测试运行失败：${formatError(e)}`, true)
+  }
+}
+
+async function invokePluginTest(pluginId: string, method: string, argsJson: string): Promise<any> {
+  // 走 Tauri invoke（main.ts 已通过 platform 层访问）
+  const { invoke } = await import('../src/platform/tauri')
+  return (invoke as any)('plugin_test_run', { pluginId, method, argsJson })
 }
 
 function showPluginPanelMessage(message: string, error = false) {
