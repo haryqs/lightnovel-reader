@@ -2470,3 +2470,31 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
 下一步：
 
 - QuickJS运行时集成(Claude Code进行中)
+
+## 2026-06-28：QuickJS插件运行时:新增plugin_runtime.rs(250行),rquickjs v0.9依赖;每次调用创建一次性Runtime+Context保证隔离;注入host.http(domains白名单校验)/host.kv(内存Map,TODO落盘)/host.log+URL/TextDecoder polyfill;PluginHttpExecutor trait让壳层实现HTTP转发;无quickjs feature时提供空壳stub; native feature另含quickjs子feature(cargo --features 'native,quickjs'启用)
+
+变更：
+
+- QuickJS插件运行时:新增plugin_runtime.rs(250行),rquickjs v0.9依赖;每次调用创建一次性Runtime+Context保证隔离;注入host.http(domains白名单校验)/host.kv(内存Map,TODO落盘)/host.log+URL/TextDecoder polyfill;PluginHttpExecutor trait让壳层实现HTTP转发;无quickjs feature时提供空壳stub; native feature另含quickjs子feature(cargo --features 'native,quickjs'启用)
+
+修改文件：
+
+- 待补充
+
+验证：
+
+- cargo check:三crate全过
+- cargo test:137 passed
+- npm run build:PWA 16条目OK
+- rquickjs编译成功
+
+未验证/阻塞：
+
+- 无
+
+下一步：
+
+- 壳层实现PluginHttpExecutor(reqwest转发)
+- host.kv持久化到plugin_store
+- QuickJS中断超时
+- 写集成测试

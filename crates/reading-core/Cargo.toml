@@ -10,6 +10,8 @@ default = ["native"]
 native = ["rusqlite", "image", "csv"]
 # 网页用，纯计算（EPUB 解析、HTML 清洗、分页），不带任何 I/O
 wasm = ["wasm-bindgen"]
+# QuickJS 引擎（桌面/移动端插件运行时）
+quickjs = ["rquickjs"]
 
 [lib]
 crate-type = ["cdylib", "rlib"]
@@ -33,3 +35,5 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg"]
 csv = { version = "1", optional = true }
 # 分页 HTML 解析：zero-copy、为速度和小体积设计，wasm 场景友好。
 tl = "0.7"
+# QuickJS 引擎（桌面端插件 JS 执行）；可选，wasm 下不链接
+rquickjs = { version = "0.9", optional = true }
