@@ -1,31 +1,41 @@
 import { defineConfig } from "vite";
+import { VitePWA } from "vite-plugin-pwa";
 
 // @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
 
 // https://vite.dev/config/
 export default defineConfig(async () => ({
-
-  // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
-  //
-  // 1. prevent Vite from obscuring rust errors
   clearScreen: false,
-  // 2. tauri expects a fixed port, fail if that port is not available
   server: {
-    // 注意：1420（Tauri 默认）落在本机 Windows 保留端口区间内，会 EACCES，故改用 3000
     port: 3000,
     strictPort: true,
     host: host || false,
     hmr: host
-      ? {
-          protocol: "ws",
-          host,
-          port: 1421,
-        }
+      ? { protocol: "ws", host, port: 1421 }
       : undefined,
-    watch: {
-      // 3. tell Vite to ignore watching `src-tauri`
-      ignored: ["**/src-tauri/**"],
-    },
+    watch: { ignored: ["**/src-tauri/**"] },
   },
+  plugins: [
+    VitePWA({
+      registerType: "autoUpdate",
+      workbox: {
+        globPatterns: ["**/*.{js,css,html,wasm,png,svg,ico}"],
+        maximumFileSizeToCacheInBytes: 3 * 1024 * 1024, // 3MB for WASM
+      },
+      manifest: {
+        name: "LightNovel Reader",
+        short_name: "LNR",
+        description: "本地优先的开源轻小说阅读器",
+        theme_color: "#3f66f2",
+        background_color: "#fafcff",
+        display: "standalone",
+        icons: [
+          { src: "/icons/32x32.png", sizes: "32x32", type: "image/png" },
+          { src: "/icons/128x128.png", sizes: "128x128", type: "image/png" },
+          { src: "/icons/128x128@2x.png", sizes: "256x256", type: "image/png" },
+        ],
+      },
+    }),
+  ],
 }));

@@ -46,6 +46,11 @@ export class ReaderCore {
   private workerPageCache = new Map<string, string[]>()
   private workerPending = new Set<string>()
 
+  // GPU 翻页双缓冲
+  private _activeLayer: HTMLElement | null = null
+  private _nextLayer: HTMLElement | null = null
+  private _pageAnimating = false
+
   // 标注
   annotations: Annotation[] = []
   private bookId = ''
@@ -435,17 +440,69 @@ export class ReaderCore {
     const content = this.viewer?.querySelector('.reader-content') as HTMLElement | null
     if (!content) return
     this.currentPageIndex = this.normalizePageIndex(this.currentPageIndex)
+
+    const pagesHtml = this.buildPagesHtml()
+
+    // 首次渲染：创建双缓冲层
+    if (!this._activeLayer) {
+      content.innerHTML = ''
+      this._activeLayer = this.createLayer(content, pagesHtml, 'reader-page-layer--active')
+      this._nextLayer = this.createLayer(content, '', 'reader-page-layer--next')
+    } else if (!this._pageAnimating) {
+      // 翻页动画
+      this._pageAnimating = true
+      const oldActive = this._activeLayer!
+      const oldNext = this._nextLayer!
+
+      // 下一层填入新内容
+      oldNext.innerHTML = pagesHtml
+
+      // 触发动画
+      requestAnimationFrame(() => {
+        oldActive.classList.add('reader-page-layer--sliding-out')
+        oldNext.classList.add('reader-page-layer--sliding-in')
+      })
+
+      // 动画结束后交换角色
+      const onEnd = () => {
+        oldActive.removeEventListener('transitionend', onEnd)
+        oldActive.classList.remove('reader-page-layer--sliding-out', 'reader-page-layer--active')
+        oldNext.classList.remove('reader-page-layer--sliding-in', 'reader-page-layer--next')
+        oldActive.classList.add('reader-page-layer--next')
+        oldNext.classList.add('reader-page-layer--active')
+        oldActive.innerHTML = ''
+        this._activeLayer = oldNext
+        this._nextLayer = oldActive
+        this._pageAnimating = false
+      }
+      oldActive.addEventListener('transitionend', onEnd, { once: true })
+    } else {
+      // 动画进行中：直接更新下一层内容（用户快速翻页）
+      this._nextLayer!.innerHTML = pagesHtml
+    }
+
+    if (this.annotations.length > 0) {
+      requestAnimationFrame(() => renderAnnotations(this.annotations, this.currentChapter))
+    }
+    this.scheduleEmitLocation()
+  }
+
+  private buildPagesHtml(): string {
     const pages: string[] = []
     for (let i = 0; i < this.visiblePageCount(); i++) {
       const pageIndex = this.currentPageIndex + i
       const html = this.currentPages[pageIndex] || ''
       pages.push(`<section class="reader-page" data-page="${pageIndex + 1}">${html}</section>`)
     }
-    content.innerHTML = pages.join('')
-    if (this.annotations.length > 0) {
-      requestAnimationFrame(() => renderAnnotations(this.annotations, this.currentChapter))
-    }
-    this.scheduleEmitLocation()
+    return pages.join('')
+  }
+
+  private createLayer(parent: HTMLElement, html: string, className: string): HTMLElement {
+    const layer = document.createElement('div')
+    layer.className = `reader-page-layer ${className}`
+    layer.innerHTML = html
+    parent.appendChild(layer)
+    return layer
   }
 
   private scheduleRepaginate() {
@@ -981,6 +1038,9 @@ export class ReaderCore {
     this.pageModelCache.clear()
     this.workerPageCache.clear()
     this.workerPending.clear()
+    this._activeLayer = null
+    this._nextLayer = null
+    this._pageAnimating = false
     if (this.locationFrame !== null) {
       cancelAnimationFrame(this.locationFrame)
       this.locationFrame = null

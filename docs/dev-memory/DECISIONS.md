@@ -665,3 +665,17 @@
 - 托盘图标需 `.ico` 格式，已用 `default_window_icon()` 取 `icons/icon.ico`。
 - `tauri.conf.json` 中 `identifier` 从 `com.tauri-app.reader` 改为 `com.lightnovel.reader`。
 - 关闭窗口不再退出程序，用户需通过托盘菜单退出——需在前端 UI 提示。
+
+## 2026-06-27：Phase 4 GPU 翻页 + PWA 决策
+
+决策：
+1. GPU 翻页用 CSS transform 双缓冲：两层 `reader-page-layer` 绝对定位叠加，动画只动 `transform: translate3d`（触发合成器加速，不触重排重绘）。
+2. 翻页时长 220ms + cubic-bezier(0.2, 0.7, 0.3, 1) 缓动曲线。
+3. 快速翻页（动画进行中再次翻页）直接替换弃层内容，不等待 transitionend。
+4. PWA 用 vite-plugin-pwa + autoUpdate 模式，precache WASM/JS/CSS/图标共 16 条目。
+
+理由：
+- `transform` 只触发 GPU 合成层，不触发 layout/paint，是 Web 端性能最优的动画方式。
+- 双缓冲避免白屏或闪烁，动画期间始终有内容展示。
+- 快速翻页不排队等待，避免用户狂点翻页时卡死。
+- PWA 让网页端可离线使用 + 添加到主屏幕，与"本地优先"定位一致。

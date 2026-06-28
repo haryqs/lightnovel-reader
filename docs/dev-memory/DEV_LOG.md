@@ -2421,3 +2421,30 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
 - Phase 4: GPU翻页动画(CSS transform双缓冲)+PWA接入
 - Tauri sync命令对接sync-server
 - 冷启动计时验收
+
+## 2026-06-28：Phase 4 性能打磨+ PWA: GPU翻页动画(CSS transform双缓冲,220ms cubic-bezier,requestAnimationFrame驱动,快速翻页直接更新弃层); PWA接入(vite-plugin-pwa,autoUpdate,16 precache条目含WASM/JS/CSS/图标,standalone模式); reader-core.ts:renderCurrentPages改为双缓冲架构(_activeLayer/_nextLayer+_pageAnimating标志+transitionend事件交换角色)
+
+变更：
+
+- Phase 4 性能打磨+ PWA: GPU翻页动画(CSS transform双缓冲,220ms cubic-bezier,requestAnimationFrame驱动,快速翻页直接更新弃层); PWA接入(vite-plugin-pwa,autoUpdate,16 precache条目含WASM/JS/CSS/图标,standalone模式); reader-core.ts:renderCurrentPages改为双缓冲架构(_activeLayer/_nextLayer+_pageAnimating标志+transitionend事件交换角色)
+
+修改文件：
+
+- 待补充
+
+验证：
+
+- npm run build:18 modules+PWA sw.js+manifest OK
+- cargo test:137 passed
+- tsc零错误
+- check-arch/check-protocol-freeze:OK
+
+未验证/阻塞：
+
+- 无
+
+下一步：
+
+- Tauri sync命令对接sync-server
+- 冷启动计时验收
+- QuickJS运行时集成
