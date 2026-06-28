@@ -15,6 +15,7 @@ use tauri::Manager;
 use tauri::Emitter;
 
 mod plugin_executor;
+mod sync_commands;
 
 struct LoadedBook {
     book_id: String,     // 内容哈希；持久化解析缓存的 key
@@ -1557,6 +1558,7 @@ pub fn run() {
                 cache_dir,
                 plugin_dir,
             });
+            app.manage(dir); // app data dir for sync commands
 
             // ---- 系统托盘 + 关闭到托盘 ----
             let app_handle = app.handle().clone();
@@ -1667,6 +1669,12 @@ pub fn run() {
             opds_search_feed,
             opds_ingest_entries,
             opds_download_epub,
+            sync_commands::sync_status,
+            sync_commands::sync_pair,
+            sync_commands::sync_pair_join,
+            sync_commands::sync_unpair,
+            sync_commands::sync_push,
+            sync_commands::sync_pull,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

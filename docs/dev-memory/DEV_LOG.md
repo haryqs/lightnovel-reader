@@ -2549,3 +2549,28 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
 - 前端UI调QuickJS执行插件
 - 集成测试
 - Tauri sync命令完成
+
+## 2026-06-28：Tauri sync命令对接sync-server:sync_commands.rs(200行,6个命令) sync_status/sync_pair/sync_pair_join/sync_unpair/sync_push/sync_pull;凭据存app_data/sync.json;app.manage(dir)为sync命令提供数据目录;reqwest加json feature
+
+变更：
+
+- Tauri sync命令对接sync-server:sync_commands.rs(200行,6个命令) sync_status/sync_pair/sync_pair_join/sync_unpair/sync_push/sync_pull;凭据存app_data/sync.json;app.manage(dir)为sync命令提供数据目录;reqwest加json feature
+
+修改文件：
+
+- 待补充
+
+验证：
+
+- cargo test:137 passed
+- cargo check:0 error
+
+未验证/阻塞：
+
+- 无
+
+下一步：
+
+- 前端tauri.ts接入sync命令
+- sync-pairing UI对接
+- 端到端桌面+网页同步测试
