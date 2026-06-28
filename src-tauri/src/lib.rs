@@ -14,6 +14,8 @@ use reading_core::{
 use tauri::Manager;
 use tauri::Emitter;
 
+mod plugin_executor;
+
 struct LoadedBook {
     book_id: String,     // 内容哈希；持久化解析缓存的 key
     bytes: Arc<Vec<u8>>, // 解码后的 EPUB 原始字节，供按需解析与图片协议复用

@@ -2498,3 +2498,29 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
 - host.kv持久化到plugin_store
 - QuickJS中断超时
 - 写集成测试
+
+## 2026-06-28：QuickJS完善: plugin_executor.rs(reqwest blocking HTTP 25s超时转发); plugin_runtime.rs 25s中断线程(spawn sleep+interrupt); Cargo.toml加reqwest blocking feature
+
+变更：
+
+- QuickJS完善: plugin_executor.rs(reqwest blocking HTTP 25s超时转发); plugin_runtime.rs 25s中断线程(spawn sleep+interrupt); Cargo.toml加reqwest blocking feature
+
+修改文件：
+
+- 待补充
+
+验证：
+
+- cargo check:0 error
+- cargo test:137 passed
+- npm build:OK
+
+未验证/阻塞：
+
+- 无
+
+下一步：
+
+- host.kv持久化到plugin_store
+- plugin runtime集成测试
+- 前端UI调QuickJS执行

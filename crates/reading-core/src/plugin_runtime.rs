@@ -46,11 +46,13 @@ mod imp {
             let rt = AsyncRuntime::new().map_err(|e| format!("QuickJS Runtime 创建失败: {e}"))?;
             let ctx = AsyncContext::full(&rt).map_err(|e| format!("QuickJS Context 创建失败: {e}"))?;
 
-            // 超时中断（25s QuickJS 中断 + 外层 30s tokio 超时可叠加）
+            // 超时中断：25s 后强制中断 QuickJS 执行
             rt.set_interrupt_handler(Some(Box::new(|| {})));
-            let _handle = rt.interrupt_handler_handle();
-            // 简化版：不设中断定时器，依赖外层 tokio::time::timeout
-            // TODO: 实现 QuickJS 层 25s 中断
+            let handle = rt.interrupt_handler_handle();
+            std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_secs(25));
+                handle.interrupt();
+            });
 
             let manifest = self.manifest.clone();
             let entry = self.entry_js.clone();
