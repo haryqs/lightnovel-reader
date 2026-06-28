@@ -2448,3 +2448,25 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
 - Tauri sync命令对接sync-server
 - 冷启动计时验收
 - QuickJS运行时集成
+
+## 2026-06-28：冷启动计时:lib.rs setup添加startup日志(Instant计时+eprintln输出窗口可见时间);scripts/measure-cold-start.mjs冷启动测量脚本(3轮/杀进程/3s等待)
+
+变更：
+
+- 冷启动计时:lib.rs setup添加startup日志(Instant计时+eprintln输出窗口可见时间);scripts/measure-cold-start.mjs冷启动测量脚本(3轮/杀进程/3s等待)
+
+修改文件：
+
+- 待补充
+
+验证：
+
+- cargo check+ npm run build:OK
+
+未验证/阻塞：
+
+- 无
+
+下一步：
+
+- QuickJS运行时集成(Claude Code进行中)

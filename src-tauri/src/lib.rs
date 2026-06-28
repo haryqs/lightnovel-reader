@@ -1599,9 +1599,17 @@ pub fn run() {
                         let _ = window_clone.hide();
                     }
                 });
-                // 延迟显示窗口（避免白屏闪烁）
+                // 延迟显示窗口（避免白屏闪烁）并记录冷启动时间
+                let startup_ms = std::time::Instant::now();
                 std::thread::sleep(std::time::Duration::from_millis(200));
                 let _ = window.show();
+                eprintln!(
+                    "[startup] window visible at {:?} (cold start approx {}ms from setup)",
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default(),
+                    startup_ms.elapsed().as_millis(),
+                );
             }
 
             // 命令行参数：双击 .epub 文件打开
