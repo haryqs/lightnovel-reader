@@ -2524,3 +2524,28 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
 - host.kv持久化到plugin_store
 - plugin runtime集成测试
 - 前端UI调QuickJS执行
+
+## 2026-06-28：host.kv持久化:plugin_store新增plugin_kv_get/set/delete(kv.json per插件,key≤128字符,value≤64KiB);PluginRuntime加plugin_root+plugin_id字段;inject_host_api使用持久化kv(替代内存Map);空壳stub同步更新签名
+
+变更：
+
+- host.kv持久化:plugin_store新增plugin_kv_get/set/delete(kv.json per插件,key≤128字符,value≤64KiB);PluginRuntime加plugin_root+plugin_id字段;inject_host_api使用持久化kv(替代内存Map);空壳stub同步更新签名
+
+修改文件：
+
+- 待补充
+
+验证：
+
+- cargo test:137 passed
+- cargo check:0 error
+
+未验证/阻塞：
+
+- 无
+
+下一步：
+
+- 前端UI调QuickJS执行插件
+- 集成测试
+- Tauri sync命令完成

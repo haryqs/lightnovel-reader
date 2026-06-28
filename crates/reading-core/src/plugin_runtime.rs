@@ -26,6 +26,8 @@ mod imp {
         manifest: PluginManifest,
         entry_js: String,
         http: Box<dyn PluginHttpExecutor>,
+        plugin_root: std::path::PathBuf,
+        plugin_id: String,
     }
 
     impl PluginRuntime {
@@ -33,8 +35,10 @@ mod imp {
             manifest: PluginManifest,
             entry_js: String,
             http: Box<dyn PluginHttpExecutor>,
+            plugin_root: std::path::PathBuf,
+            plugin_id: String,
         ) -> Self {
-            Self { manifest, entry_js, http }
+            Self { manifest, entry_js, http, plugin_root, plugin_id }
         }
 
         /// 调用插件导出的特定方法，传 JSON 参数，返回 JSON 结果。
@@ -62,7 +66,7 @@ mod imp {
 
             let result: String = ctx.with(|ctx| {
                 // 注入 host 对象
-                inject_host_api(&ctx, &manifest, http_exec);
+                inject_host_api(&ctx, &manifest, http_exec, &self.plugin_root, &self.plugin_id);
 
                 // 注入 URL / TextDecoder polyfill
                 inject_polyfills(&ctx);
@@ -110,6 +114,8 @@ mod imp {
         ctx: &Ctx,
         manifest: &PluginManifest,
         http_exec: &Box<dyn PluginHttpExecutor>,
+        plugin_root: &std::path::Path,
+        plugin_id: &str,
     ) {
         // host.http
         let http_manifest = manifest.clone();
@@ -134,27 +140,36 @@ mod imp {
         http_obj.set("get", http_fn).ok();
         host_obj.set("http", http_obj).ok();
 
-        // host.kv — 简化：内存 Map，按插件 id 隔离（TODO: 落盘到 plugin_store）
-        let kv_store = std::sync::Mutex::new(
-            std::collections::HashMap::<String, String>::new(),
-        );
+        // host.kv — 持久化到 plugin_dir/kv.json，按插件 id 隔离
+        let root = plugin_root.to_path_buf();
+        let pid = plugin_id.to_string();
         let kv_fn_get = {
-            let kv = std::sync::Arc::new(kv_store);
+            let r = root.clone();
+            let p = pid.clone();
             Function::new(ctx.clone(), move |key: String| -> Option<String> {
-                let guard = kv.lock().unwrap();
-                guard.get(&key).cloned()
+                crate::plugin_store::plugin_kv_get(&r, &p, &key)
             })
         };
         let kv_fn_set = {
-            let kv = kv_fn_get.clone(); // shares Arc
+            let r = root.clone();
+            let p = pid.clone();
             Function::new(ctx.clone(), move |(key, value): (String, String)| {
-                // FIXME: Arc sharing — need proper shared state
-                Ok::<(), String>(())
+                crate::plugin_store::plugin_kv_set(&r, &p, &key, &value)
+                    .map_err(|e| e.to_string())
+            })
+        };
+        let kv_fn_delete = {
+            let r = root;
+            let p = pid;
+            Function::new(ctx.clone(), move |key: String| {
+                crate::plugin_store::plugin_kv_delete(&r, &p, &key)
+                    .map_err(|e| e.to_string())
             })
         };
         let kv_obj = Object::new(ctx.clone());
         kv_obj.set("get", kv_fn_get).ok();
         kv_obj.set("set", kv_fn_set).ok();
+        kv_obj.set("delete", kv_fn_delete).ok();
         host_obj.set("kv", kv_obj).ok();
 
         // host.log
@@ -211,6 +226,8 @@ mod imp {
             _manifest: PluginManifest,
             _entry_js: String,
             _http: Box<dyn PluginHttpExecutor>,
+            _plugin_root: std::path::PathBuf,
+            _plugin_id: String,
         ) -> Self {
             Self
         }

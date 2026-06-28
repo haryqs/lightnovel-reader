@@ -316,3 +316,59 @@ mod tests {
         let _ = fs::remove_dir_all(&root);
     }
 }
+
+// ---- 插件 KV 持久化 ----
+
+use std::collections::HashMap;
+
+fn kv_path(plugin_root: &Path, plugin_id: &str) -> std::path::PathBuf {
+    plugin_dir(plugin_root, plugin_id).join("kv.json")
+}
+
+fn load_kv(plugin_root: &Path, plugin_id: &str) -> HashMap<String, String> {
+    let path = kv_path(plugin_root, plugin_id);
+    if !path.exists() {
+        return HashMap::new();
+    }
+    std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
+fn save_kv(plugin_root: &Path, plugin_id: &str, kv: &HashMap<String, String>) -> Result<(), String> {
+    let json = serde_json::to_string_pretty(kv).map_err(|e| format!("kv 序列化失败: {e}"))?;
+    std::fs::write(kv_path(plugin_root, plugin_id), &json)
+        .map_err(|e| format!("kv 写入失败: {e}"))
+}
+
+/// 读取插件私有存储中的键值。
+pub fn plugin_kv_get(plugin_root: &Path, plugin_id: &str, key: &str) -> Option<String> {
+    let kv = load_kv(plugin_root, plugin_id);
+    kv.get(key).cloned()
+}
+
+/// 写入插件私有存储。key ≤ 128 字符，value ≤ 64 KiB。
+pub fn plugin_kv_set(
+    plugin_root: &Path,
+    plugin_id: &str,
+    key: &str,
+    value: &str,
+) -> Result<(), String> {
+    if key.len() > 128 {
+        return Err("key 超过 128 字符上限".into());
+    }
+    if value.len() > 64 * 1024 {
+        return Err("value 超过 64 KiB 上限".into());
+    }
+    let mut kv = load_kv(plugin_root, plugin_id);
+    kv.insert(key.to_string(), value.to_string());
+    save_kv(plugin_root, plugin_id, &kv)
+}
+
+/// 删除插件私有存储中的键。
+pub fn plugin_kv_delete(plugin_root: &Path, plugin_id: &str, key: &str) -> Result<(), String> {
+    let mut kv = load_kv(plugin_root, plugin_id);
+    kv.remove(key);
+    save_kv(plugin_root, plugin_id, &kv)
+}
