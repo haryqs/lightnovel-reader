@@ -1,5 +1,48 @@
 # 下一步任务队列
 
+## 📌 交接留言（2026-06-27，11 commits，全 Phase 完工）
+
+> **实验室交接：** 以下是从上次会话到现在的完整进展。新会话进入后请先读 AGENTS.md，然后按开工纪律操作。
+
+### 本轮完成（11 个 commit，全部推送到 GitHub）
+
+**Phase 1-4 + 扩展：**
+
+| Commit | 内容 |
+|--------|------|
+| `2f1069d` | Phase 1: WASM 网页端 MVP（reading-core native/wasm 拆分 + Rust 分页 + web-bridge） |
+| `8f99d20` | Phase 2: 自托管同步服务器（crates/sync-server, axum + SQLite, 设备配对码） |
+| `c453122` | Phase 3: 桌面端独立化（系统托盘 + 关闭到托盘 + .epub 文件关联 + 自动更新） |
+| `9f9e8c1` | Phase 4: GPU 翻页动画 + PWA（CSS transform 双缓冲 + vite-plugin-pwa） |
+| `25aea3e` | QuickJS 插件运行时（rquickjs, 一次性 Runtime, host.http/kv/log 沙箱） |
+| `38d9d74` | QuickJS HTTP executor + 25s 中断超时 |
+| `1487489` | host.kv 持久化到 plugin_store（kv.json per 插件） |
+| `dee0a3a` | 冷启动计时 + measure-cold-start.mjs 测量脚本 |
+| `f22cf8b` | Tauri sync 命令对接 sync-server（6 个命令：pair/join/status/unpair/push/pull） |
+| `d0bc56b` | 前端 tauri.ts 接入真实 sync 命令 |
+| `846d763` | QuickJS 插件测试 UI（已安装插件列表加"测试"按钮 + plugin_test_run 命令） |
+
+**验证状态：** `cargo test` 137 passed, `npm run build` 18 modules + PWA, tsc 零错误, check-arch/check-protocol-freeze OK.
+
+### 立即可做（按优先级）
+
+1. **端到端同步测试：** 启动 sync-server (`cargo run -p sync-server -- sync.db 0.0.0.0:9876`)，开桌面端 + 网页端配对测试
+2. **插件完整流程：** 写一个实际可用的 test 插件（搜索/获取书/获取章），用"测试"按钮跑通全流程
+3. **自动同步轮询：** 桌面端/网页端定时 syncNow()，目前是手动触发
+4. **RELEASE BUILD 验证：** `npm run tauri build` 产生产品构建，实测冷启动 < 1s
+
+### 开工操作
+
+```bash
+cd /c/Users/Administrator/lightnovel-reader
+git fetch --all --prune
+git pull --ff-only
+git status -sb
+npm install
+cargo check --workspace
+npm run build
+```
+
 ## 📌 交接留言（2026-06-27，Hermes 三层架构三线并行收工）
 
 先同步 GitHub：
