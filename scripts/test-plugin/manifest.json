@@ -1,0 +1,12 @@
+{
+  "id": "test-plugin-hello",
+  "name": "Hello World 测试插件",
+  "version": "0.1.0",
+  "description": "一个用于验证 QuickJS 运行时的最小测试插件，不依赖外部网络。",
+  "author": "lightnovel-reader",
+  "entry": "index.js",
+  "permissions": ["http", "kv"],
+  "domains": ["example.com"],
+  "capabilities": ["search", "fetchMetadata"],
+  "legal": { "kind": "official-free" }
+}

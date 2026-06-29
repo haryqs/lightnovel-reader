@@ -2623,3 +2623,27 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
 - 插件的search/getBook/getChapter完整流程
 - 插件运行结果UI展示
 - 自动同步轮询
+
+## 2026-06-29：测试插件:scripts/test-plugin/含manifest.json+index.js(search/getBook/getChapter+host.kv+host.log硬编码测试数据),scripts/package-test-plugin.mjs打包为test-plugin-hello.zip(1.4KB),可安装到Tauri应用中点'测试'按钮验证QuickJS全流程
+
+变更：
+
+- 测试插件:scripts/test-plugin/含manifest.json+index.js(search/getBook/getChapter+host.kv+host.log硬编码测试数据),scripts/package-test-plugin.mjs打包为test-plugin-hello.zip(1.4KB),可安装到Tauri应用中点'测试'按钮验证QuickJS全流程
+
+修改文件：
+
+- 待补充
+
+验证：
+
+- npm run build:OK
+- zip打包成功1.4KB
+
+未验证/阻塞：
+
+- 无
+
+下一步：
+
+- Tauri应用中安装test-plugin-hello.zip→点测试按钮验证
+- 写自动化集成测试调plugin_test_run
