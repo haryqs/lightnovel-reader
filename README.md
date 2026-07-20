@@ -13,7 +13,7 @@
 - **站内合法阅读**：公共版权或开放授权资源可以在明确授权与来源校验后获取正文，转为本地 cached asset 后用内置阅读器打开。
 - **阅读方式选择**：每个可读条目最终应允许用户选择用内置阅读器、系统浏览器或本机其它阅读器打开。
 - **远程条目整理**：远程 metadata 条目可人工关联到本地资产，保留阅读进度和标注锚点。
-- **插件生态地基**：`plugin-sdk` 已有 manifest/schema/host API/官方仓库索引契约；`reading-core` 已提供 manifest 校验、权限/能力声明、域名白名单、zip 安装包读取、本地安装存储、host API 策略门与官方索引校验；书库已有插件安装前权限确认、启用/停用和卸载面板。
+- **可控插件来源**：`plugin-sdk` 已有 manifest/schema/host API/官方仓库索引契约；`reading-core` 提供 manifest/权限/域名/zip/host API 策略门、QuickJS 运行时和官方包 Ed25519 验签。启用插件可作为正式在线来源执行分页搜索、书籍/章节读取，并由用户显式收藏为远程来源记录；收藏不自动下载正文，只有声明 `acquire` 的公共版权/开放授权插件可经宿主复核后把 EPUB 缓存为本地 asset。
 - **分发脚本**：便携测试包、Web 下载器安装器、Tauri NSIS 安装包配置。
 
 ## 合规边界
@@ -78,12 +78,24 @@ cargo test --workspace
 git diff --check
 ```
 
+仓库会跟踪 `src/worker/reading-core-wasm/` 下的浏览器 WASM 产物，因此普通的干净检出不需要 Rust WASM
+工具链即可执行 `npm.cmd run build`。如果修改了 `reading-core` 的浏览器导出或 EPUB/分页实现，维护者需要先安装
+`wasm32-unknown-unknown` target 和与 `Cargo.lock` 一致的 `wasm-bindgen-cli`，再重新生成：
+
+```powershell
+rustup target add wasm32-unknown-unknown
+cargo install wasm-bindgen-cli --version 0.2.122 --locked
+npm.cmd run build:wasm
+npm.cmd run check:wasm
+```
+
 可选冒烟与打包：
 
 ```powershell
 npm.cmd run smoke:p0
 npm.cmd run smoke:p1
 npm.cmd run smoke:opds
+npm.cmd run smoke:plugin-repository-signature
 npm.cmd run package:beta
 npm.cmd run installer:web
 npm.cmd run tauri build
@@ -105,4 +117,4 @@ npm.cmd run tauri build
 
 ## 当前开发线
 
-当前主线已推进到协议 `1.0-rc.1` 冻结候选：Tauri command 与 shell promise 错误已统一为结构化 `BridgeError { code, message, details? }`，并由 `scripts/check-protocol-freeze.mjs` 守住协议版本/错误码/文档一致性。功能线正在推进 v0.7 插件运行时地基：manifest/权限/域名白名单、zip 安装包预览、用户确认、本地写入、启停、卸载、host API 运行前策略门与官方仓库索引校验已起步；下一步再进入官方索引 UI/下载校验或 QuickJS/JavaScriptCore 运行时。分发线仍需继续便携包目标机器抽检和 NSIS 卸载保留数据验证。
+当前主线已推进到协议 `1.0-rc.1` 冻结候选：Tauri command 与 shell promise 错误已统一为结构化 `BridgeError { code, message, details? }`，并由 `scripts/check-protocol-freeze.mjs` 守住协议版本/错误码/文档一致性。v0.7 桌面插件链路现已具备 manifest/权限/域名白名单、zip 安装、官方仓库 SHA-256 + Ed25519 包验签、QuickJS、`host.http/html/kv/log`、完整诊断试跑、正式 `source.*` 搜索/详情/章节/收藏，以及公共版权/开放授权 EPUB 获取入库；真实离线窗口 smoke、每域限速和条款确认也已完成。当前仍需配置正式发布公钥并切换强制签名，同时在正常公网 DNS 下复验 Gutenberg 搜索到获取全链路。分发线仍需继续便携包目标机器抽检和 NSIS 卸载保留数据验证。

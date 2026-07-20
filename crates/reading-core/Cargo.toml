@@ -7,7 +7,7 @@ description = "阅读器跨端核心：EPUB 解析、HTML 清洗、标注存储�
 [features]
 default = ["native"]
 # 桌面/移动用，全量：书库/标注存储 + 插件宿主 + 连接器
-native = ["rusqlite", "image", "csv"]
+native = ["rusqlite", "image", "csv", "base64", "ring"]
 # 网页用，纯计算（EPUB 解析、HTML 清洗、分页），不带任何 I/O
 wasm = ["wasm-bindgen"]
 # QuickJS 引擎（桌面/移动端插件运行时）
@@ -37,3 +37,6 @@ csv = { version = "1", optional = true }
 tl = "0.7"
 # QuickJS 引擎（桌面端插件 JS 执行）；可选，wasm 下不链接
 rquickjs = { version = "0.9", optional = true }
+# 官方插件包 Ed25519 验签；仅 native 插件仓库路径启用。
+base64 = { version = "0.22", optional = true }
+ring = { version = "0.17", optional = true }

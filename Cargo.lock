@@ -3292,10 +3292,12 @@ dependencies = [
 name = "reading-core"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "csv",
  "encoding_rs",
  "image",
  "quick-xml 0.36.2",
+ "ring",
  "rquickjs",
  "rusqlite",
  "serde",

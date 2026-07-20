@@ -35,6 +35,11 @@ fn sanitize_security(html: &str) -> String {
     scrub_attributes(&s)
 }
 
+/// 清洗插件返回的正文 HTML 片段，不做 EPUB 路径改写与排版注入。
+pub fn sanitize_fragment(html: &str) -> String {
+    sanitize_security(html)
+}
+
 /// 移除 `<name ...>...</name>` 容器元素（含内容）。未闭合则删到结尾。大小写无关。
 fn remove_container_elements(html: &str, names: &[&str]) -> String {
     let mut s = html.to_string();

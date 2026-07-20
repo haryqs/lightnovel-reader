@@ -2,6 +2,106 @@
 
 > 记录影响未来开发方向的取舍。格式：日期 / 决策 / 理由 / 后果。
 
+## 2026-07-20：官方插件签名覆盖 zip 原始字节，可信公钥编译进桌面壳
+
+决策：`PluginPackageSignature` 的 `ed25519` 签名覆盖插件 zip 原始字节，不签索引 JSON 或哈希字符串。
+`reading-core::plugin_repository` 负责 Base64/长度/keyId/keyring/密码学验证，Tauri 壳提供编译内可信公钥表。
+仓库索引加载先拒绝未知 keyId；包预览和安装各自重新下载、核对 SHA-256，再独立验签。
+正式发布密钥尚未配置期间，unsigned 条目只在明确 warning 的人工白名单模式下放行；任何声明签名的条目都必须真实验签。
+
+理由：
+
+- 对实际下载字节签名可避免 JSON canonicalization 跨语言漂移，并与安装时已有的 SHA-256/重新下载链路自然组合。
+- keyring 必须来自客户端发布物而非远程索引，否则攻击者可同时替换公钥和签名。
+- 预览结果可能过期，安装阶段重验才能守住 TOCTOU 边界。
+- 当前还没有经过秘密管理、备份、轮换和撤销设计的正式私钥，不能为了“完成签名”把测试私钥提交进仓库。
+
+后果：
+
+- `ring` 与 `base64` 作为 reading-core 的 native-only 可选直接依赖；二者版本已由现有 Tauri/rustls 依赖树锁定，
+  WASM 构建不携带这部分代码。
+- 新增 `sign:plugin-repository`，只读取仓库外 PKCS#8 Ed25519 私钥，签署每个 zip 并输出可安全编译的公钥 Base64。
+- 对外发布官方仓库前必须把公钥加入 `plugin_trust.rs`、签署全部条目并开启 `REQUIRE_OFFICIAL_PLUGIN_SIGNATURES`；
+  在此之前 UI 会明确显示“未签名 · 人工白名单”。
+
+## 2026-07-20：插件正文获取使用独立 source.acquire，只接收开放资源 EPUB 提案
+
+决策：新增 `source.acquire(pluginId, bookUrl)`，不改变 `source.collect` 的纯元数据收藏语义。
+命令重新执行插件 `getBook` 与可选 `acquire(bookUrl, 'cacheForReading')`；只有 manifest 声明 `acquire`、
+授权为 `public-domain/open-license` 且提案 `mimeType=application/epub+zip` 时才继续。提案由 core 复核授权和精确域名，
+Tauri 经 app-wide 每域限速、SSRF/DNS 固定、禁止重定向的同一 HTTP 执行器下载；EPUB 结构验证通过后直接写对象仓库并挂到远程 edition。
+
+理由：
+
+- 搜索/收藏与正文副作用需要继续分离，避免用户收藏条目时隐式下载，保持协议冻结候选的新增消息纪律。
+- `AcquireProposal` 只是插件声明，不能让 JS 自报授权后直接写库；最终裁决必须留在 reading-core。
+- 第一版只接受 EPUB，可复用现有 `attach_remote_epub_bytes` 和阅读链路，也避免同时设计章节聚合、增量更新与图片抓取。
+- 下载字节不经过前端 JSON/IPC，符合大资源走平台资源通道并最终只返回 `LibraryBook` 引用的协议边界。
+
+后果：
+
+- `official-free/user-declared` 即使可以临时预览章节，也不会出现自动缓存入口；通用 ToS/限速门不等于单源正文授权。
+- 插件作者要提供站内获取，必须声明 `acquire` 并返回同域公共版权/开放授权 EPUB；其它 MIME 当前明确拒绝。
+- Gutenberg 示例成为首个真实联网获取夹具；当前 fake-IP DNS 环境仍只能验证拒绝路径，需正常公网 DNS 实机复验。
+
+## 2026-07-20：正式插件来源使用新增 source.* 消息，搜索不自动落库
+
+决策：保留 `plugin.testFlow` 作为安装管理面里的三函数诊断；正式业务新增
+`source.list/search/getBook/getChapter/collect`。`source.search` 只返回候选，用户显式点击收藏后，
+`source.collect` 重新执行 `getBook`，由 `reading-core::plugin_source` 用插件 id + 规范书籍 URL 的哈希作为稳定键，
+幂等写入 `source(kind=plugin)` 与远程 `edition/source_record`。收藏不自动下载或缓存正文。
+
+理由：
+
+- 诊断命令固定取第一本/第一章，语义不适合承载分页、选择和持久化；协议冻结候选要求新增消息而非改变旧消息。
+- 搜索即落库会用用户未选择的候选污染个人书库；显式收藏更符合本地优先的个人目录边界。
+- 收藏时重新取详情可避免直接信任前端回传 DTO；元数据映射和稳定去重属于 core 业务逻辑，不应落在 Tauri command。
+- 插件返回值仍不可信，因此正式调用同时校验 URL 属于 manifest 精确域名，并限制结果数、章节数和文本长度。
+
+后果：
+
+- 启用插件会进入在线来源选择器；停用后退出正式来源列表，但已收藏的来源记录不会随插件卸载而删除。
+- `public-domain/open-license/official-free/user-declared` 收藏分别映射为 `public_domain/open_license/official_free/unknown`；
+  这只影响元数据/外链展示，不等于允许获取正文。
+- 章节 HTML 仍由 core 清洗，第一版来源 UI 进一步只展示提取后的纯文本，避免插件远程资源进入持有平台能力的主文档。
+- 后续 acquire/缓存必须继续新增独立消息与权限/ToS/限速门，不能借 `source.collect` 隐式下载。
+
+## 2026-07-20：浏览器 reading-core WASM 生成物入库，维护者显式重生成
+
+决策：跟踪 `src/worker/reading-core-wasm/` 下 wasm-bindgen 生成的 JS、类型声明和 WASM 二进制。
+普通 `npm.cmd run build` 只校验这些产物存在、文件有效且保留必要导出，不在每次前端构建中安装 Rust target 或重新编译。
+维护者修改相关 `reading-core` 实现后，通过 `npm.cmd run build:wasm` 使用 `Cargo.lock` 匹配的 wasm-bindgen CLI 显式重生成。
+
+理由：
+
+- 浏览器入口和分页 Worker 对生成模块是静态 import；未跟踪产物会让干净检出在 TypeScript 阶段直接失败。
+- 强制每次前端构建重编 Rust/WASM 会让普通 Web 开发机额外依赖 rustup、WASM target 和全局 CLI，也增加 CI 时间与网络故障面。
+- 生成脚本从锁文件读取 wasm-bindgen 版本并拒绝不匹配的 CLI，可避免宏 crate 与生成器 ABI 漂移。
+
+后果：
+
+- 仓库增加约 569 KiB WASM 二进制和小型绑定文件，但普通检出可直接完成 Web/PWA 生产构建。
+- 修改 EPUB 解析、HTML 清洗、分页或 WASM 导出时，开发者必须重生成并提交产物；存在性检查无法自动证明二进制与源码完全同步。
+- `check:wasm` 接入 `check:project` 与 `build`，缺文件、空文件、无效 WASM 文件头或必要导出缺失会提前给出可执行的修复提示。
+
+## 2026-07-20：插件 HTTP 不自动跟随重定向，并在连接前拒绝非公网地址
+
+决策：`host.http.get` 仍由 core 的 `plan_http_get` 校验 manifest 精确域名，Tauri 执行器另外解析该域名，
+只允许公网 IP，再将连接固定到已校验结果。HTTP 客户端不使用系统代理，不自动跟随 3xx；插件可读取状态和 `Location`，
+但后续请求必须再走一次域名/IP 策略门。同时对 HTTP 响应体、HTML 输入、返回 JSON 和日志设置硬上限。
+
+理由：
+
+- 只校验初始 URL 会被跨域重定向绕过；只校验域名字符串则会被 DNS rebinding 或直接指向内网。
+- 插件契约没有“自动跟随重定向”承诺，保留 3xx 响应比在壳层暗中跨越权限边界更可审计。
+- QuickJS 内存上限不会限制 Rust 侧在进入 JS 之前持有的 HTTP/HTML 字节，因此必须在 host 边界单独限制。
+
+后果：
+
+- 需要跨域重定向的插件必须把目标域名也列入 manifest，并显式发起第二次 `host.http.get`。
+- 本地开发服务、内网源、使用保留网段 fake-IP DNS 的环境会被拒绝；当前优先保持安全默认，不为测试环境增加隐式豁免。
+- 若未来产品确需代理/fake-IP 兼容，必须设计可见、可审计的用户授权和目标级策略，不能直接删掉内网防护。
+
 ## 2026-06-27：QuickJS 引擎选 rquickjs（绑定 quickjs-ng），每次调用一次性 Runtime
 
 决策：v0.7 插件运行时 QuickJS 集成选择 `rquickjs` crate（绑定 quickjs-ng 社区 fork），每次方法调用创建一次性 `Runtime`+`Context`，跑完即弃。沙箱只注入 `host.http`、`host.kv`、`host.html`、`host.log` 四个命名空间 + `URL`/`TextDecoder` 两个 polyfill，不开 `std`/`os` 模块。HTTP 执行经 `PluginHttpExecutor` trait 透传壳层（core 不直接发 HTTP）。
@@ -679,3 +779,23 @@
 - 双缓冲避免白屏或闪烁，动画期间始终有内容展示。
 - 快速翻页不排队等待，避免用户狂点翻页时卡死。
 - PWA 让网页端可离线使用 + 添加到主屏幕，与"本地优先"定位一致。
+
+## 2026-07-20：插件 HTTP 限速跨 Runtime 共享，official-free 安装前确认源站条款
+
+决策：
+
+1. 桌面插件 HTTP 使用 app-wide 精确域名调度器，同域请求最短间隔固定为 1 秒；一次性 QuickJS Runtime 不各自持有限速状态。
+2. `official-free` 且申请 `http` 的 manifest 必须声明 HTTPS `legal.termsUrl`，安装预览展示条款并要求用户显式确认。
+3. 继续拒绝 `official-free + acquire` 进入官方仓库；本轮条款门只允许受控的搜索/详情/临时章节读取，不等于授权缓存正文。
+
+理由：
+
+- Runtime 每次调用即销毁，若限速器放在 Runtime 内，连续 `search/getBook/getChapter` 会分别从零计数，无法形成真实每域上限。
+- official-free 内容仍受版权和站点规则约束；条款地址、宿主限速和用户确认必须同时存在，不能只靠插件注释自律。
+- 收藏来源与缓存正文是不同授权动作；前者只存元数据/外链，后者仍只对公共版权和开放授权设计。
+
+后果：
+
+- `PluginLegal` 新增可选 `termsUrl`，`PluginValidation` 新增 `requiresSourceTermsConfirmation`；均为协议 additive 字段。
+- 本地安装继续复用既有 `confirmUserLegal` 参数承载显式法律/条款确认，避免冻结候选协议改名。
+- 真实公网来源的站点级更严格频率规则未来可在 1 秒宿主基线上追加，不能放宽到低于宿主默认值。

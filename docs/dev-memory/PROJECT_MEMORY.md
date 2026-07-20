@@ -26,7 +26,10 @@
 
 ## 当前阶段
 
-当前阶段优先级是 v0.3 本地书库闭环。
+当前主线是 v0.7 桌面插件来源收口：QuickJS、完整必选方法试跑、正式 `source.*` 来源/书库流程、
+真实离线 Tauri smoke、每域限速、official-free 源站条款确认，以及只允许 `public_domain/open_license`
+EPUB 的 `source.acquire` 本地 asset 获取闭环均已落地。官方仓库 Ed25519 包字节验签也已实现，但正式发布公钥尚未配置，
+当前 unsigned 条目仍是带 warning 的人工白名单模式。下一步是配置发布 keyring/切换强制签名，并在正常公网 DNS 下复验 Gutenberg。
 
 已经具备：
 
@@ -39,9 +42,44 @@
 - SHA-256 对象仓库去重。
 - Calibre 作为兼容迁移来源。
 - 插件契约文档与 SDK 骨架。
+- 桌面 QuickJS 插件运行时，含 `host.http/html/kv/log`、Promise 契约、DTO 校验、章节 HTML 清洗与完整流程试跑。
+- 正式插件来源流程：启用来源列表、分页搜索、书籍/章节读取、纯文本章节预览，以及用户显式收藏远程来源记录。
+- 合法插件获取流程：可选 `acquire` 返回 EPUB 提案；宿主复核授权/域名，经共享限速/SSRF 下载器获取并验证 EPUB，
+  再把远程 edition 转为 `cached` asset；`official_free/user_declared` 保持外链/临时预览。
+- 官方插件包信任链：索引校验 keyId，预览与安装分别下载、核对 SHA-256，并对 zip 原始字节做 Ed25519 验签；
+  私钥不进入仓库，正式公钥待发布前注入编译内 keyring。
 
 近期状态：
 
+- 2026-07-20：插件仓库 WebDriver smoke 补回 npm 入口，并将本地包预览/安装失败从 warning 改为硬失败。
+  当前 WebView2 已升级到 `150.0.4078.83`；即使使用微软官方精确匹配驱动，仓库 smoke 与既有来源 smoke 都在
+  会话创建后发生 DevTools 断开，因此当前 GUI 自动化环境需修复后再做窗口复验，不能据离线测试宣称窗口通过。
+- 2026-07-20：新增 `smoke:plugin-repository-signature` 离线发布链回归：临时生成 Ed25519 密钥和真实插件 zip，
+  调用正式签名工具后验证原始字节签名、单字节篡改与错误公钥拒绝，并串联 reading-core/Tauri 下载后校验测试。
+  Tauri 胶水层现有独立测试保证大小 → SHA-256 → 签名顺序及强制签名模式；临时私钥默认删除。
+- 2026-07-20：官方插件仓库签名从“元数据预留”升级为真实 Ed25519 包验签。签名覆盖 zip 原始字节，
+  未知 keyId、坏 Base64、坏签名均拒绝；预览和安装各自重新验签。新增外部 PKCS#8 私钥签署脚本；
+  当前 `plugin_trust` keyring 为空且强制开关关闭，unsigned 索引会明确显示人工白名单 warning。
+- 2026-07-20：QuickJS 开放可选 `acquire(remoteId, mode)`，新增 additive `source.acquire`。
+  当前只接受 `public-domain/open-license` 插件声明的 `application/epub+zip`，下载不经过前端消息面；验证 EPUB 后进入对象仓库。
+  Gutenberg 示例已增加公共版权 EPUB 提案与“获取并阅读”入口；当前环境仍因 fake-IP DNS 无法完成真实公网下载复验。
+- 2026-07-20：真实 `reader.exe` 离线来源 smoke 已通过安装、搜索、详情、纯文本预览、收藏、来源记录、停用和重启；
+  smoke 同时发现并修复在线结果被本地搜索防抖覆盖的 UI 竞态。
+- 2026-07-20：插件 HTTP 执行器改为 app-wide 共享的精确域名调度器，同域请求间隔至少 1 秒；
+  `official-free + HTTP` manifest 必须声明 HTTPS `legal.termsUrl`，安装预览必须展示并要求用户确认。
+
+- 2026-07-20：复核后发现先前的 QuickJS 代码未被 Tauri feature 真正编译，且与 SDK 的 `export default`、
+  Promise/标量参数、`HttpResponse.text()` 和 `host.html` 存在漂移。现已修正为可编译的真实运行路径，
+  桌面 `plugin.testFlow` 可依次运行 `search → getBook → getChapter`；无网络夹具已验证 HTTP/HTML/KV/Promise/清洗闭环。
+- 2026-07-20：插件 HTTP 执行器收紧安全边界：禁止自动重定向，解析后拒绝本机/内网/保留地址，固定经校验的 DNS 结果，
+  限制 HTTP 响应体/HTML 输入/返回 JSON/日志尺寸，并让 HTTP 超时不超过当次 Runtime 截止时间。
+- 2026-07-20：Project Gutenberg 真实插件示例已对齐当前阅读链接形状，并新增可重复运行的 ignored 联网 E2E。
+  本 Codex 环境把 `www.gutenberg.org` 解析为 `198.18.0.15` 保留网段，因内网防护被预期拒绝；需在正常公网 DNS 的真实 Tauri 窗口复验。
+- 2026-07-20：补齐并跟踪 `src/worker/reading-core-wasm/` 生成物；新增 `npm.cmd run build:wasm` 可重复生成脚本与
+  `check:wasm` 构建守卫。普通干净检出不要求 Rust WASM 工具链即可完成前端生产构建；修改相关 core 实现时必须重生成产物。
+- 2026-07-20：以只新增消息落地 `source.list/search/getBook/getChapter/collect`。插件搜索不自动入库；
+  用户显式收藏时，宿主重新执行 `getBook`，由 `reading-core::plugin_source` 幂等写入 `source(kind=plugin)` 与远程来源记录。
+  运行时同时开始校验返回 URL 的 manifest 精确域名、结果/章节数量和文本长度；章节 UI 只做纯文本预览。
 - 2026-06-22：桥接协议进入 `1.0-rc.1` 冻结候选。冻结前四项审计（DTO 预留、章节预取语义、
   结构化错误码、资源通道边界）已完成；Tauri command 与官方 shell promise 错误统一到
   `BridgeError { code, message, details? }`，新增 `platformError` 表示系统浏览器/外部阅读器等平台能力失败。

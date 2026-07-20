@@ -41,10 +41,13 @@ pub enum PluginCapability {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PluginLegal {
     pub kind: PluginLegalKind,
     #[serde(default)]
     pub note: Option<String>,
+    #[serde(default)]
+    pub terms_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -61,6 +64,7 @@ pub enum PluginLegalKind {
 pub struct ManifestValidation {
     pub official_repository_eligible: bool,
     pub requires_user_legal_confirmation: bool,
+    pub requires_source_terms_confirmation: bool,
     pub warnings: Vec<String>,
 }
 
@@ -129,8 +133,21 @@ pub fn validate_manifest(manifest: &PluginManifest) -> Result<ManifestValidation
     {
         return Err("plugin legal.note must be <= 500 characters".into());
     }
+    if let Some(terms_url) = manifest.legal.terms_url.as_deref() {
+        if terms_url.len() > 2048
+            || !terms_url.starts_with("https://")
+            || http_host(terms_url).is_none()
+        {
+            return Err("plugin legal.termsUrl must be a valid HTTPS URL <= 2048 bytes".into());
+        }
+    }
 
     let requires_user_legal_confirmation = manifest.legal.kind == PluginLegalKind::UserDeclared;
+    let requires_source_terms_confirmation = manifest.legal.kind == PluginLegalKind::OfficialFree
+        && manifest.permissions.contains(&PluginPermission::Http);
+    if requires_source_terms_confirmation && manifest.legal.terms_url.is_none() {
+        return Err("official-free HTTP plugins must declare legal.termsUrl".into());
+    }
     let official_repository_eligible = !requires_user_legal_confirmation;
     let mut warnings = Vec::new();
     if manifest.capabilities.contains(&PluginCapability::Acquire)
@@ -145,10 +162,17 @@ pub fn validate_manifest(manifest: &PluginManifest) -> Result<ManifestValidation
             "user-declared plugins require explicit install-time legal confirmation".to_string(),
         );
     }
+    if requires_source_terms_confirmation {
+        warnings.push(
+            "official-free HTTP access requires install-time source ToS confirmation and host per-domain rate limits"
+                .to_string(),
+        );
+    }
 
     Ok(ManifestValidation {
         official_repository_eligible,
         requires_user_legal_confirmation,
+        requires_source_terms_confirmation,
         warnings,
     })
 }
@@ -356,14 +380,35 @@ mod tests {
             r#",
   "capabilities": ["acquire"]"#,
         )
-        .replace("\"kind\": \"public-domain\"", "\"kind\": \"official-free\"");
+        .replace(
+            "\"kind\": \"public-domain\"",
+            "\"kind\": \"official-free\", \"termsUrl\": \"https://www.aozora.gr.jp/terms\"",
+        );
         let manifest = parse_manifest_json(&json).unwrap();
         let policy = validate_manifest(&manifest).unwrap();
         assert!(policy.official_repository_eligible);
+        assert!(policy.requires_source_terms_confirmation);
         assert!(policy
             .warnings
             .iter()
             .any(|warning| warning.contains("source ToS")));
+    }
+
+    #[test]
+    fn official_free_http_requires_https_terms_url() {
+        let missing = valid_manifest_json("")
+            .replace("\"kind\": \"public-domain\"", "\"kind\": \"official-free\"");
+        assert!(parse_manifest_json(&missing)
+            .unwrap_err()
+            .contains("legal.termsUrl"));
+
+        let insecure = missing.replace(
+            "\"kind\": \"official-free\"",
+            "\"kind\": \"official-free\", \"termsUrl\": \"http://www.aozora.gr.jp/terms\"",
+        );
+        assert!(parse_manifest_json(&insecure)
+            .unwrap_err()
+            .contains("valid HTTPS URL"));
     }
 
     #[test]
@@ -397,5 +442,13 @@ mod tests {
                 .unwrap()
                 .official_repository_eligible
         );
+    }
+
+    #[test]
+    fn offline_smoke_manifest_is_accepted_by_core_policy() {
+        let json = include_str!("../../../scripts/test-plugin/manifest.json");
+        let manifest = parse_manifest_json(json).unwrap();
+        assert_eq!(manifest.api_version, SUPPORTED_API_VERSION);
+        assert_eq!(manifest.id, "test-plugin-hello");
     }
 }

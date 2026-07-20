@@ -6,6 +6,8 @@
 
 use std::collections::BTreeSet;
 
+use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
+use ring::signature::{UnparsedPublicKey, ED25519};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -18,6 +20,15 @@ pub const SUPPORTED_REPOSITORY_SCHEMA_VERSION: &str = "0.1";
 pub const MAX_REPOSITORY_ENTRIES: usize = 500;
 pub const MAX_PACKAGE_SIZE_BYTES: u64 = 50 * 1024 * 1024;
 pub const SUPPORTED_SIGNATURE_ALGORITHM: &str = "ed25519";
+pub const ED25519_PUBLIC_KEY_BYTES: usize = 32;
+pub const ED25519_SIGNATURE_BYTES: usize = 64;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TrustedPluginKey<'a> {
+    pub key_id: &'a str,
+    /// Base64-encoded raw 32-byte Ed25519 public key.
+    pub public_key_base64: &'a str,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -97,6 +108,37 @@ pub fn validate_repository_index(
     })
 }
 
+/// Apply the desktop shell's compiled trust policy to a structurally valid index.
+/// Signatures cover the downloaded zip bytes, so the actual cryptographic check is
+/// repeated by `verify_package_signature` after every preview/install download.
+pub fn validate_repository_index_with_keyring(
+    index: &PluginRepositoryIndex,
+    trusted_keys: &[TrustedPluginKey<'_>],
+    require_signatures: bool,
+) -> Result<PluginRepositoryValidation, String> {
+    let mut validation = validate_repository_index(index)?;
+    validate_trusted_keyring(trusted_keys)?;
+
+    for entry in &index.entries {
+        match &entry.signature {
+            Some(signature) => {
+                trusted_key_bytes(trusted_keys, &signature.key_id)?;
+            }
+            None if require_signatures => {
+                return Err(format!(
+                    "plugin {} package signature is required by repository policy",
+                    entry.manifest.id
+                ));
+            }
+            None => validation.warnings.push(format!(
+                "plugin {} package is unsigned; manual allow-list review is required",
+                entry.manifest.id
+            )),
+        }
+    }
+    Ok(validation)
+}
+
 pub fn verify_package_sha256(bytes: &[u8], expected_hex: &str) -> Result<(), String> {
     if !is_sha256_hex(expected_hex) {
         return Err("plugin package sha256 must be 64 hex characters".into());
@@ -107,6 +149,30 @@ pub fn verify_package_sha256(bytes: &[u8], expected_hex: &str) -> Result<(), Str
         return Err("plugin package sha256 mismatch".into());
     }
     Ok(())
+}
+
+/// Verify an Ed25519 signature over the exact plugin zip bytes.
+pub fn verify_package_signature(
+    bytes: &[u8],
+    signature: &PluginPackageSignature,
+    trusted_keys: &[TrustedPluginKey<'_>],
+) -> Result<(), String> {
+    validate_signature("package", signature)?;
+    validate_trusted_keyring(trusted_keys)?;
+    let public_key = trusted_key_bytes(trusted_keys, &signature.key_id)?;
+    let signature_bytes = decode_base64_exact(
+        &signature.value,
+        ED25519_SIGNATURE_BYTES,
+        "plugin package signature value",
+    )?;
+    UnparsedPublicKey::new(&ED25519, public_key)
+        .verify(bytes, &signature_bytes)
+        .map_err(|_| {
+            format!(
+                "plugin package signature verification failed for keyId {}",
+                signature.key_id
+            )
+        })
 }
 
 fn validate_repository_entry(
@@ -134,7 +200,7 @@ fn validate_repository_entry(
             .contains(&PluginCapability::Acquire)
     {
         return Err(format!(
-            "plugin {} cannot publish official-free acquire in the official repository before ToS gates exist",
+            "plugin {} cannot publish official-free acquire without source-specific authorization review",
             entry.manifest.id
         ));
     }
@@ -168,10 +234,6 @@ fn validate_repository_entry(
     }
     if let Some(signature) = &entry.signature {
         validate_signature(&entry.manifest.id, signature)?;
-        warnings.push(format!(
-            "plugin {} has signature metadata; cryptographic verification is not implemented yet",
-            entry.manifest.id
-        ));
     }
     for warning in manifest_validation.warnings.iter().cloned() {
         warnings.push(format!("plugin {}: {warning}", entry.manifest.id));
@@ -188,10 +250,55 @@ fn validate_signature(plugin_id: &str, signature: &PluginPackageSignature) -> Re
     if signature.key_id.trim().is_empty() || signature.key_id.chars().count() > 128 {
         return Err(format!("plugin {plugin_id} signature keyId is invalid"));
     }
-    if signature.value.trim().is_empty() || signature.value.chars().count() > 512 {
-        return Err(format!("plugin {plugin_id} signature value is invalid"));
+    decode_base64_exact(
+        &signature.value,
+        ED25519_SIGNATURE_BYTES,
+        &format!("plugin {plugin_id} signature value"),
+    )?;
+    Ok(())
+}
+
+fn validate_trusted_keyring(trusted_keys: &[TrustedPluginKey<'_>]) -> Result<(), String> {
+    let mut ids = BTreeSet::new();
+    for key in trusted_keys {
+        if key.key_id.trim().is_empty() || key.key_id.chars().count() > 128 {
+            return Err("trusted plugin keyId is invalid".into());
+        }
+        if !ids.insert(key.key_id) {
+            return Err(format!("duplicate trusted plugin keyId: {}", key.key_id));
+        }
+        decode_base64_exact(
+            key.public_key_base64,
+            ED25519_PUBLIC_KEY_BYTES,
+            &format!("trusted plugin public key {}", key.key_id),
+        )?;
     }
     Ok(())
+}
+
+fn trusted_key_bytes(
+    trusted_keys: &[TrustedPluginKey<'_>],
+    key_id: &str,
+) -> Result<Vec<u8>, String> {
+    let key = trusted_keys
+        .iter()
+        .find(|key| key.key_id == key_id)
+        .ok_or_else(|| format!("plugin package signature uses unknown keyId: {key_id}"))?;
+    decode_base64_exact(
+        key.public_key_base64,
+        ED25519_PUBLIC_KEY_BYTES,
+        &format!("trusted plugin public key {key_id}"),
+    )
+}
+
+fn decode_base64_exact(value: &str, expected_len: usize, label: &str) -> Result<Vec<u8>, String> {
+    let decoded = BASE64_STANDARD
+        .decode(value.trim())
+        .map_err(|_| format!("{label} must be valid base64"))?;
+    if decoded.len() != expected_len {
+        return Err(format!("{label} must decode to {expected_len} bytes"));
+    }
+    Ok(decoded)
 }
 
 fn is_sha256_hex(value: &str) -> bool {
@@ -207,10 +314,16 @@ fn is_https_url(value: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ring::signature::{Ed25519KeyPair, KeyPair};
 
     const SHA256_EMPTY: &str = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 
     fn manifest(id: &str, legal_kind: &str, capabilities: &str) -> String {
+        let terms = if legal_kind == "official-free" {
+            r#", "termsUrl": "https://example.org/terms""#
+        } else {
+            ""
+        };
         format!(
             r#"{{
   "apiVersion": "0.1",
@@ -221,7 +334,7 @@ mod tests {
   "domains": ["example.org"],
   "permissions": ["http"],
   "capabilities": {capabilities},
-  "legal": {{ "kind": "{legal_kind}" }}
+  "legal": {{ "kind": "{legal_kind}"{terms} }}
 }}"#
         )
     }
@@ -319,7 +432,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_official_free_acquire_until_tos_gate_exists() {
+    fn rejects_official_free_acquire_without_source_specific_review() {
         let json = index(&entry(
             "narou-source",
             "official-free",
@@ -331,20 +444,82 @@ mod tests {
     }
 
     #[test]
-    fn accepts_signature_metadata_shape_but_warns_not_verified() {
+    fn accepts_valid_signature_metadata_shape() {
+        let signature_value = BASE64_STANDARD.encode([0_u8; ED25519_SIGNATURE_BYTES]);
         let json = index(
             &entry("aozora-bunko", "public-domain", "[]", SHA256_EMPTY).replace(
                 r#""sourceUrl": "https://github.com/example/aozora-bunko""#,
-                r#""sourceUrl": "https://github.com/example/aozora-bunko",
-  "signature": { "algorithm": "ed25519", "keyId": "official-2026", "value": "abc" }"#,
+                &format!(r#""sourceUrl": "https://github.com/example/aozora-bunko",
+  "signature": {{ "algorithm": "ed25519", "keyId": "official-2026", "value": "{signature_value}" }}"#),
             ),
         );
         let parsed = parse_repository_index(&json).unwrap();
         let validation = validate_repository_index(&parsed).unwrap();
+        assert!(validation.warnings.is_empty());
+    }
+
+    #[test]
+    fn verifies_signed_package_bytes_with_trusted_keyring() {
+        let package = b"signed plugin zip fixture";
+        let seed = decode_hex_32(
+            "9d61b19deffd5a60ba844af492ec2cc4\
+             4449c5697b326919703bac031cae7f60",
+        );
+        let public_key = decode_hex_32(
+            "d75a980182b10ab7d54bfed3c964073a\
+             0ee172f3daa62325af021a68f707511a",
+        );
+        let key_pair = Ed25519KeyPair::from_seed_and_public_key(&seed, &public_key).unwrap();
+        assert_eq!(key_pair.public_key().as_ref(), public_key);
+        let signature = PluginPackageSignature {
+            algorithm: "ed25519".into(),
+            key_id: "official-test".into(),
+            value: BASE64_STANDARD.encode(key_pair.sign(package).as_ref()),
+        };
+        let public_key_base64 = BASE64_STANDARD.encode(public_key);
+        let keys = [TrustedPluginKey {
+            key_id: "official-test",
+            public_key_base64: &public_key_base64,
+        }];
+
+        verify_package_signature(package, &signature, &keys).unwrap();
+        assert!(verify_package_signature(b"tampered", &signature, &keys)
+            .unwrap_err()
+            .contains("verification failed"));
+
+        let mut parsed = parse_repository_index(&index(&entry(
+            "aozora-bunko",
+            "public-domain",
+            "[]",
+            SHA256_EMPTY,
+        )))
+        .unwrap();
+        parsed.entries[0].signature = Some(signature.clone());
+        validate_repository_index_with_keyring(&parsed, &keys, true).unwrap();
+
+        parsed.entries[0].signature.as_mut().unwrap().key_id = "unknown".into();
+        assert!(validate_repository_index_with_keyring(&parsed, &keys, true)
+            .unwrap_err()
+            .contains("unknown keyId"));
+    }
+
+    #[test]
+    fn unsigned_repository_requires_manual_mode() {
+        let parsed = parse_repository_index(&index(&entry(
+            "aozora-bunko",
+            "public-domain",
+            "[]",
+            SHA256_EMPTY,
+        )))
+        .unwrap();
+        let validation = validate_repository_index_with_keyring(&parsed, &[], false).unwrap();
         assert!(validation
             .warnings
             .iter()
-            .any(|warning| warning.contains("not implemented yet")));
+            .any(|warning| warning.contains("manual allow-list review")));
+        assert!(validate_repository_index_with_keyring(&parsed, &[], true)
+            .unwrap_err()
+            .contains("signature is required"));
     }
 
     #[test]
@@ -356,5 +531,18 @@ mod tests {
         assert!(verify_package_sha256(b"", "abc")
             .unwrap_err()
             .contains("64 hex"));
+    }
+
+    fn decode_hex_32(value: &str) -> [u8; 32] {
+        let compact = value
+            .chars()
+            .filter(|ch| !ch.is_whitespace())
+            .collect::<String>();
+        assert_eq!(compact.len(), 64);
+        let mut out = [0_u8; 32];
+        for (index, byte) in out.iter_mut().enumerate() {
+            *byte = u8::from_str_radix(&compact[index * 2..index * 2 + 2], 16).unwrap();
+        }
+        out
     }
 }

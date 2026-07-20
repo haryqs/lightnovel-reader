@@ -1,0 +1,84 @@
+// Project Gutenberg 公共版权测试插件。
+// 用于真实联网验证 search → getBook → getChapter。
+
+const BASE = 'https://www.gutenberg.org'
+
+export default {
+  async search(query, page) {
+    const start = (page - 1) * 25 + 1
+    const response = await host.http.get(
+      `${BASE}/ebooks/search/?query=${encodeURIComponent(query)}&start_index=${start}`,
+    )
+    const html = response.text()
+    host.log.info('[gutenberg] search', response.status, html.length)
+    const doc = host.html.parse(html)
+    const results = []
+    const seen = {}
+
+    for (const link of doc.select('.booklink a.link, .booklink a')) {
+      const href = link.attr('href') || ''
+      const title = link.selectFirst('.title')?.text || link.text
+      if (!href.includes('/ebooks/') || !title) continue
+      const url = new URL(href, BASE).toString()
+      if (seen[url]) continue
+      seen[url] = true
+      results.push({
+        url,
+        title,
+        author: link.selectFirst('.subtitle')?.text || undefined,
+      })
+    }
+    return { results, hasMore: results.length >= 25 }
+  },
+
+  async getBook(bookUrl) {
+    const response = await host.http.get(bookUrl)
+    const doc = host.html.parse(response.text())
+    const title = doc.selectFirst('h1')?.text || bookUrl
+    let author
+    for (const row of doc.select('.bibrec tr')) {
+      const heading = row.selectFirst('th')?.text || ''
+      if (heading.includes('Author')) author = row.selectFirst('td')?.text || undefined
+    }
+
+    const chapters = []
+    for (const link of doc.select('a')) {
+      const href = link.attr('href') || ''
+      if (!/\/(?:cache\/epub|files)\//.test(href) || !/\.html?($|[?#])/i.test(href)) continue
+      chapters.push({
+        url: new URL(href, bookUrl).toString(),
+        title: link.text || title,
+      })
+      break
+    }
+    return { url: bookUrl, title, author, chapters }
+  },
+
+  async getChapter(chapterUrl) {
+    const response = await host.http.get(chapterUrl)
+    const doc = host.html.parse(response.text())
+    const body = doc.selectFirst('body')
+    return {
+      title: doc.selectFirst('h1, h2')?.text || chapterUrl,
+      html: body?.innerHtml || '',
+    }
+  },
+
+  async acquire(bookUrl, mode) {
+    const response = await host.http.get(bookUrl)
+    const doc = host.html.parse(response.text())
+    for (const link of doc.select('a')) {
+      const href = link.attr('href') || ''
+      if (!/\.epub3?\.images($|[?#])/i.test(href)) continue
+      const url = new URL(href, bookUrl).toString()
+      host.log.info('[gutenberg] acquire', mode, url)
+      return {
+        url,
+        rightsStatus: 'public_domain',
+        mimeType: 'application/epub+zip',
+        note: 'Project Gutenberg public-domain EPUB',
+      }
+    }
+    throw new Error('当前 Gutenberg 书籍页没有可获取的 EPUB 下载链接')
+  },
+}

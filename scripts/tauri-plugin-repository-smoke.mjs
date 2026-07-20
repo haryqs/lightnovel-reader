@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from 'node:fs'
 import { dirname, join, resolve, sep } from 'node:path'
 import process from 'node:process'
 import { tmpdir } from 'node:os'
@@ -23,13 +23,14 @@ function hasFlag(name) {
 function defaultNativeDriver() {
   const localAppData = process.env.LOCALAPPDATA
   if (!localAppData) return ''
-  return join(
-    localAppData,
-    'lightnovel-reader-tools',
-    'msedgedriver',
-    '149.0.4022.62',
-    'msedgedriver.exe',
-  )
+  const root = join(localAppData, 'lightnovel-reader-tools', 'msedgedriver')
+  if (!existsSync(root)) return ''
+  return readdirSync(root, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort((left, right) => right.localeCompare(left, undefined, { numeric: true }))
+    .map((version) => join(root, version, 'msedgedriver.exe'))
+    .find((candidate) => existsSync(candidate)) || ''
 }
 
 const driverBinary = readOption('--tauri-driver', process.env.TAURI_DRIVER || 'tauri-driver')
@@ -428,32 +429,18 @@ async function runPluginRepositorySmoke() {
   )
 
   console.log('Testing plugin package inspection...')
-  
-  // 测试检查插件包 (本地文件)
-  let packageInspection = null
-  let packageInspectionError = null
-  
-  try {
-    packageInspection = await invoke('plugin_inspect_package', { path: pluginZipPath }, 30_000)
-  } catch (error) {
-    packageInspectionError = error
+
+  // 本地包生命周期不依赖仓库网络，任何失败都必须让 smoke 失败。
+  const packageInspection = await invoke('plugin_inspect_package', { path: pluginZipPath }, 30_000)
+  const expectedManifest = {
+    id: 'aozora-smoke-source',
+    name: 'Aozora Smoke Source',
+    version: '0.1.0',
+    apiVersion: '0.1',
   }
 
-  if (packageInspection) {
-    // 验证插件包检查结果
-    const expectedManifest = {
-      id: 'aozora-smoke-source',
-      name: 'Aozora Smoke Source',
-      version: '0.1.0',
-      apiVersion: '0.1',
-    }
-    
-    assertPluginInstallPreview(packageInspection, expectedManifest)
-    console.log('✓ Plugin package inspection successful')
-  } else {
-    console.log(`⚠ Plugin package inspection failed: ${packageInspectionError?.message || 'unknown error'}`)
-    // 记录错误但继续测试，因为可能是路径或权限问题
-  }
+  assertPluginInstallPreview(packageInspection, expectedManifest)
+  console.log('✓ Plugin package inspection successful')
 
   console.log('Testing installed plugins listing...')
   
@@ -462,90 +449,73 @@ async function runPluginRepositorySmoke() {
   assertCheck(Array.isArray(installedPlugins), 'installed plugins should be an array', installedPlugins)
   console.log(`✓ Found ${installedPlugins.length} installed plugins`)
 
-  if (packageInspection) {
-    console.log('Testing plugin installation...')
-    
-    try {
-      // 测试安装插件包
-      const installedPlugin = await invoke(
-        'plugin_install_package',
-        { path: pluginZipPath, confirmUserLegal: true },
-        30_000
-      )
-      
-      const expectedManifest = {
-        id: 'aozora-smoke-source',
-        name: 'Aozora Smoke Source',
-        version: '0.1.0',
-        apiVersion: '0.1',
-      }
-      
-      assertInstalledPlugin(installedPlugin, expectedManifest)
-      assertCheck(installedPlugin.enabled === true, 'newly installed plugin should be enabled', installedPlugin)
-      console.log('✓ Plugin installation successful')
-      
-      // 验证插件出现在已安装列表中
-      const updatedInstalledPlugins = await invoke('plugin_list_installed', {}, 20_000)
-      assertCheck(
-        updatedInstalledPlugins.length === installedPlugins.length + 1,
-        'installed plugins count should increase by 1',
-        { before: installedPlugins.length, after: updatedInstalledPlugins.length }
-      )
-      
-      const installedPlugin2 = updatedInstalledPlugins.find(p => p.manifest.id === 'aozora-smoke-source')
-      assertCheck(!!installedPlugin2, 'installed plugin should appear in list', updatedInstalledPlugins)
-      console.log('✓ Plugin appears in installed list')
-      
-      // 测试启用/禁用插件
-      const disabledPlugin = await invoke(
-        'plugin_set_enabled',
-        { pluginId: 'aozora-smoke-source', enabled: false },
-        20_000
-      )
-      assertCheck(disabledPlugin.enabled === false, 'plugin should be disabled', disabledPlugin)
-      console.log('✓ Plugin disabled successfully')
-      
-      const enabledPlugin = await invoke(
-        'plugin_set_enabled',
-        { pluginId: 'aozora-smoke-source', enabled: true },
-        20_000
-      )
-      assertCheck(enabledPlugin.enabled === true, 'plugin should be enabled again', enabledPlugin)
-      console.log('✓ Plugin enabled successfully')
-      
-      // 测试卸载插件
-      await invoke('plugin_uninstall', { pluginId: 'aozora-smoke-source' }, 20_000)
-      console.log('✓ Plugin uninstalled successfully')
-      
-      // 验证插件从已安装列表中移除
-      const finalInstalledPlugins = await invoke('plugin_list_installed', {}, 20_000)
-      assertCheck(
-        finalInstalledPlugins.length === installedPlugins.length,
-        'installed plugins count should return to original',
-        { original: installedPlugins.length, final: finalInstalledPlugins.length }
-      )
-      
-      const uninstalledPlugin = finalInstalledPlugins.find(p => p.manifest.id === 'aozora-smoke-source')
-      assertCheck(!uninstalledPlugin, 'uninstalled plugin should not appear in list', finalInstalledPlugins)
-      console.log('✓ Plugin removed from installed list')
-      
-    } catch (installError) {
-      console.log(`⚠ Plugin installation test failed: ${installError?.message || 'unknown error'}`)
-      // 安装失败可能是权限或存储问题，但不应该使整个测试失败
-    }
-  }
+  console.log('Testing plugin installation...')
+
+  const installedPlugin = await invoke(
+    'plugin_install_package',
+    { path: pluginZipPath, confirmUserLegal: true },
+    30_000
+  )
+
+  assertInstalledPlugin(installedPlugin, expectedManifest)
+  assertCheck(installedPlugin.enabled === true, 'newly installed plugin should be enabled', installedPlugin)
+  console.log('✓ Plugin installation successful')
+
+  // 验证插件出现在已安装列表中
+  const updatedInstalledPlugins = await invoke('plugin_list_installed', {}, 20_000)
+  assertCheck(
+    updatedInstalledPlugins.length === installedPlugins.length + 1,
+    'installed plugins count should increase by 1',
+    { before: installedPlugins.length, after: updatedInstalledPlugins.length }
+  )
+
+  const installedPlugin2 = updatedInstalledPlugins.find(p => p.manifest.id === 'aozora-smoke-source')
+  assertCheck(!!installedPlugin2, 'installed plugin should appear in list', updatedInstalledPlugins)
+  console.log('✓ Plugin appears in installed list')
+
+  // 测试启用/禁用插件
+  const disabledPlugin = await invoke(
+    'plugin_set_enabled',
+    { pluginId: 'aozora-smoke-source', enabled: false },
+    20_000
+  )
+  assertCheck(disabledPlugin.enabled === false, 'plugin should be disabled', disabledPlugin)
+  console.log('✓ Plugin disabled successfully')
+
+  const enabledPlugin = await invoke(
+    'plugin_set_enabled',
+    { pluginId: 'aozora-smoke-source', enabled: true },
+    20_000
+  )
+  assertCheck(enabledPlugin.enabled === true, 'plugin should be enabled again', enabledPlugin)
+  console.log('✓ Plugin enabled successfully')
+
+  // 测试卸载插件
+  await invoke('plugin_uninstall', { pluginId: 'aozora-smoke-source' }, 20_000)
+  console.log('✓ Plugin uninstalled successfully')
+
+  // 验证插件从已安装列表中移除
+  const finalInstalledPlugins = await invoke('plugin_list_installed', {}, 20_000)
+  assertCheck(
+    finalInstalledPlugins.length === installedPlugins.length,
+    'installed plugins count should return to original',
+    { original: installedPlugins.length, final: finalInstalledPlugins.length }
+  )
+
+  const uninstalledPlugin = finalInstalledPlugins.find(p => p.manifest.id === 'aozora-smoke-source')
+  assertCheck(!uninstalledPlugin, 'uninstalled plugin should not appear in list', finalInstalledPlugins)
+  console.log('✓ Plugin removed from installed list')
 
   return {
     boot,
     repositoryLoadError: repositoryLoadError?.message || null,
-    packageInspection: packageInspection ? {
+    packageInspection: {
       id: packageInspection.manifest.id,
       name: packageInspection.manifest.name,
       version: packageInspection.manifest.version,
       entrySize: packageInspection.entrySize,
       officialEligible: packageInspection.validation.officialRepositoryEligible,
-    } : null,
-    packageInspectionError: packageInspectionError?.message || null,
+    },
     initialInstalledCount: installedPlugins.length,
   }
 }

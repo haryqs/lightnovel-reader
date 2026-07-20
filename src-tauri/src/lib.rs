@@ -7,14 +7,20 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use reading_core::connectors;
 use reading_core::epub_parser::{self, BookInfo};
+use reading_core::plugin_host::{
+    ensure_method_allowed, plan_http_get, AcquireMode, HostHttpGetRequest, PluginBookDetail,
+    PluginChapterContent, PluginSearchPage, SourcePluginMethod,
+};
 use reading_core::plugin_manifest::{PluginCapability, PluginLegalKind};
 use reading_core::{
-    compute_book_id, library, parse_cache, plugin_repository, plugin_store, rusqlite, storage,
+    compute_book_id, library, parse_cache, plugin_repository, plugin_source, plugin_store,
+    rusqlite, storage,
 };
-use tauri::Manager;
 use tauri::Emitter;
+use tauri::Manager;
 
 mod plugin_executor;
+mod plugin_trust;
 mod sync_commands;
 
 struct LoadedBook {
@@ -50,6 +56,7 @@ struct AppState {
     library_dir: std::path::PathBuf,
     cache_dir: std::path::PathBuf, // 持久化解析缓存根目录
     plugin_dir: std::path::PathBuf,
+    plugin_http: std::sync::Arc<crate::plugin_executor::ReqwestExecutor>,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -444,6 +451,25 @@ fn ensure_plugin_package_sha256(package_sha256: &str) -> Result<&str, BridgeErro
 mod plugin_repository_command_tests {
     use super::*;
 
+    const RFC8032_EMPTY_MESSAGE_PUBLIC_KEY: &str = "11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURo=";
+    const RFC8032_EMPTY_MESSAGE_SIGNATURE: &str =
+        "5VZDAMNgrHKQhuLMgG6CioSHfx645dl02HPgZSJJAVVfuIIVkKM7rMYeOXAc+bRr0lv18FlbviRlUUFDjnoQCw==";
+
+    fn test_signature() -> plugin_repository::PluginPackageSignature {
+        plugin_repository::PluginPackageSignature {
+            algorithm: "ed25519".into(),
+            key_id: "rfc8032-test".into(),
+            value: RFC8032_EMPTY_MESSAGE_SIGNATURE.into(),
+        }
+    }
+
+    fn test_keys() -> [plugin_repository::TrustedPluginKey<'static>; 1] {
+        [plugin_repository::TrustedPluginKey {
+            key_id: "rfc8032-test",
+            public_key_base64: RFC8032_EMPTY_MESSAGE_PUBLIC_KEY,
+        }]
+    }
+
     #[test]
     fn plugin_package_sha256_is_checked_before_download() {
         let hash = " e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 ";
@@ -455,20 +481,98 @@ mod plugin_repository_command_tests {
         let err = ensure_plugin_package_sha256("not-a-sha").unwrap_err();
         assert_eq!(err.code, "invalidArgument");
     }
+
+    #[test]
+    fn downloaded_package_accepts_matching_hash_and_trusted_signature() {
+        verify_downloaded_plugin_package(
+            b"",
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            Some(&test_signature()),
+            &test_keys(),
+            true,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn downloaded_package_rejects_hash_before_signature() {
+        let mut invalid_signature = test_signature();
+        invalid_signature.value = "invalid".into();
+        let err = verify_downloaded_plugin_package(
+            b"tampered",
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            Some(&invalid_signature),
+            &test_keys(),
+            true,
+        )
+        .unwrap_err();
+        assert_eq!(err.code, "forbidden");
+        assert!(err.message.contains("SHA-256"), "unexpected error: {err:?}");
+    }
+
+    #[test]
+    fn downloaded_package_rejects_bad_signature_and_unsigned_strict_mode() {
+        let sha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+        let mut invalid_signature = test_signature();
+        invalid_signature.value = RFC8032_EMPTY_MESSAGE_SIGNATURE.replace('5', "6");
+        let signature_err = verify_downloaded_plugin_package(
+            b"",
+            sha256,
+            Some(&invalid_signature),
+            &test_keys(),
+            true,
+        )
+        .unwrap_err();
+        assert_eq!(signature_err.code, "forbidden");
+        assert!(signature_err.message.contains("签名校验失败"));
+
+        let unsigned_err =
+            verify_downloaded_plugin_package(b"", sha256, None, &test_keys(), true).unwrap_err();
+        assert_eq!(unsigned_err.code, "forbidden");
+        assert!(unsigned_err.message.contains("缺少必需"));
+    }
+}
+
+fn verify_downloaded_plugin_package(
+    bytes: &[u8],
+    package_sha256: &str,
+    signature: Option<&plugin_repository::PluginPackageSignature>,
+    trusted_keys: &[plugin_repository::TrustedPluginKey<'_>],
+    require_signatures: bool,
+) -> Result<(), BridgeError> {
+    if bytes.len() as u64 > plugin_repository::MAX_PACKAGE_SIZE_BYTES {
+        return Err(BridgeError::forbidden("插件包超过 50 MiB 上限"));
+    }
+    plugin_repository::verify_package_sha256(bytes, package_sha256)
+        .map_err(|e| BridgeError::forbidden(format!("插件包 SHA-256 校验失败: {e}")))?;
+    match signature {
+        Some(signature) => {
+            plugin_repository::verify_package_signature(bytes, signature, trusted_keys)
+                .map_err(|e| BridgeError::forbidden(format!("插件包签名校验失败: {e}")))?
+        }
+        None if require_signatures => {
+            return Err(BridgeError::forbidden("官方插件包缺少必需的 Ed25519 签名"));
+        }
+        None => {}
+    }
+    Ok(())
 }
 
 async fn download_verified_plugin_package(
     package_url: &str,
     package_sha256: &str,
+    signature: Option<&plugin_repository::PluginPackageSignature>,
 ) -> Result<Vec<u8>, BridgeError> {
     ensure_https_plugin_url(package_url, "插件包地址")?;
     let package_sha256 = ensure_plugin_package_sha256(package_sha256)?;
     let bytes = fetch_bytes(package_url, "插件包").await?;
-    if bytes.len() as u64 > plugin_repository::MAX_PACKAGE_SIZE_BYTES {
-        return Err(BridgeError::forbidden("插件包超过 50 MiB 上限"));
-    }
-    plugin_repository::verify_package_sha256(&bytes, package_sha256)
-        .map_err(|e| BridgeError::forbidden(format!("插件包校验失败: {e}")))?;
+    verify_downloaded_plugin_package(
+        &bytes,
+        package_sha256,
+        signature,
+        plugin_trust::OFFICIAL_PLUGIN_KEYS,
+        plugin_trust::REQUIRE_OFFICIAL_PLUGIN_SIGNATURES,
+    )?;
     Ok(bytes)
 }
 
@@ -487,7 +591,7 @@ fn ensure_official_package_preview(
             .contains(&PluginCapability::Acquire)
     {
         return Err(BridgeError::forbidden(
-            "official-free + acquire 在 ToS/限速/用户确认门控落地前不能通过官方仓库安装",
+            "official-free + acquire 需要单源正文授权审核，当前不能通过官方仓库安装",
         ));
     }
     Ok(())
@@ -550,35 +654,283 @@ fn plugin_uninstall(state: tauri::State<AppState>, plugin_id: String) -> Result<
     plugin_store::uninstall_plugin(&state.plugin_dir, &plugin_id).map_err(plugin_package_error)
 }
 
-/// 测试运行已安装插件（QuickJS 执行）。
-#[tauri::command]
-fn plugin_test_run(
-    state: tauri::State<'_, AppState>,
-    plugin_id: String,
-    method: String,
-    args_json: String,
-) -> Result<String, BridgeError> {
-    let installed = plugin_store::list_installed_plugins(&state.plugin_dir)
-        .map_err(|e| BridgeError::storage(e))?;
-    let plugin = installed
-        .iter()
-        .find(|p| p.manifest.id == plugin_id)
-        .ok_or_else(|| BridgeError::not_found(format!("插件未安装: {plugin_id}")))?;
-    if !plugin.enabled {
-        return Err(BridgeError::forbidden("插件已停用"));
+fn plugin_runtime_error(message: String) -> BridgeError {
+    if message.contains("disabled")
+        || message.contains("capability")
+        || message.contains("outside manifest domains")
+        || message.contains("download/cache")
+        || message.contains("limited to public-domain")
+    {
+        BridgeError::forbidden(message)
+    } else if message.contains("HTTP") || message.contains("域名解析") {
+        BridgeError::network(message)
+    } else {
+        BridgeError::parse(message)
     }
-    let entry_path = state.plugin_dir.join(&plugin_id).join(&plugin.manifest.entry);
+}
+
+async fn run_source_plugin<T, F>(
+    state: &AppState,
+    plugin_id: String,
+    method: SourcePluginMethod,
+    execute: F,
+) -> Result<(plugin_store::InstalledPlugin, T), BridgeError>
+where
+    T: Send + 'static,
+    F: FnOnce(reading_core::plugin_runtime::PluginRuntime) -> Result<T, String> + Send + 'static,
+{
+    let plugin_id = plugin_id.trim().to_string();
+    if plugin_id.is_empty() {
+        return Err(BridgeError::invalid_argument("pluginId is required"));
+    }
+    let installed =
+        plugin_store::list_installed_plugins(&state.plugin_dir).map_err(BridgeError::storage)?;
+    let plugin = installed
+        .into_iter()
+        .find(|plugin| plugin.manifest.id == plugin_id)
+        .ok_or_else(|| BridgeError::not_found(format!("插件未安装: {plugin_id}")))?;
+    ensure_method_allowed(&plugin, method).map_err(plugin_runtime_error)?;
+
+    let entry_path = state
+        .plugin_dir
+        .join(&plugin_id)
+        .join(&plugin.manifest.entry);
     let entry_js = std::fs::read_to_string(&entry_path)
         .map_err(|e| BridgeError::storage(format!("读取插件入口失败: {e}")))?;
+    let manifest = plugin.manifest.clone();
+    let plugin_root = state.plugin_dir.clone();
+    let runtime_plugin_id = plugin_id.clone();
+    let plugin_http = state.plugin_http.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        let runtime = reading_core::plugin_runtime::PluginRuntime::new(
+            manifest,
+            entry_js,
+            plugin_http,
+            plugin_root,
+            runtime_plugin_id,
+        );
+        execute(runtime)
+    })
+    .await
+    .map_err(|e| BridgeError::storage(format!("插件运行任务失败: {e}")))?
+    .map_err(plugin_runtime_error)?;
+    Ok((plugin, result))
+}
 
-    let rt = reading_core::plugin_runtime::PluginRuntime::new(
-        plugin.manifest.clone(),
-        entry_js,
-        Box::new(crate::plugin_executor::ReqwestExecutor),
-        state.plugin_dir.clone(),
+/// 正式来源列表只返回已启用插件，安装管理元数据仍留在 plugin.* 消息面。
+#[tauri::command]
+fn source_list(
+    state: tauri::State<AppState>,
+) -> Result<Vec<plugin_source::PluginSourceDescriptor>, BridgeError> {
+    let installed =
+        plugin_store::list_installed_plugins(&state.plugin_dir).map_err(BridgeError::storage)?;
+    Ok(plugin_source::list_enabled_sources(&installed))
+}
+
+#[tauri::command]
+async fn source_search(
+    state: tauri::State<'_, AppState>,
+    plugin_id: String,
+    query: String,
+    page: u32,
+) -> Result<PluginSearchPage, BridgeError> {
+    let query = query.trim().to_string();
+    if query.is_empty() || query.chars().count() > 512 {
+        return Err(BridgeError::invalid_argument(
+            "source search query must be 1..=512 characters",
+        ));
+    }
+    if page == 0 {
+        return Err(BridgeError::invalid_argument(
+            "source search page must start at 1",
+        ));
+    }
+    let (_, result) = run_source_plugin(
+        &state,
         plugin_id,
-    );
-    rt.call(&method, &args_json).map_err(|e| BridgeError::parse(e))
+        SourcePluginMethod::Search,
+        move |runtime| runtime.search(&query, page),
+    )
+    .await?;
+    Ok(result)
+}
+
+#[tauri::command]
+async fn source_get_book(
+    state: tauri::State<'_, AppState>,
+    plugin_id: String,
+    book_url: String,
+) -> Result<PluginBookDetail, BridgeError> {
+    if book_url.is_empty() || book_url.len() > 4096 {
+        return Err(BridgeError::invalid_argument(
+            "bookUrl must be 1..=4096 bytes",
+        ));
+    }
+    let (_, result) = run_source_plugin(
+        &state,
+        plugin_id,
+        SourcePluginMethod::GetBook,
+        move |runtime| runtime.get_book(&book_url),
+    )
+    .await?;
+    Ok(result)
+}
+
+#[tauri::command]
+async fn source_get_chapter(
+    state: tauri::State<'_, AppState>,
+    plugin_id: String,
+    chapter_url: String,
+) -> Result<PluginChapterContent, BridgeError> {
+    if chapter_url.is_empty() || chapter_url.len() > 4096 {
+        return Err(BridgeError::invalid_argument(
+            "chapterUrl must be 1..=4096 bytes",
+        ));
+    }
+    let (_, result) = run_source_plugin(
+        &state,
+        plugin_id,
+        SourcePluginMethod::GetChapter,
+        move |runtime| runtime.get_chapter(&chapter_url),
+    )
+    .await?;
+    Ok(result)
+}
+
+/// 用户显式收藏时重新执行 getBook，再由 core 写入远程来源记录；不自动获取正文。
+#[tauri::command]
+async fn source_collect(
+    state: tauri::State<'_, AppState>,
+    plugin_id: String,
+    book_url: String,
+) -> Result<library::LibraryBook, BridgeError> {
+    if book_url.is_empty() || book_url.len() > 4096 {
+        return Err(BridgeError::invalid_argument(
+            "bookUrl must be 1..=4096 bytes",
+        ));
+    }
+    let (plugin, book) = run_source_plugin(
+        &state,
+        plugin_id,
+        SourcePluginMethod::GetBook,
+        move |runtime| runtime.get_book(&book_url),
+    )
+    .await?;
+    let db = state
+        .library_db
+        .lock()
+        .map_err(|e| BridgeError::storage(e.to_string()))?;
+    plugin_source::collect_book(&db, &plugin, &book, now_ms()).map_err(BridgeError::storage)
+}
+
+/// 公开版权/开放许可插件可通过 acquire 提案返回 EPUB；宿主复核授权、域名、尺寸和 EPUB
+/// 结构后，将字节附加到对应远程 edition。official-free/user-declared 不允许缓存。
+#[tauri::command]
+async fn source_acquire(
+    state: tauri::State<'_, AppState>,
+    plugin_id: String,
+    book_url: String,
+) -> Result<library::LibraryBook, BridgeError> {
+    if book_url.is_empty() || book_url.len() > 4096 {
+        return Err(BridgeError::invalid_argument(
+            "bookUrl must be 1..=4096 bytes",
+        ));
+    }
+    let acquire_book_url = book_url.clone();
+    let (plugin, (book, proposal)) = run_source_plugin(
+        &state,
+        plugin_id,
+        SourcePluginMethod::Acquire,
+        move |runtime| {
+            let book = runtime.get_book(&acquire_book_url)?;
+            let proposal = runtime.acquire(&acquire_book_url, AcquireMode::CacheForReading)?;
+            Ok((book, proposal))
+        },
+    )
+    .await?;
+
+    if proposal.mime_type.as_deref() != Some("application/epub+zip") {
+        return Err(BridgeError::forbidden(
+            "source.acquire 当前只接受 mimeType=application/epub+zip 的开放资源",
+        ));
+    }
+
+    let collected = {
+        let db = state
+            .library_db
+            .lock()
+            .map_err(|e| BridgeError::storage(e.to_string()))?;
+        plugin_source::collect_book(&db, &plugin, &book, now_ms()).map_err(BridgeError::storage)?
+    };
+    if collected.availability.as_deref() == Some("cached") {
+        return Ok(collected);
+    }
+    let edition_id = collected
+        .edition_id
+        .clone()
+        .ok_or_else(|| BridgeError::storage("插件来源收藏后缺少 editionId"))?;
+
+    let plan = plan_http_get(
+        &plugin.manifest,
+        HostHttpGetRequest {
+            url: proposal.url,
+            headers: Default::default(),
+            timeout_ms: Some(60_000),
+        },
+    )
+    .map_err(plugin_runtime_error)?;
+    let executor = state.plugin_http.clone();
+    let response = tauri::async_runtime::spawn_blocking(move || {
+        reading_core::plugin_runtime::PluginHttpExecutor::execute(executor.as_ref(), plan)
+    })
+    .await
+    .map_err(|e| BridgeError::storage(format!("插件 EPUB 下载任务失败: {e}")))?
+    .map_err(plugin_runtime_error)?;
+    if !(200..300).contains(&response.status) {
+        return Err(BridgeError::with_details(
+            "httpStatus",
+            "插件 EPUB 下载返回错误状态",
+            response.status.to_string(),
+        ));
+    }
+    epub_parser::parse_book_info(&response.body)
+        .map_err(|e| BridgeError::parse(format!("插件获取结果不是有效 EPUB: {e}")))?;
+
+    let db = state
+        .library_db
+        .lock()
+        .map_err(|e| BridgeError::storage(e.to_string()))?;
+    library::attach_remote_epub_bytes(
+        &db,
+        &state.library_dir,
+        &edition_id,
+        &response.body,
+        now_ms(),
+    )
+    .map_err(BridgeError::storage)
+}
+
+/// 测试运行已安装插件（QuickJS 执行）。
+#[tauri::command]
+async fn plugin_test_run(
+    state: tauri::State<'_, AppState>,
+    plugin_id: String,
+    query: String,
+) -> Result<reading_core::plugin_runtime::PluginTestFlowResult, BridgeError> {
+    if query.trim().is_empty() {
+        return Err(BridgeError::invalid_argument(
+            "plugin test query is required",
+        ));
+    }
+    let query = query.trim().to_string();
+    let (_, result) = run_source_plugin(
+        &state,
+        plugin_id,
+        SourcePluginMethod::Search,
+        move |runtime| runtime.run_test_flow(&query),
+    )
+    .await?;
+    Ok(result)
 }
 
 #[tauri::command]
@@ -593,8 +945,12 @@ async fn plugin_load_repository_index(url: String) -> Result<PluginRepositoryCat
     let text = fetch_text(url, "插件仓库索引").await?;
     let index =
         plugin_repository::parse_repository_index(&text).map_err(plugin_repository_error)?;
-    let validation =
-        plugin_repository::validate_repository_index(&index).map_err(plugin_repository_error)?;
+    let validation = plugin_repository::validate_repository_index_with_keyring(
+        &index,
+        plugin_trust::OFFICIAL_PLUGIN_KEYS,
+        plugin_trust::REQUIRE_OFFICIAL_PLUGIN_SIGNATURES,
+    )
+    .map_err(plugin_repository_error)?;
     Ok(PluginRepositoryCatalog { index, validation })
 }
 
@@ -602,8 +958,10 @@ async fn plugin_load_repository_index(url: String) -> Result<PluginRepositoryCat
 async fn plugin_inspect_repository_package(
     package_url: String,
     package_sha256: String,
+    signature: Option<plugin_repository::PluginPackageSignature>,
 ) -> Result<plugin_store::PluginInstallPreview, BridgeError> {
-    let bytes = download_verified_plugin_package(&package_url, &package_sha256).await?;
+    let bytes =
+        download_verified_plugin_package(&package_url, &package_sha256, signature.as_ref()).await?;
     let preview = plugin_store::inspect_plugin_package(&bytes).map_err(plugin_package_error)?;
     ensure_official_package_preview(&preview)?;
     Ok(preview)
@@ -614,8 +972,10 @@ async fn plugin_install_repository_package(
     state: tauri::State<'_, AppState>,
     package_url: String,
     package_sha256: String,
+    signature: Option<plugin_repository::PluginPackageSignature>,
 ) -> Result<plugin_store::InstalledPlugin, BridgeError> {
-    let bytes = download_verified_plugin_package(&package_url, &package_sha256).await?;
+    let bytes =
+        download_verified_plugin_package(&package_url, &package_sha256, signature.as_ref()).await?;
     let preview = plugin_store::inspect_plugin_package(&bytes).map_err(plugin_package_error)?;
     ensure_official_package_preview(&preview)?;
     plugin_store::install_plugin_package(&state.plugin_dir, &bytes, false, now_ms())
@@ -1588,13 +1948,19 @@ pub fn run() {
                 library_dir,
                 cache_dir,
                 plugin_dir,
+                plugin_http: std::sync::Arc::new(
+                    crate::plugin_executor::ReqwestExecutor::default(),
+                ),
             });
             app.manage(dir); // app data dir for sync commands
 
             // ---- 系统托盘 + 关闭到托盘 ----
             let app_handle = app.handle().clone();
             let menu = tauri::menu::MenuBuilder::new(&app_handle)
-                .item(&tauri::menu::MenuItemBuilder::with_id("show", "显示窗口").build(&app_handle)?)
+                .item(
+                    &tauri::menu::MenuItemBuilder::with_id("show", "显示窗口")
+                        .build(&app_handle)?,
+                )
                 .separator()
                 .item(&tauri::menu::MenuItemBuilder::with_id("quit", "退出").build(&app_handle)?)
                 .build()?;
@@ -1649,7 +2015,9 @@ pub fn run() {
 
             // 命令行参数：双击 .epub 文件打开
             if let Some(epub_path) = std::env::args().nth(1) {
-                if epub_path.to_lowercase().ends_with(".epub") && std::path::Path::new(&epub_path).exists() {
+                if epub_path.to_lowercase().ends_with(".epub")
+                    && std::path::Path::new(&epub_path).exists()
+                {
                     let state = app.state::<AppState>();
                     if let Ok(data) = std::fs::read(&epub_path) {
                         if let Ok(opened) = load_book_from_data(&state, data) {
@@ -1678,6 +2046,12 @@ pub fn run() {
             plugin_inspect_repository_package,
             plugin_install_repository_package,
             plugin_test_run,
+            source_list,
+            source_search,
+            source_get_book,
+            source_get_chapter,
+            source_collect,
+            source_acquire,
             library_list,
             library_search,
             library_source_records,

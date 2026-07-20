@@ -1,5 +1,46 @@
 # 下一步任务队列
 
+## 📌 交接留言（2026-07-20，v0.7 正式插件来源流程与 WASM 构建修复）
+
+当前事实：
+
+- 已执行 `git fetch --all --prune`；本地 `main` 与 `origin/main` 同为 `a03103c`，GitHub 没有新提交。
+- Tauri 现已显式启用 `reading-core/quickjs`，之前未被真实编译的 runtime 路径已修正。
+- QuickJS 运行时已对齐 SDK：`export default`、Promise、标量入参、`HttpResponse.text()`、
+  `host.html`、持久化 `host.kv`、可读 JS 异常堆栈、DTO 校验和章节 HTML 清洗。
+- `plugin.testFlow` 和插件面板“测试”按钮现会自动跑完 `search → getBook → getChapter`，而不是只跑 `search`。
+- 插件 HTTP 沙箱禁止自动重定向，解析后拒绝本机/内网/保留地址，并固定已校验 DNS 结果；
+  HTTP 响应体/HTML 输入/返回 JSON 上限 8 MiB，单条日志上限 4 KiB。
+- 无网络 runtime 全流程测试通过；Project Gutenberg 示例和 ignored 联网 E2E 已补。当前 Codex 环境把
+  `www.gutenberg.org` 解析到 `198.18.0.15` 保留网段，因内网防护被预期拒绝；没有为了跑测试放宽安全策略。
+- 浏览器端 `reading-core` 的 wasm-bindgen 产物已重新生成并纳入仓库；`build:wasm` 会校验锁定版本后重复生成，
+  `check:wasm` 已接入 `check:project` 和生产构建，干净检出不再因缺模块而失败。
+- 已新增 `source.list/search/getBook/getChapter/collect`，不改变 `plugin.testFlow` 诊断语义。启用插件会进入在线来源选择器，
+  支持分页搜索、详情/章节、纯文本正文预览和显式收藏；搜索不自动落库，收藏会重新执行 `getBook` 后由 core 幂等写来源记录。
+- 插件返回 URL 现在也必须属于 manifest 精确域名；单页搜索结果、章节数和文本长度有硬上限。
+  离线 `scripts/test-plugin` manifest 已对齐 SDK 并增加确定性正式来源调用测试。
+- QuickJS 可选 `acquire(remoteId, mode)` 与 additive `source.acquire` 已落地：仅放行
+  `public-domain/open-license + application/epub+zip`，宿主复核授权/域名，经共享限速/SSRF 下载器获取并验证 EPUB，
+  然后挂入远程 edition 的本地 `cached` asset；Gutenberg 示例和 UI “获取并阅读”已同步。
+- 官方仓库 Ed25519 包字节验签已落地：索引先校验可信 keyId，预览/安装在各自下载与 SHA-256 后重新验签；
+  `sign:plugin-repository` 从外部 PKCS#8 私钥签署 zip。当前编译内正式 keyring 仍为空，unsigned 条目显示人工白名单 warning。
+- `smoke:plugin-repository-signature` 已把临时密钥、真实 zip、正式签名工具、篡改/错 key 拒绝及 core/Tauri 验签测试串成
+  无公网/GUI 的可重复回归；真实 HTTPS 下载与正式 keyring 仍未复验。
+- 仓库 WebDriver smoke 已恢复 npm 入口并收紧为本地包失败即失败；当前 WebView2 150 环境即使用精确匹配驱动也会在
+  会话创建后断开 DevTools，且既有来源 smoke 同样复现，窗口自动化复验暂受环境阻断。
+
+下一步优先级：
+
+1. **真实窗口公网复验**：离线正式流程已由 `npm.cmd run smoke:plugin-source` 在真实 `reader.exe` 自动通过；
+   仍需在正常公网 DNS 的 Windows/Tauri 环境安装
+   `plugin-sdk/examples/gutenberg-test/gutenberg-test.zip`，完成搜索、章节预览与“获取并阅读”；或运行
+   `cargo test -p reader plugin_executor::tests::runs_gutenberg_search_book_chapter_acquire_flow -- --ignored --nocapture`。
+   当前 Codex 环境再次实跑仍因 fake-IP/保留地址被 SSRF 门预期拒绝，不得为测试放宽。
+2. **发布密钥门槛**：离线生成正式 Ed25519 发布密钥，私钥进入独立秘密管理；只把公钥 Base64 和 keyId 加入
+   `src-tauri/src/plugin_trust.rs`，签署官方索引全部 zip，验证轮换/撤销流程后把 `REQUIRE_OFFICIAL_PLUGIN_SIGNATURES` 切为 `true`；
+   随后用受控 HTTPS 仓库跑索引加载、预览、安装二次下载及篡改/未知 key 的真实窗口测试。
+3. **分发复验**：继续便携包目标机器抽检与 NSIS 卸载保留用户数据验证。
+
 ## 📌 交接留言（2026-06-27，11 commits，全 Phase 完工）
 
 > **实验室交接：** 以下是从上次会话到现在的完整进展。新会话进入后请先读 AGENTS.md，然后按开工纪律操作。

@@ -202,6 +202,13 @@ export const webBridge: ReaderBridge = {
   loadPluginRepositoryIndex: () => Promise.reject(platformErr('plugin')),
   inspectRepositoryPluginPackage: () => Promise.reject(platformErr('plugin')),
   installRepositoryPluginPackage: () => Promise.reject(platformErr('plugin')),
+  testPluginFlow: () => Promise.reject(platformErr('plugin')),
+  listPluginSources: () => Promise.resolve([]),
+  searchPluginSource: () => Promise.reject(platformErr('plugin')),
+  getPluginSourceBook: () => Promise.reject(platformErr('plugin')),
+  getPluginSourceChapter: () => Promise.reject(platformErr('plugin')),
+  collectPluginSourceBook: () => Promise.reject(platformErr('plugin')),
+  acquirePluginSourceBook: () => Promise.reject(platformErr('plugin')),
 
   // -- 兜底 --
 

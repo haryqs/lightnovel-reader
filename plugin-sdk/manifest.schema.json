@@ -67,7 +67,13 @@
           "enum": ["public-domain", "open-license", "official-free", "user-declared"],
           "description": "public-domain=公共版权;open-license=开放许可(如 CC);official-free=官方免费连载(须遵守其 ToS);user-declared=作者自担声明,官方仓库不收"
         },
-        "note": { "type": "string", "maxLength": 500 }
+        "note": { "type": "string", "maxLength": 500 },
+        "termsUrl": {
+          "type": "string",
+          "maxLength": 2048,
+          "pattern": "^https://[^\\s]+$",
+          "description": "official-free 且使用 HTTP 时必填；安装前展示并要求用户确认的源站条款 URL。"
+        }
       }
     }
   }

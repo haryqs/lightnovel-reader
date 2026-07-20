@@ -41,8 +41,14 @@ pub fn install_plugin_package(
     installed_at: i64,
 ) -> Result<InstalledPlugin, String> {
     let package = load_plugin_package_zip(bytes)?;
-    if package.validation.requires_user_legal_confirmation && !confirmed_user_legal {
-        return Err("plugin requires explicit user legal confirmation".into());
+    if (package.validation.requires_user_legal_confirmation
+        || package.validation.requires_source_terms_confirmation)
+        && !confirmed_user_legal
+    {
+        return Err(
+            "plugin requires explicit legal confirmation (user declaration or source terms)"
+                .into(),
+        );
     }
 
     let installed = InstalledPlugin {
@@ -336,10 +342,13 @@ fn load_kv(plugin_root: &Path, plugin_id: &str) -> HashMap<String, String> {
         .unwrap_or_default()
 }
 
-fn save_kv(plugin_root: &Path, plugin_id: &str, kv: &HashMap<String, String>) -> Result<(), String> {
+fn save_kv(
+    plugin_root: &Path,
+    plugin_id: &str,
+    kv: &HashMap<String, String>,
+) -> Result<(), String> {
     let json = serde_json::to_string_pretty(kv).map_err(|e| format!("kv 序列化失败: {e}"))?;
-    std::fs::write(kv_path(plugin_root, plugin_id), &json)
-        .map_err(|e| format!("kv 写入失败: {e}"))
+    std::fs::write(kv_path(plugin_root, plugin_id), &json).map_err(|e| format!("kv 写入失败: {e}"))
 }
 
 /// 读取插件私有存储中的键值。
