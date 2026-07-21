@@ -2877,3 +2877,31 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
 
 - Tauri应用中安装test-plugin-hello.zip→点测试按钮验证
 - 写自动化集成测试调plugin_test_run
+
+## 2026-07-21：增加正式发布信任门并评估嵌入式 WDIO
+
+变更：
+
+- 新增 `scripts/check-release-trust.mjs` 与 `scripts/test-release-trust.mjs`，检查官方插件强制验签、Ed25519 公钥 keyring 和 Tauri updater 公钥。
+- `package:beta`、`installer:web` 的 npm pre-hook 及 `release:build` 接入门禁；开发构建不受影响。
+- 建立 v0.7 检查点提交 `8a8f83f`。
+
+验证：
+
+- `npm.cmd run test:release-trust`：通过。
+- 当前仓库 `npm.cmd run check:release-trust`：按设计阻断三项未配置状态。
+- `cargo check -p reader`：通过。
+- `cargo test --workspace`：通过（Tauri 7 passed / 1 个公网测试 ignored，reading-core 149 passed）。
+- `npm.cmd run build` 与 `npm.cmd run check:project`：通过。
+- WDIO embedded spike 完成依赖、Rust 插件和真实会话调研，但因上游 `native-utils` 导出缺失、Windows EdgeDriver
+  版本解析错误及嵌入会话不稳定未达到提交门槛；相关实验代码和依赖已撤回。
+
+未验证 / 阻塞：
+
+- 正式插件发布公钥、updater 公钥及对应私钥秘密管理尚未由维护者配置，因此正式分发门禁保持红灯。
+- 真实 HTTPS 官方仓库、正常公网 DNS 下 Gutenberg 以及最终安装/更新演练仍待具备外部条件后执行。
+
+下一步：
+
+- 维护者安全生成并分别管理插件发布密钥与 updater 密钥，只把公钥注入仓库。
+- 签署官方仓库全部 zip、开启强制验签，跑受控 HTTPS 与正式分发演练。

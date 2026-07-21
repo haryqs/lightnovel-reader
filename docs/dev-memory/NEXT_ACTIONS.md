@@ -1,5 +1,29 @@
 # 下一步任务队列
 
+## 📌 交接留言（2026-07-21，发布信任门与 Windows WDIO 调研）
+
+当前事实：
+
+- v0.7 插件来源收口已在 `codex/v0.7-release-hardening` 建立检查点提交 `8a8f83f`。
+- 新增 `check:release-trust`：正式分发前同时检查官方插件强制验签、非空且合法的 Ed25519 公钥 keyring，
+  以及非空的 Tauri updater 公钥；插件包签名和应用更新签名是两个独立信任域，不能共用或互相替代。
+- `package:beta`、`installer:web` 的 npm pre-hook 及新的 `release:build` 都接入该门禁。当前仓库会按设计阻断，
+  直到维护者注入正式公钥并开启 `REQUIRE_OFFICIAL_PLUGIN_SIGNATURES`；开发构建与测试不受影响。
+- `test:release-trust` 已覆盖合法配置、三项未配置、重复 keyId、非法 Base64 和错误公钥长度。
+- 评估过官方文档建议的 `@wdio/tauri-service` embedded provider，但未提交实验集成：`1.2.0` 固定的
+  `@wdio/native-utils@2.4.0` 缺少其导入的 `installMockSyncOverride`；升级到 2.5.0 后又发现 Windows EdgeDriver
+  版本解析只接受 `MSEdgeDriver`，而当前官方二进制输出 `Microsoft Edge WebDriver`，导致完全匹配的 150.0.4078.83
+  仍被判定为 unknown、重复下载，最终嵌入会话也不稳定。不要在项目内补丁 `node_modules`。
+
+下一步优先级：
+
+1. **配置正式信任材料**：由维护者在离线环境生成插件 Ed25519 发布密钥和 Tauri updater 签名密钥，私钥进入独立秘密管理；
+   只提交两个信任域各自的公钥。签署官方仓库全部 zip、开启强制插件验签后，让 `npm.cmd run check:release-trust` 变绿。
+2. **受控发布演练**：在正常公网 DNS 下运行真实 HTTPS 仓库加载/预览/安装二次下载、Gutenberg 获取与阅读；随后运行
+   `npm.cmd run release:build`，抽检 updater 签名、便携包、NSIS 安装/卸载保留用户数据。
+3. **窗口自动化后续**：优先等待/升级到修复上述两个 Windows 问题的 WDIO Tauri service，或在上游提交最小复现；
+   在此之前继续保留现有 `tauri-driver` smoke 和离线签名回归，不维护项目内依赖补丁。
+
 ## 📌 交接留言（2026-07-20，v0.7 正式插件来源流程与 WASM 构建修复）
 
 当前事实：

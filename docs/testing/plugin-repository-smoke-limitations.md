@@ -74,6 +74,8 @@ npm run smoke:plugin-repo -- --keep-open
    - 需要构建的 Tauri 应用
    - `msedgedriver` 与 WebView2 Runtime 的前三段版本必须一致；脚本只会选已安装的最高版本，不能保证它自动匹配 Runtime
    - 无法在 CI 无头环境中运行（除非配置了无头浏览器）
+   - 2026-07-21 评估的 `@wdio/tauri-service@1.2.0` embedded provider 暂不接入：其发布依赖组合缺少运行时导出，
+     且 Windows 驱动版本解析不识别当前 `Microsoft Edge WebDriver` 版本字符串，造成匹配驱动仍反复下载；项目不补丁 `node_modules`
 
 4. **并发安装未测试**
    - 只测试单个插件的生命周期
