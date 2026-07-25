@@ -2905,3 +2905,34 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
 
 - 维护者安全生成并分别管理插件发布密钥与 updater 密钥，只把公钥注入仓库。
 - 签署官方仓库全部 zip、开启强制验签，跑受控 HTTPS 与正式分发演练。
+
+## 2026-07-25：接入首批插件与 updater 正式公钥
+
+变更：
+
+- `src-tauri/src/plugin_trust.rs` 新增 `lnr-plugin-2026-01` Ed25519 公钥，并开启官方仓库强制验签。
+- `src-tauri/tauri.conf.json` 接入独立 updater 公钥，启用 `bundle.createUpdaterArtifacts=true`。
+- 发布门新增 updater 产物开关检查；单测覆盖四项未配置状态。
+- 同步 AGENTS、项目长期记忆、决策、下一步队列与发布说明。
+
+验证：
+
+- `node --check scripts/check-release-trust.mjs`：通过。
+- `node --check scripts/test-release-trust.mjs`：通过。
+- `npm.cmd run test:release-trust`：通过。
+- `npm.cmd run check:release-trust`：通过，识别插件 keyId、updater 公钥和签名产物开关。
+- `cargo check -p reader`：通过。
+- `npm.cmd run build` 与 `npm.cmd run check:project`：通过。
+- `cargo test --workspace`：通过（Tauri 7 passed / 1 个公网测试 ignored，reading-core 149 passed）。
+- `npm.cmd run smoke:plugin-repository-signature`：通过，覆盖原始 zip 签名、单字节篡改、错公钥和 core/Tauri 校验链。
+- `npm.cmd run tauri -- build --debug --no-bundle`：通过，确认 Tauri 接受 updater 产物配置且不需要读取正式私钥即可完成非分发构建。
+
+未验证 / 阻塞：
+
+- Codex 未读取插件/updater 私钥或 updater 密码，因此未执行真实私钥签名和正式 updater release build。
+- 官方仓库最终 zip/URL 尚未确定，真实 HTTPS 签名仓库与 `latest.json` 更新链尚未演练。
+
+下一步：
+
+- 由维护者在仓库外用插件私钥签署首批正式 repository。
+- 在受控环境注入 updater 私钥与密码，构建 `.sig` 并完成旧版本到新版本的真实更新测试。

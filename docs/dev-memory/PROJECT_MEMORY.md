@@ -28,8 +28,9 @@
 
 当前主线是 v0.7 桌面插件来源收口：QuickJS、完整必选方法试跑、正式 `source.*` 来源/书库流程、
 真实离线 Tauri smoke、每域限速、official-free 源站条款确认，以及只允许 `public_domain/open_license`
-EPUB 的 `source.acquire` 本地 asset 获取闭环均已落地。官方仓库 Ed25519 包字节验签也已实现，但正式发布公钥尚未配置，
-当前 unsigned 条目仍是带 warning 的人工白名单模式。下一步是配置发布 keyring/切换强制签名，并在正常公网 DNS 下复验 Gutenberg。
+EPUB 的 `source.acquire` 本地 asset 获取闭环均已落地。官方仓库 Ed25519 包字节验签与首批正式发布 keyring 已落地，
+官方索引现强制要求 `lnr-plugin-2026-01` 或后续受信 key 的包签名。下一步是签署全部官方仓库包、完成 updater/安装器发布演练，
+并在正常公网 DNS 下复验 Gutenberg。
 
 2026-07-21 起，所有正式分发入口增加发布信任门：官方插件强制验签、插件 Ed25519 公钥 keyring 与 Tauri updater
 公钥必须同时配置，缺一即阻断打包；开发构建保持可用。插件包签名和应用更新签名属于两个独立信任域。
@@ -50,10 +51,13 @@ EPUB 的 `source.acquire` 本地 asset 获取闭环均已落地。官方仓库 E
 - 合法插件获取流程：可选 `acquire` 返回 EPUB 提案；宿主复核授权/域名，经共享限速/SSRF 下载器获取并验证 EPUB，
   再把远程 edition 转为 `cached` asset；`official_free/user_declared` 保持外链/临时预览。
 - 官方插件包信任链：索引校验 keyId，预览与安装分别下载、核对 SHA-256，并对 zip 原始字节做 Ed25519 验签；
-  私钥不进入仓库，正式公钥待发布前注入编译内 keyring。
+  私钥不进入仓库，`lnr-plugin-2026-01` 公钥已进入编译内 keyring，unsigned 官方条目不再允许。
 
 近期状态：
 
+- 2026-07-25：维护者在仓库外分别生成插件仓库 Ed25519 私钥与带密码的 Tauri updater 私钥，只提交两套公钥。
+  插件 keyring 激活 `lnr-plugin-2026-01` 并开启强制验签；Tauri updater 公钥与 `createUpdaterArtifacts=true` 已配置。
+  发布门现同时检查四项：强制插件验签、合法非空插件 keyring、updater 公钥和 updater 签名产物开关。
 - 2026-07-20：插件仓库 WebDriver smoke 补回 npm 入口，并将本地包预览/安装失败从 warning 改为硬失败。
   当前 WebView2 已升级到 `150.0.4078.83`；即使使用微软官方精确匹配驱动，仓库 smoke 与既有来源 smoke 都在
   会话创建后发生 DevTools 断开，因此当前 GUI 自动化环境需修复后再做窗口复验，不能据离线测试宣称窗口通过。

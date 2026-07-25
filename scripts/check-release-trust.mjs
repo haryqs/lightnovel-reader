@@ -55,12 +55,17 @@ export function checkReleaseTrust({ pluginTrustPath, tauriConfigPath }) {
   if (typeof updaterPubkey !== 'string' || !updaterPubkey.trim()) {
     errors.push('tauri updater pubkey must be provisioned for release packaging')
   }
+  const createUpdaterArtifacts = tauriConfig?.bundle?.createUpdaterArtifacts
+  if (createUpdaterArtifacts !== true) {
+    errors.push('tauri bundle.createUpdaterArtifacts must be true for release packaging')
+  }
 
   return {
     ok: errors.length === 0,
     errors,
     pluginKeyIds: keys.map((key) => key.keyId),
     updaterPubkeyConfigured: typeof updaterPubkey === 'string' && updaterPubkey.trim().length > 0,
+    updaterArtifactsEnabled: createUpdaterArtifacts === true,
   }
 }
 
@@ -84,7 +89,7 @@ function main() {
     return
   }
   console.log(
-    `check-release-trust: OK(pluginKeys=${result.pluginKeyIds.join(',')}, updaterPubkey=configured)`,
+    `check-release-trust: OK(pluginKeys=${result.pluginKeyIds.join(',')}, updaterPubkey=configured, updaterArtifacts=enabled)`,
   )
 }
 

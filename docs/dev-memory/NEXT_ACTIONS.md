@@ -1,5 +1,25 @@
 # 下一步任务队列
 
+## 📌 交接留言（2026-07-25，首批正式信任根已激活）
+
+当前事实：
+
+- 维护者已在仓库外生成两套独立私钥：插件仓库 Ed25519 私钥与带密码的 Tauri updater 私钥；私钥和密码均未进入仓库。
+- 插件公钥 `lnr-plugin-2026-01` 已写入 `src-tauri/src/plugin_trust.rs`，并开启
+  `REQUIRE_OFFICIAL_PLUGIN_SIGNATURES=true`；官方索引从此不再接受 unsigned 条目。
+- Tauri updater 公钥已写入 `src-tauri/tauri.conf.json`，并开启 `bundle.createUpdaterArtifacts=true`。
+- `check:release-trust` 已扩展为四项门禁；`test:release-trust`、实际仓库门禁与 `cargo check -p reader` 已通过。
+
+下一步优先级：
+
+1. **签署首批官方仓库**：确定准备发布的插件 zip 与 HTTPS URL，生成最终 SHA-256/大小索引；由维护者在本地调用
+   `sign:plugin-repository` 注入私钥路径，输出所有条目都带 `keyId=lnr-plugin-2026-01` 的签名索引。
+2. **首次 updater 发布演练**：在受控构建环境通过 `TAURI_SIGNING_PRIVATE_KEY_PATH` 与
+   `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` 注入秘密，运行 `release:build`，检查 Windows 安装器与 `.sig`，
+   生成 GitHub Release `latest.json`，并从旧版本真实执行检查、下载、安装和重启。
+3. **公网与安装复验**：在正常公网 DNS 下完成签名仓库加载/预览/二次下载安装、Gutenberg 获取与阅读；
+   抽检 NSIS 安装/卸载保留用户数据。窗口自动化仍沿用既有限制，不补丁 WDIO `node_modules`。
+
 ## 📌 交接留言（2026-07-21，发布信任门与 Windows WDIO 调研）
 
 当前事实：

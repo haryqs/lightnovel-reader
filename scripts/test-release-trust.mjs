@@ -14,7 +14,12 @@ function assertCheck(condition, message, details) {
   }
 }
 
-function writeFixture({ keys, requireSignatures, updaterPubkey }) {
+function writeFixture({
+  keys,
+  requireSignatures,
+  updaterPubkey,
+  createUpdaterArtifacts = true,
+}) {
   const keySource = keys.map((key) => `
     TrustedPluginKey {
         key_id: "${key.keyId}",
@@ -31,7 +36,10 @@ pub const REQUIRE_OFFICIAL_PLUGIN_SIGNATURES: bool = ${requireSignatures};
   )
   writeFileSync(
     tauriConfigPath,
-    `${JSON.stringify({ plugins: { updater: { pubkey: updaterPubkey } } }, null, 2)}\n`,
+    `${JSON.stringify({
+      bundle: { createUpdaterArtifacts },
+      plugins: { updater: { pubkey: updaterPubkey } },
+    }, null, 2)}\n`,
     'utf8',
   )
 }
@@ -56,10 +64,20 @@ try {
   const ready = checkReleaseTrust({ pluginTrustPath, tauriConfigPath })
   assertCheck(ready.ok, 'valid release trust fixture should pass', ready)
 
-  writeFixture({ keys: [], requireSignatures: false, updaterPubkey: '' })
+  writeFixture({
+    keys: [],
+    requireSignatures: false,
+    updaterPubkey: '',
+    createUpdaterArtifacts: false,
+  })
   const unprovisioned = checkReleaseTrust({ pluginTrustPath, tauriConfigPath })
   assertCheck(!unprovisioned.ok, 'unprovisioned release trust fixture should fail', unprovisioned)
-  assertCheck(unprovisioned.errors.length === 3, 'unprovisioned fixture should report all trust roots', unprovisioned)
+  assertCheck(unprovisioned.errors.length === 4, 'unprovisioned fixture should report all release prerequisites', unprovisioned)
+  assertCheck(
+    unprovisioned.errors.some((error) => error.includes('createUpdaterArtifacts')),
+    'disabled updater artifacts should be reported',
+    unprovisioned,
+  )
 
   writeFileSync(
     pluginTrustPath,
