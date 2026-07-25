@@ -3032,3 +3032,26 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
 
 - 在正常公网 DNS 下复验 Gutenberg 和 NSIS 数据保留；决定插件测试资产定位后再上传统一 GitHub Release，
   并从旧版本执行真实在线更新。
+
+## 2026-07-25：完成正式 NSIS 数据保留验收并复查 Gutenberg 网络阻塞
+
+验证：
+
+- 正式统一候选 NSIS 静默安装退出码 0，安装目录包含 `reader.exe` 与 `uninstall.exe`。
+- 安装版成功启动，并在默认 `%APPDATA%\com.lightnovel.reader` 创建真实 `reader.db` 和
+  `library\library.sqlite`。
+- 静默卸载退出码 0；安装目录移除，开始菜单/桌面无残留 LightNovel Reader 快捷方式，Reader 进程为 0。
+- 卸载前后默认应用数据均为 2 个文件；相对路径、长度和 SHA-256 清单完全一致，确认卸载保留用户数据。
+- 主机网络对 Gutenberg OPDS HEAD 请求返回 HTTP 200，但系统 DNS 仍解析为保留测试地址 `198.18.0.4`。
+- `cargo test -p reader runs_gutenberg_search_book_chapter_acquire_flow -- --ignored --nocapture`：
+  失败于“插件 HTTP 禁止访问本机或内网地址”；这是 SSRF 防护对保留地址的预期拒绝，不是搜索/解析断言失败。
+
+结论：
+
+- NSIS 安装/启动/卸载与数据保留公开前验收通过。
+- 不为适配当前 DNS 映射而削弱 SSRF 防护；Gutenberg 搜索、预览、获取仍须在返回真实公网 IP 的网络环境复验。
+- GitHub Release 尚未创建，旧版本真实在线更新仍未验证。
+
+下一步：
+
+- 换用正常公网 DNS 环境完成 Gutenberg 全流程；确定插件资产定位后再发布统一 GitHub Release，并执行旧版本更新。
