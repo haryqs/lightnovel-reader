@@ -1,36 +1,29 @@
 # 下一步任务队列
 
-## 📌 交接留言（2026-07-25，统一 v0.3.1 签名候选已生成）
+## 📌 交接留言（2026-07-26，Gutenberg 公网闭环与统一 RC2 已完成）
 
 当前事实：
 
-- 首次交互式签名构建已确认密码和 updater 私钥可被 Tauri 接受，前端/Rust release 编译通过；随后被可选 MSI
-  打包阻断。WiX 先暴露 `en-US/1252` 无法编码中文的 `LGHT0311`，改为 `zh-CN` 后又暴露本机 Windows Installer
-  服务不可访问导致 ICE01–ICE09 `LGHT0217`。
-- updater 构建脚本现只构建正式主产物 NSIS，提示文本改为 ASCII 以兼容 Windows PowerShell 5。
-  `tauri build --bundles nsis --no-sign` 已通过并生成安装器；Tauri 官方 NSIS 工具已下载缓存。
-- 第二次交互构建确认 NSIS 编译/打包成功，但 bundler 随后因脚本只设置
-  `TAURI_SIGNING_PRIVATE_KEY_PATH` 而误报没有私钥。`tauri build` 实际读取
-  `TAURI_SIGNING_PRIVATE_KEY`；脚本现同时设置两种路径变量并在退出时清理。这不是密码错误。修正后正式
-  NSIS 与 432 字节 `.sig` 已成功生成。
-- 新增 `prepare:plugin-repository-release`：从 zip 内唯一 manifest 生成 unsigned 索引、复制包并计算
-  SHA-256/大小，默认拒绝覆盖。
-- `sign:plugin-repository` 新增 `--expected-public-key-base64`，正式签名前会确认私钥与编译内公钥匹配。
-- 新增 `verify:plugin-repository-release`，只用公钥独立验证候选仓库全部包的哈希、大小、keyId 与 Ed25519 签名。
-- `gutenberg-test@0.1.0` 候选仓库已由 `lnr-plugin-2026-01` 正式私钥签署，下载 URL 指向未来统一
-  `v0.3.1` GitHub Release；产物只在仓库外暂存，尚未上传。
-- 新增 `scripts/build-signed-updater.ps1` 安全提示密码并清理签名环境变量；新增
-  `prepare:updater-release` 从实际 NSIS + `.sig` 生成 `latest.json`，版本必须匹配 Tauri 配置。
-- 统一候选已组装到 `E:\lightnovel-reader-release-staging\v0.3.1-release`，只含五个公开文件：
-  NSIS、`.sig`、`latest.json`、`repository.json` 与 `gutenberg-test.zip`；尚未上传 GitHub。
+- FlClash 已开启 DNS 覆写，并通过 `+.gutenberg.org` fake-IP 排除让系统解析恢复真实公网 IP
+  `152.19.134.47`；SSRF 防护保持不变。
+- 正常公网下旧 `/ebooks/search/` HTML 入口已不返回搜索结果。插件现使用 Gutenberg 官方
+  `/ebooks/search.opds/` Atom feed，按 `.opds` 书目 id 提取作品，并按 `rel=next` 判断分页。
+- 宿主 User-Agent 更新为 `LightNovelReader/0.3.1 source-plugin-host`，附带项目仓库联系地址；
+  继续沿用同域最少 1 秒请求间隔。
+- 新增 Gutenberg OPDS 无网络回归，覆盖搜索、详情、章节和 EPUB 提案；真实公网忽略测试也已完成
+  `search → getBook → getChapter → acquire`，成功定位 `11.epub3.images`。
+- `gutenberg-test` 版本升为 `0.1.1`，跟踪 zip 已重建；正式候选由 `lnr-plugin-2026-01`
+  签名并通过独立公钥复验，SHA-256 为
+  `5ccb02b011143bc685ea9aa1a297c00a2dedb019c4b970aa80bc6c694e0bd2a7`。
+- 新插件候选位于 `E:\lightnovel-reader-release-staging\v0.1.1-plugin-repository`；
+  与既有签名 updater 组装后的五文件统一候选位于
+  `E:\lightnovel-reader-release-staging\v0.3.1-release-rc2`。复制前后 updater 三个文件哈希一致，
+  RC2 插件签名复验通过；均尚未上传 GitHub。
 
 下一步优先级：
 
-1. **Gutenberg 公网复验**：当前主机 HTTPS 请求返回 200，但 FlClash 虚拟网卡 DNS `198.18.0.2`
-   把 `www.gutenberg.org` 映射为 fake-IP `198.18.0.4`；实时插件测试被 SSRF 防护正确拒绝。WLAN DNS
-   `192.168.3.1` 与 DNS-over-HTTPS 均返回真实公网 IP `152.19.134.47`。在 FlClash 为
-   `gutenberg.org` 配置 real-IP/`fake-ip-filter` 或暂时退出其虚拟 DNS 后，复验搜索、预览和获取；
-   不得为适配 fake-IP 直接放宽 SSRF 保留地址限制。
+1. **插件正式定位与发布**：决定保留 `gutenberg-test` 作为预发布验证资产，还是先重命名/调整文案后提升为
+   正式来源。决定后只发布最终候选，不要同时上传旧 `0.1.0` 资产。
 2. **真实在线更新**：NSIS 安装/启动/卸载及数据保留已通过；GitHub Release 尚未创建，因此旧版本的检查、
    下载、安装和重启仍待发布后执行，不要提前宣称在线更新通过。
 3. **MSI 环境后续**：在不阻断 updater 的前提下检查/修复本机 Windows Installer 服务，再单独运行

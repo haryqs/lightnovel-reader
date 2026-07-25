@@ -3,7 +3,7 @@
   "apiVersion": "0.1",
   "id": "gutenberg-test",
   "name": "Project Gutenberg 测试插件",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "E2E 测试插件: 验证 search → getBook → getChapter 全流程。使用 Project Gutenberg 公共领域书籍。",
   "author": "reader 团队",
   "language": "en",

@@ -76,7 +76,10 @@ impl PluginHttpExecutor for ReqwestExecutor {
             .timeout(std::time::Duration::from_millis(plan.timeout_ms))
             .redirect(reqwest::redirect::Policy::none())
             .no_proxy()
-            .user_agent("LightNovelReader/0.1 source-plugin-host")
+            .user_agent(
+                "LightNovelReader/0.3.1 source-plugin-host \
+                 (+https://github.com/haryqs/lightnovel-reader)",
+            )
             .resolve_to_addrs(host, &addresses)
             .build()
             .map_err(|e| format!("HTTP 客户端创建失败: {e}"))?;
@@ -178,13 +181,78 @@ fn is_public_ip(ip: IpAddr) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{is_public_ip, DomainRateLimiter, ReqwestExecutor};
-    use reading_core::plugin_host::AcquireMode;
+    use reading_core::plugin_host::{AcquireMode, HostHttpGetPlan, HostHttpResponse};
     use reading_core::plugin_manifest::parse_manifest_json;
-    use reading_core::plugin_runtime::PluginRuntime;
+    use reading_core::plugin_runtime::{PluginHttpExecutor, PluginRuntime};
+    use std::collections::BTreeMap;
     use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
     use std::path::PathBuf;
     use std::sync::Arc;
     use std::time::{Duration, Instant};
+
+    struct GutenbergFixtureHttp;
+
+    impl PluginHttpExecutor for GutenbergFixtureHttp {
+        fn execute(&self, plan: HostHttpGetPlan) -> Result<HostHttpResponse, String> {
+            let (content_type, body) = if plan.url.contains("/ebooks/search.opds/") {
+                (
+                    "application/atom+xml; charset=UTF-8",
+                    r#"
+                        <feed>
+                          <entry>
+                            <id>https://www.gutenberg.org/ebooks/subjects/search.opds/?query=Alice</id>
+                            <title>Subjects matching Alice</title>
+                          </entry>
+                          <entry>
+                            <id>https://www.gutenberg.org/ebooks/11.opds</id>
+                            <title>Alice's Adventures in Wonderland</title>
+                            <author><name>Carroll, Lewis</name></author>
+                          </entry>
+                          <link rel="next" href="/ebooks/search.opds/?query=Alice&amp;start_index=26"/>
+                        </feed>
+                    "#,
+                )
+            } else if plan.url == "https://www.gutenberg.org/ebooks/11" {
+                (
+                    "text/html; charset=UTF-8",
+                    r#"
+                        <html><body>
+                          <h1>Alice's Adventures in Wonderland</h1>
+                          <table class="bibrec"><tr><th>Author</th><td>Carroll, Lewis</td></tr></table>
+                          <a href="/cache/epub/11/pg11-images.html">Read online</a>
+                          <a href="/ebooks/11.epub3.images">EPUB3</a>
+                        </body></html>
+                    "#,
+                )
+            } else if plan.url == "https://www.gutenberg.org/cache/epub/11/pg11-images.html" {
+                (
+                    "text/html; charset=UTF-8",
+                    r#"<html><body><h1>Chapter I</h1><p>Down the Rabbit-Hole.</p></body></html>"#,
+                )
+            } else {
+                return Err(format!("unexpected Gutenberg fixture URL: {}", plan.url));
+            };
+            Ok(HostHttpResponse {
+                status: 200,
+                headers: BTreeMap::from([("content-type".into(), content_type.into())]),
+                body: body.as_bytes().to_vec(),
+            })
+        }
+    }
+
+    fn gutenberg_runtime(http: Arc<dyn PluginHttpExecutor>) -> PluginRuntime {
+        let manifest = parse_manifest_json(include_str!(
+            "../../plugin-sdk/examples/gutenberg-test/manifest.json"
+        ))
+        .expect("Gutenberg manifest should remain valid");
+        PluginRuntime::new(
+            manifest,
+            include_str!("../../plugin-sdk/examples/gutenberg-test/plugin.js").into(),
+            http,
+            PathBuf::new(),
+            "gutenberg-test".into(),
+        )
+    }
 
     #[test]
     fn rate_limiter_is_shared_per_exact_domain() {
@@ -228,19 +296,36 @@ mod tests {
     }
 
     #[test]
+    fn parses_gutenberg_opds_fixture_without_network() {
+        let runtime = gutenberg_runtime(Arc::new(GutenbergFixtureHttp));
+        let result = runtime
+            .run_test_flow("Alice in Wonderland")
+            .expect("offline Gutenberg plugin flow should pass");
+
+        assert_eq!(result.search.results.len(), 1);
+        assert_eq!(
+            result.search.results[0].url,
+            "https://www.gutenberg.org/ebooks/11"
+        );
+        assert!(result.search.has_more);
+        assert_eq!(result.book.author.as_deref(), Some("Carroll, Lewis"));
+        assert_eq!(result.book.chapters.len(), 1);
+        assert!(result.chapter.html.contains("Down the Rabbit-Hole"));
+
+        let proposal = runtime
+            .acquire(&result.book.url, AcquireMode::CacheForReading)
+            .expect("offline Gutenberg acquire proposal should pass");
+        assert_eq!(
+            proposal.url,
+            "https://www.gutenberg.org/ebooks/11.epub3.images"
+        );
+        assert_eq!(proposal.mime_type.as_deref(), Some("application/epub+zip"));
+    }
+
+    #[test]
     #[ignore = "requires live Project Gutenberg network access"]
     fn runs_gutenberg_search_book_chapter_acquire_flow() {
-        let manifest = parse_manifest_json(include_str!(
-            "../../plugin-sdk/examples/gutenberg-test/manifest.json"
-        ))
-        .expect("Gutenberg manifest should remain valid");
-        let runtime = PluginRuntime::new(
-            manifest,
-            include_str!("../../plugin-sdk/examples/gutenberg-test/plugin.js").into(),
-            Arc::new(ReqwestExecutor::default()),
-            PathBuf::new(),
-            "gutenberg-test".into(),
-        );
+        let runtime = gutenberg_runtime(Arc::new(ReqwestExecutor::default()));
 
         let result = runtime
             .run_test_flow("Alice in Wonderland")

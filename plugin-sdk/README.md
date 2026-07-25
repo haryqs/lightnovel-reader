@@ -38,8 +38,8 @@ my-source/
 
 - `scripts/test-plugin/test-plugin-hello.zip`：无网络的硬编码冒烟插件，用于验证安装和完整
   `search → getBook → getChapter` 调用。修改源码后运行 `node scripts/package-test-plugin.mjs` 重新打包。
-- `examples/gutenberg-test/gutenberg-test.zip`：Project Gutenberg 公共版权真实联网示例。它是人工/忽略的联网
-  E2E，页面结构或网络环境变化时可能需要更新选择器。
+- `examples/gutenberg-test/gutenberg-test.zip`：Project Gutenberg 公共版权真实联网示例。搜索使用官方
+  OPDS Atom feed；离线夹具固定解析契约，人工/忽略的联网 E2E 用于发现源站接口或网络环境变化。
 - 桌面端已安装插件右侧的“测试”按钮会依次调用三个必选方法，并展示结构化结果。
 - 启用插件还会出现在书库“在线来源”下拉框中。正式流程支持分页搜索、书籍/章节详情和纯文本正文预览；
   搜索不会自动入库，用户点“收藏来源”后宿主会重新执行 `getBook`，只把元数据与源站外链写成远程来源记录。

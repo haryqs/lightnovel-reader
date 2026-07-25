@@ -3059,3 +3059,40 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
 下一步：
 
 - 换用正常公网 DNS 环境完成 Gutenberg 全流程；确定插件资产定位后再发布统一 GitHub Release，并执行旧版本更新。
+
+## 2026-07-26：完成 Gutenberg 公网闭环并生成 0.1.1 统一 RC2
+
+事实与修复：
+
+- FlClash 开启 DNS 覆写、保留 `+.gutenberg.org` fake-IP 排除并重启后，
+  `gutenberg.org` 与 `www.gutenberg.org` 均解析到真实公网 IP `152.19.134.47`；
+  SSRF 保留地址拒绝规则未放宽。
+- 首次真实公网测试到达 Gutenberg 后发现旧 `/ebooks/search/` HTML 入口只返回搜索表单，
+  不再返回原 `.booklink` 结果。插件搜索改用 Gutenberg 官方 `/ebooks/search.opds/` Atom feed，
+  只接受 `/ebooks/<id>.opds` 书目条目并按 feed 的 `rel=next` 判断下一页。
+- 新增无网络 OPDS 夹具回归，固定主题条目过滤、作者、详情、章节与 EPUB 获取提案。
+- 宿主 User-Agent 更新为带当前版本和项目仓库联系地址的标识，满足源站识别要求；
+  既有每域最少 1 秒限速、固定 DNS、禁止重定向和 SSRF 防护保持不变。
+- 插件版本升为 `0.1.1` 并重建跟踪 zip。新仓库候选由 `lnr-plugin-2026-01`
+  正式私钥签署，只用公钥独立验收通过。
+- 新候选位于 `E:\lightnovel-reader-release-staging\v0.1.1-plugin-repository`；
+  五文件统一候选位于 `E:\lightnovel-reader-release-staging\v0.3.1-release-rc2`，
+  不包含私钥、密码或 unsigned 索引。updater 三个资产复制前后 SHA-256 一致。
+
+验证：
+
+- `cargo test -p reader parses_gutenberg_opds_fixture_without_network -- --nocapture`：通过。
+- `cargo test -p reader runs_gutenberg_search_book_chapter_acquire_flow -- --ignored --nocapture`：
+  在允许公网访问的环境通过；OPDS 返回 25 个 entry，并成功提出
+  `https://www.gutenberg.org/ebooks/11.epub3.images`。
+- `prepare:plugin-repository-release`：通过；`gutenberg-test@0.1.1` 包 SHA-256 为
+  `5ccb02b011143bc685ea9aa1a297c00a2dedb019c4b970aa80bc6c694e0bd2a7`。
+- `verify:plugin-repository-release`：新插件候选与统一 RC2 均通过，keyId 为
+  `lnr-plugin-2026-01`。
+- `cargo test --workspace`：通过（Tauri 8 passed / 1 个公网测试 ignored，reading-core 149 passed）。
+- `npm.cmd run check:project`、`npm.cmd run check:release-trust` 与 `npm.cmd run build`：通过。
+
+未验证 / 下一步：
+
+- 统一 RC2 尚未上传 GitHub；旧版本真实检查、下载、安装与重启仍未验证。
+- 公开前仍需决定 `gutenberg-test` 是保留为预发布测试资产，还是重命名并调整文案后提升为正式来源。

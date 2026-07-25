@@ -7,28 +7,44 @@ export default {
   async search(query, page) {
     const start = (page - 1) * 25 + 1
     const response = await host.http.get(
-      `${BASE}/ebooks/search/?query=${encodeURIComponent(query)}&start_index=${start}`,
+      `${BASE}/ebooks/search.opds/?query=${encodeURIComponent(query)}&start_index=${start}`,
     )
-    const html = response.text()
-    host.log.info('[gutenberg] search', response.status, html.length)
-    const doc = host.html.parse(html)
+    const feed = response.text()
+    const doc = host.html.parse(feed)
+    const entries = doc.select('entry')
+    host.log.info(
+      '[gutenberg] search',
+      response.status,
+      response.headers['content-type'] || '',
+      feed.length,
+      `entries=${entries.length}`,
+      `html=${doc.select('html').length}`,
+    )
     const results = []
     const seen = {}
 
-    for (const link of doc.select('.booklink a.link, .booklink a')) {
-      const href = link.attr('href') || ''
-      const title = link.selectFirst('.title')?.text || link.text
-      if (!href.includes('/ebooks/') || !title) continue
-      const url = new URL(href, BASE).toString()
+    for (const entry of entries) {
+      const title = entry.selectFirst('title')?.text || ''
+      const id = entry.selectFirst('id')?.text || ''
+      const idMatch = id.match(/\/ebooks\/(\d+)\.opds(?:[?#]|$)/)
+      if (!idMatch || !title) continue
+      const url = `${BASE}/ebooks/${idMatch[1]}`
       if (seen[url]) continue
       seen[url] = true
       results.push({
         url,
         title,
-        author: link.selectFirst('.subtitle')?.text || undefined,
+        author: entry.selectFirst('name')?.text || undefined,
       })
     }
-    return { results, hasMore: results.length >= 25 }
+    let hasMore = false
+    for (const link of doc.select('link')) {
+      if ((link.attr('rel') || '') === 'next') {
+        hasMore = true
+        break
+      }
+    }
+    return { results, hasMore }
   },
 
   async getBook(bookUrl) {
@@ -36,7 +52,7 @@ export default {
     const doc = host.html.parse(response.text())
     const title = doc.selectFirst('h1')?.text || bookUrl
     let author
-    for (const row of doc.select('.bibrec tr')) {
+    for (const row of doc.select('tr')) {
       const heading = row.selectFirst('th')?.text || ''
       if (heading.includes('Author')) author = row.selectFirst('td')?.text || undefined
     }
