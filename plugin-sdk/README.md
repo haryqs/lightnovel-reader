@@ -73,9 +73,17 @@ v0.7 第一版下载/缓存正文只放行 `public_domain` 与 `open_license`；
 先核对 SHA-256，再以 Ed25519 验签，最后进入 `plugin_package` / `plugin_store` 校验与用户确认。
 未配置发布公钥时，unsigned 条目只以明确的人工白名单警告模式加载；任何伪称签名、未知 keyId 或坏签名都会拒绝。
 
-仓库维护者可用 `npm.cmd run sign:plugin-repository -- --repository <repository.json> --package-dir <zip目录>
---private-key <PKCS#8 PEM> --key-id <id> --out <signed.json>` 签署索引内每个 zip。脚本会再次核对 SHA-256/大小，
+仓库维护者先用
+`npm.cmd run prepare:plugin-repository-release -- --package <zip> --base-url <GitHub Release 资产目录>
+--out-dir <仓库外暂存目录> --source-url <源码页>` 从 zip 内真实 manifest 生成 unsigned 索引、复制包并计算
+SHA-256/大小；已有输出默认拒绝覆盖，复跑时须显式 `--force`。再用
+`npm.cmd run sign:plugin-repository -- --repository <repository.unsigned.json> --package-dir <zip目录>
+--private-key <PKCS#8 PEM> --key-id <id> --expected-public-key-base64 <编译内公钥> --out <repository.json>`
+签署索引内每个 zip。签名脚本会再次核对 SHA-256/大小，并在写出前确认私钥与编译内公钥匹配；
 私钥只从外部路径读取且不得进入仓库；输出的 `publicKeyBase64` 才可加入 `src-tauri/src/plugin_trust.rs`。
+上传前再运行
+`npm.cmd run verify:plugin-repository-release -- --repository <repository.json> --package-dir <zip目录>
+--public-key-base64 <编译内公钥> --key-id <id>`，只用公钥独立复核所有包的哈希、大小、keyId 与签名。
 可运行 `npm.cmd run smoke:plugin-repository-signature` 做无需公网/GUI 的发布链回归：脚本生成临时 Ed25519
 密钥与真实 zip，调用正式签名工具，验证原始字节签名、单字节篡改和错误公钥拒绝，并串联 core/Tauri 验签测试。
 临时私钥默认在结束时删除；`--keep-data` 只用于本地诊断，保留目录不得发布。

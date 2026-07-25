@@ -2936,3 +2936,42 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
 
 - 由维护者在仓库外用插件私钥签署首批正式 repository。
 - 在受控环境注入 updater 私钥与密码，构建 `.sig` 并完成旧版本到新版本的真实更新测试。
+
+## 2026-07-25：生成首个正式密钥签名仓库候选并补齐发布工具
+
+变更：
+
+- 新增 `scripts/prepare-plugin-repository-release.mjs`：从 zip 内唯一 manifest 生成 unsigned 索引，
+  复制包并计算 SHA-256/大小，默认拒绝覆盖。
+- `scripts/sign-plugin-repository.mjs` 新增预期公钥参数，拿错私钥时在写出签名索引前失败。
+- 新增 `scripts/verify-plugin-repository-release.mjs`：仅用公钥独立复核包哈希、大小、keyId 和签名。
+- 用仓库外正式私钥签署 `gutenberg-test@0.1.0` 候选，公钥匹配 `lnr-plugin-2026-01`；
+  候选指向未来统一 `v0.3.1` GitHub Release，仅留在仓库外暂存，未上传。
+- 新增 `scripts/build-signed-updater.ps1`，以隐藏输入提示 updater 密码并在退出时清理环境变量/密码缓冲。
+- 新增 `scripts/prepare-updater-release.mjs`，从实际 NSIS 安装器与 `.sig` 生成 Tauri 静态
+  `latest.json`；版本默认读取并强制匹配 Tauri 配置。
+- 更新 SDK 发布说明、发布测试入口、项目记忆和决策记录。
+
+验证：
+
+- 新增/修改 JavaScript 脚本 `node --check`：通过。
+- 发布准备夹具：通过；确认从真实 zip manifest 生成索引、哈希正确且重复输出被拒绝。
+- updater 发布夹具：通过；确认安装器 URL 编码、`.sig` 内容嵌入 `latest.json`。
+- updater 版本漂移门：通过；显式版本与 Tauri `0.3.1` 不一致时在写出前失败。
+- `npm.cmd run smoke:plugin-repository-signature`：通过；新增公钥匹配门与独立公钥验收覆盖，
+  同时通过 reading-core/Tauri 验签测试。
+- 正式候选执行 `verify:plugin-repository-release`：通过，1 个条目使用 `lnr-plugin-2026-01`。
+- `npm.cmd run check:project`、`npm.cmd run check:release-trust` 与 `npm.cmd run build`：通过。
+- `cargo test --workspace`：通过（Tauri 7 passed / 1 个公网测试 ignored，reading-core 149 passed）。
+- `git diff --check`：通过（仅 Windows LF→CRLF 提示）。
+
+未验证 / 阻塞：
+
+- updater 私钥带密码；Codex 未读取密码，正式 `release:build` 尚未运行。
+- 候选尚未在正常公网 DNS 下复验，也未创建或上传 GitHub Release。
+- `gutenberg-test` 仍以测试示例命名；公开前需决定提升为正式来源还是只作为预发布资产。
+
+下一步：
+
+- 维护者在本机运行交互式 updater 构建脚本并输入密码。
+- 生成 `v0.3.1` updater 候选、验收安装/更新链后再公开统一 GitHub Release。

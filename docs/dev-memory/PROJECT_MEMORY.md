@@ -29,8 +29,9 @@
 当前主线是 v0.7 桌面插件来源收口：QuickJS、完整必选方法试跑、正式 `source.*` 来源/书库流程、
 真实离线 Tauri smoke、每域限速、official-free 源站条款确认，以及只允许 `public_domain/open_license`
 EPUB 的 `source.acquire` 本地 asset 获取闭环均已落地。官方仓库 Ed25519 包字节验签与首批正式发布 keyring 已落地，
-官方索引现强制要求 `lnr-plugin-2026-01` 或后续受信 key 的包签名。下一步是签署全部官方仓库包、完成 updater/安装器发布演练，
-并在正常公网 DNS 下复验 Gutenberg。
+官方索引现强制要求 `lnr-plugin-2026-01` 或后续受信 key 的包签名。首个 Gutenberg `0.1.0` 候选仓库已从 zip
+内真实 manifest 生成索引、由正式私钥签署并在仓库外暂存；尚未公开上传。下一步是完成 updater/安装器发布演练，
+并在正常公网 DNS 下复验 Gutenberg 后决定是否把测试示例提升为正式来源。
 
 2026-07-21 起，所有正式分发入口增加发布信任门：官方插件强制验签、插件 Ed25519 公钥 keyring 与 Tauri updater
 公钥必须同时配置，缺一即阻断打包；开发构建保持可用。插件包签名和应用更新签名属于两个独立信任域。
@@ -55,6 +56,10 @@ EPUB 的 `source.acquire` 本地 asset 获取闭环均已落地。官方仓库 E
 
 近期状态：
 
+- 2026-07-25：新增官方插件发布准备/独立验收工具。准备工具从 zip 内唯一 manifest 生成索引并计算
+  SHA-256/大小；签名工具可强制核对私钥对应公钥；验收工具只用编译内公钥复核全部包。
+  首个 `gutenberg-test@0.1.0` 候选已签名并指向未来 `v0.3.1` GitHub Release，当前只在仓库外暂存。
+  同时新增带安全密码提示的 updater 构建脚本与 `latest.json` 生成器；正式 updater 构建仍待维护者交互输入密码。
 - 2026-07-25：维护者在仓库外分别生成插件仓库 Ed25519 私钥与带密码的 Tauri updater 私钥，只提交两套公钥。
   插件 keyring 激活 `lnr-plugin-2026-01` 并开启强制验签；Tauri updater 公钥与 `createUpdaterArtifacts=true` 已配置。
   发布门现同时检查四项：强制插件验签、合法非空插件 keyring、updater 公钥和 updater 签名产物开关。

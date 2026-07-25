@@ -15,6 +15,7 @@ function fail(message) {
 const repositoryPath = resolve(readOption('--repository'))
 const privateKeyPath = resolve(readOption('--private-key'))
 const keyId = readOption('--key-id').trim()
+const expectedPublicKeyBase64 = readOption('--expected-public-key-base64').trim()
 const packageDir = resolve(readOption('--package-dir', dirname(repositoryPath)))
 const outputPath = resolve(readOption('--out', `${repositoryPath}.signed.json`))
 
@@ -38,6 +39,12 @@ try {
 }
 if (privateKey.asymmetricKeyType !== 'ed25519') {
   fail(`private key must be Ed25519, got ${privateKey.asymmetricKeyType || 'unknown'}`)
+}
+
+const publicKeyDer = createPublicKey(privateKey).export({ type: 'spki', format: 'der' })
+const publicKeyBase64 = publicKeyDer.subarray(publicKeyDer.length - 32).toString('base64')
+if (expectedPublicKeyBase64 && publicKeyBase64 !== expectedPublicKeyBase64) {
+  fail('private key does not match --expected-public-key-base64')
 }
 
 for (const entry of repository.entries) {
@@ -65,8 +72,6 @@ for (const entry of repository.entries) {
 }
 
 writeFileSync(outputPath, `${JSON.stringify(repository, null, 2)}\n`, 'utf8')
-const publicKeyDer = createPublicKey(privateKey).export({ type: 'spki', format: 'der' })
-const publicKeyBase64 = publicKeyDer.subarray(publicKeyDer.length - 32).toString('base64')
 console.log('sign-plugin-repository: OK')
 console.log(`sign-plugin-repository: entries=${repository.entries.length}`)
 console.log(`sign-plugin-repository: output=${outputPath}`)

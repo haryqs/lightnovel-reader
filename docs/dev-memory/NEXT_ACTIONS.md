@@ -1,5 +1,28 @@
 # 下一步任务队列
 
+## 📌 交接留言（2026-07-25，首个正式密钥签名候选已生成）
+
+当前事实：
+
+- 新增 `prepare:plugin-repository-release`：从 zip 内唯一 manifest 生成 unsigned 索引、复制包并计算
+  SHA-256/大小，默认拒绝覆盖。
+- `sign:plugin-repository` 新增 `--expected-public-key-base64`，正式签名前会确认私钥与编译内公钥匹配。
+- 新增 `verify:plugin-repository-release`，只用公钥独立验证候选仓库全部包的哈希、大小、keyId 与 Ed25519 签名。
+- `gutenberg-test@0.1.0` 候选仓库已由 `lnr-plugin-2026-01` 正式私钥签署，下载 URL 指向未来统一
+  `v0.3.1` GitHub Release；产物只在仓库外暂存，尚未上传。
+- 新增 `scripts/build-signed-updater.ps1` 安全提示密码并清理签名环境变量；新增
+  `prepare:updater-release` 从实际 NSIS + `.sig` 生成 `latest.json`，版本必须匹配 Tauri 配置。
+
+下一步优先级：
+
+1. **交互式 updater 构建**：维护者运行 `scripts/build-signed-updater.ps1` 并在本机提示中输入 updater
+   私钥密码；检查 NSIS/MSI 及 `.sig`。
+2. **生成统一 v0.3.1 Release 候选**：用 `prepare:updater-release` 生成 `latest.json`，把 updater 产物、
+   `repository.json` 与 `gutenberg-test.zip` 放入同一个 Release 候选，避免插件专用 Release 抢占
+   updater 的 `/releases/latest`。
+3. **公开前验收**：在正常公网 DNS 下复验 Gutenberg 搜索/预览/获取；决定将 `gutenberg-test`
+   提升为正式来源或只作为预发布测试资产。之后才创建 GitHub Release，并从旧版本执行真实更新。
+
 ## 📌 交接留言（2026-07-25，首批正式信任根已激活）
 
 当前事实：

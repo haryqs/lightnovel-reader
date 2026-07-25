@@ -74,6 +74,8 @@ try {
   ])
 
   const { privateKey, publicKey } = generateKeyPairSync('ed25519')
+  const publicKeyDer = publicKey.export({ type: 'spki', format: 'der' })
+  const publicKeyBase64 = publicKeyDer.subarray(publicKeyDer.length - 32).toString('base64')
   writeFileSync(
     privateKeyPath,
     privateKey.export({ type: 'pkcs8', format: 'pem' }),
@@ -90,6 +92,8 @@ try {
     privateKeyPath,
     '--key-id',
     keyId,
+    '--expected-public-key-base64',
+    publicKeyBase64,
     '--out',
     signedRepositoryPath,
   ])
@@ -110,6 +114,17 @@ try {
     verify(null, packageBytes, publicKey, signatureBytes),
     'signature should verify over the exact zip bytes',
   )
+  run(process.execPath, [
+    join(repoRoot, 'scripts', 'verify-plugin-repository-release.mjs'),
+    '--repository',
+    signedRepositoryPath,
+    '--package-dir',
+    workDir,
+    '--public-key-base64',
+    publicKeyBase64,
+    '--key-id',
+    keyId,
+  ])
 
   const tamperedBytes = Buffer.from(packageBytes)
   tamperedBytes[Math.floor(tamperedBytes.length / 2)] ^= 0x01
@@ -141,6 +156,8 @@ try {
         packageSha256,
         checks: [
           'signer output verifies over raw zip bytes',
+          'signing key matches the expected compiled public key',
+          'independent public-key-only release verification passes',
           'one-byte package mutation is rejected',
           'unrelated public key is rejected',
           'reading-core repository signature tests pass',

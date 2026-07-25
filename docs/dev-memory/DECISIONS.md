@@ -839,3 +839,27 @@ Tauri 经 app-wide 每域限速、SSRF/DNS 固定、禁止重定向的同一 HTT
 - unsigned 官方插件索引会被拒绝；首批正式索引必须先签署全部 zip。
 - `release:build` 必须由维护者或 CI 从秘密管理注入 updater 私钥路径与密码。
 - 私钥、密码、秘密目录路径和临时明文均不得写入仓库、日志或发布附件。
+
+## 2026-07-25：插件仓库与应用更新共用应用 Release，不共用签名域
+
+决策：
+
+1. 插件 zip/`repository.json` 与 Windows updater 安装器/`.sig`/`latest.json` 放入同一个版本化
+   GitHub Release；首轮目标为 Tauri 应用版本 `v0.3.1`。
+2. 不创建会成为仓库 latest 的插件专用正式 Release，避免
+   `releases/latest/download/latest.json` 被不含 updater 清单的 Release 截断。
+3. 插件索引必须从包内真实 manifest 生成；签名时强制匹配编译内公钥，上传前再以只读公钥工具独立验收。
+4. updater 版本以 `src-tauri/tauri.conf.json` 为权威；不得误用当前不同步的 npm 包版本。
+
+理由：
+
+- GitHub 的 latest Release 同时是当前 updater 静态端点；插件资产单独成为 latest 会让客户端找不到
+  `latest.json`。
+- 从外部手填 manifest 容易造成索引描述与实际签名包漂移；从 zip 提取可把发布元数据绑定到真实候选。
+- 公钥预期值门可以在签名写出前发现选错私钥；独立验收避免只相信同一个签名过程。
+- 当前 `package.json` 与 Tauri 配置版本不同，正式桌面产物必须跟随 Tauri 应用版本。
+
+后果：
+
+- `v0.3.1` Release 只有在插件仓库、公钥验收、updater `.sig`、`latest.json` 和安装测试同时就绪后才公开。
+- 插件签名与 updater 签名仍使用两套独立私钥；“共用 Release”不代表共用密钥或信任域。
