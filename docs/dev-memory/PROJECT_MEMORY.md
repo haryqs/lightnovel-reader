@@ -30,8 +30,9 @@
 真实离线 Tauri smoke、每域限速、official-free 源站条款确认，以及只允许 `public_domain/open_license`
 EPUB 的 `source.acquire` 本地 asset 获取闭环均已落地。官方仓库 Ed25519 包字节验签与首批正式发布 keyring 已落地，
 官方索引现强制要求 `lnr-plugin-2026-01` 或后续受信 key 的包签名。首个 Gutenberg `0.1.0` 候选仓库已从 zip
-内真实 manifest 生成索引、由正式私钥签署并在仓库外暂存；尚未公开上传。下一步是完成 updater/安装器发布演练，
-并在正常公网 DNS 下复验 Gutenberg 后决定是否把测试示例提升为正式来源。
+内真实 manifest 生成索引、由正式私钥签署并在仓库外暂存；正式 updater NSIS 与 `.sig` 也已生成并组装为统一
+`v0.3.1` 候选，尚未公开上传。下一步是在正常公网 DNS 下复验 Gutenberg、抽检安装/数据保留，并决定是否把测试
+示例提升为正式来源。
 
 2026-07-21 起，所有正式分发入口增加发布信任门：官方插件强制验签、插件 Ed25519 公钥 keyring 与 Tauri updater
 公钥必须同时配置，缺一即阻断打包；开发构建保持可用。插件包签名和应用更新签名属于两个独立信任域。
@@ -63,6 +64,10 @@ EPUB 的 `source.acquire` 本地 asset 获取闭环均已落地。官方仓库 E
 - 2026-07-25：首次 updater 签名演练确认私钥密码有效、release 编译成功，但可选 MSI 暴露两个独立问题：
   WiX 默认 1252 不能编码中文，以及本机 Windows Installer 服务不可访问。WiX 已改为 `zh-CN`；
   updater 主路径收窄为 NSIS，NSIS `--no-sign` 已通过并缓存官方工具，待维护者重新输入密码生成 `.sig`。
+- 2026-07-25：NSIS 交互构建成功后，签名阶段发现 Tauri build 与独立 signer CLI 的环境变量支持不同：
+  build 读取 `TAURI_SIGNING_PRIVATE_KEY`，而原脚本只设置了 signer 支持的
+  `TAURI_SIGNING_PRIVATE_KEY_PATH`，因此误报没有私钥；脚本兼容设置两者后正式构建成功，生成 432 字节
+  `.sig`。NSIS、签名、`latest.json`、正式插件索引与 zip 已合并到仓库外统一候选，尚未上传。
 - 2026-07-25：维护者在仓库外分别生成插件仓库 Ed25519 私钥与带密码的 Tauri updater 私钥，只提交两套公钥。
   插件 keyring 激活 `lnr-plugin-2026-01` 并开启强制验签；Tauri updater 公钥与 `createUpdaterArtifacts=true` 已配置。
   发布门现同时检查四项：强制插件验签、合法非空插件 keyring、updater 公钥和 updater 签名产物开关。

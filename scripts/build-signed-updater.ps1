@@ -20,6 +20,10 @@ try {
         throw 'The updater private-key password must not be empty.'
     }
 
+    # `tauri build` reads TAURI_SIGNING_PRIVATE_KEY, while the standalone
+    # `tauri signer sign` command also supports TAURI_SIGNING_PRIVATE_KEY_PATH.
+    # Keep both set to the same repository-external path for CLI compatibility.
+    $env:TAURI_SIGNING_PRIVATE_KEY = $resolvedPrivateKey
     $env:TAURI_SIGNING_PRIVATE_KEY_PATH = $resolvedPrivateKey
     $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = $plainPassword
     Set-Location -LiteralPath $repoRoot
@@ -30,6 +34,7 @@ try {
     }
 }
 finally {
+    Remove-Item Env:\TAURI_SIGNING_PRIVATE_KEY -ErrorAction SilentlyContinue
     Remove-Item Env:\TAURI_SIGNING_PRIVATE_KEY_PATH -ErrorAction SilentlyContinue
     Remove-Item Env:\TAURI_SIGNING_PRIVATE_KEY_PASSWORD -ErrorAction SilentlyContinue
     $plainPassword = $null

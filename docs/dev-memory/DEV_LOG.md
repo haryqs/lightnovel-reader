@@ -3003,3 +3003,32 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
 
 - 本轮 NSIS 使用 `--no-sign` 诊断，因此尚无正式 `.sig`；维护者需重新运行交互式签名脚本。
 - MSI 仍需修复本机 Windows Installer 服务后复验，但不阻断 updater 主路径。
+
+## 2026-07-25：修正 updater 构建私钥环境变量
+
+事实与修复：
+
+- 维护者再次运行交互式脚本；发布门、前端构建、Rust release 编译和 NSIS 打包均通过，但生成 updater
+  签名时报告已找到公钥、未找到私钥。
+- 根因不是密码错误：独立 `tauri signer sign` 支持 `TAURI_SIGNING_PRIVATE_KEY_PATH`，但
+  `tauri build` 的 bundler 阶段实际读取 `TAURI_SIGNING_PRIVATE_KEY`。
+- `build-signed-updater.ps1` 现把同一个仓库外私钥路径同时注入两个兼容变量，并在成功或失败时同时清理；
+  密码继续只通过隐藏提示进入进程环境，并清理非托管缓冲。
+
+验证：
+
+- `npm.cmd run tauri -- signer sign --help`：确认 signer CLI 同时声明
+  `TAURI_SIGNING_PRIVATE_KEY` 与 `TAURI_SIGNING_PRIVATE_KEY_PATH`。
+- PowerShell 语法解析、`check-arch`、`check-dev-memory`、`check:release-trust` 与
+  `git diff --check`：通过。
+- 修正后的 `build-signed-updater.ps1`：通过；release 前端与 Rust 编译、NSIS 打包和 Tauri updater
+  签名均成功，生成安装器与 432 字节 `.sig`。
+- `prepare:updater-release`：通过；`latest.json` 版本为 `0.3.1`，URL 指向统一 `v0.3.1` Release，
+  内嵌签名与 `.sig` 一致，候选与源安装器/签名哈希一致。
+- `verify:plugin-repository-release`：通过；1 个条目由 `lnr-plugin-2026-01` 验签。
+- 已组装仓库外 `v0.3.1-release` 统一候选，只含五个公开文件，不含私钥、密码或 unsigned 索引。
+
+下一步：
+
+- 在正常公网 DNS 下复验 Gutenberg 和 NSIS 数据保留；决定插件测试资产定位后再上传统一 GitHub Release，
+  并从旧版本执行真实在线更新。

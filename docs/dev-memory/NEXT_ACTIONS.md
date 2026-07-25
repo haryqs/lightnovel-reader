@@ -1,6 +1,6 @@
 # 下一步任务队列
 
-## 📌 交接留言（2026-07-25，首个正式密钥签名候选已生成）
+## 📌 交接留言（2026-07-25，统一 v0.3.1 签名候选已生成）
 
 当前事实：
 
@@ -9,6 +9,10 @@
   服务不可访问导致 ICE01–ICE09 `LGHT0217`。
 - updater 构建脚本现只构建正式主产物 NSIS，提示文本改为 ASCII 以兼容 Windows PowerShell 5。
   `tauri build --bundles nsis --no-sign` 已通过并生成安装器；Tauri 官方 NSIS 工具已下载缓存。
+- 第二次交互构建确认 NSIS 编译/打包成功，但 bundler 随后因脚本只设置
+  `TAURI_SIGNING_PRIVATE_KEY_PATH` 而误报没有私钥。`tauri build` 实际读取
+  `TAURI_SIGNING_PRIVATE_KEY`；脚本现同时设置两种路径变量并在退出时清理。这不是密码错误。修正后正式
+  NSIS 与 432 字节 `.sig` 已成功生成。
 - 新增 `prepare:plugin-repository-release`：从 zip 内唯一 manifest 生成 unsigned 索引、复制包并计算
   SHA-256/大小，默认拒绝覆盖。
 - `sign:plugin-repository` 新增 `--expected-public-key-base64`，正式签名前会确认私钥与编译内公钥匹配。
@@ -17,17 +21,16 @@
   `v0.3.1` GitHub Release；产物只在仓库外暂存，尚未上传。
 - 新增 `scripts/build-signed-updater.ps1` 安全提示密码并清理签名环境变量；新增
   `prepare:updater-release` 从实际 NSIS + `.sig` 生成 `latest.json`，版本必须匹配 Tauri 配置。
+- 统一候选已组装到 `E:\lightnovel-reader-release-staging\v0.3.1-release`，只含五个公开文件：
+  NSIS、`.sig`、`latest.json`、`repository.json` 与 `gutenberg-test.zip`；尚未上传 GitHub。
 
 下一步优先级：
 
-1. **重新执行交互式 updater 构建**：维护者运行 `scripts/build-signed-updater.ps1` 并在本机提示中输入 updater
-   私钥密码；这次只构建已验证通过的 NSIS，检查安装器与 `.sig`。
-2. **生成统一 v0.3.1 Release 候选**：用 `prepare:updater-release` 生成 `latest.json`，把 updater 产物、
-   `repository.json` 与 `gutenberg-test.zip` 放入同一个 Release 候选，避免插件专用 Release 抢占
-   updater 的 `/releases/latest`。
-3. **公开前验收**：在正常公网 DNS 下复验 Gutenberg 搜索/预览/获取；决定将 `gutenberg-test`
+1. **公开前验收**：在正常公网 DNS 下复验 Gutenberg 搜索/预览/获取；决定将 `gutenberg-test`
    提升为正式来源或只作为预发布测试资产。之后才创建 GitHub Release，并从旧版本执行真实更新。
-4. **MSI 环境后续**：在不阻断 updater 的前提下检查/修复本机 Windows Installer 服务，再单独运行
+2. **安装与更新复验**：用当前统一候选抽检 NSIS 安装/卸载保留用户数据；发布后从旧版本执行检查、下载、
+   安装和重启，不要在公开前假称真实在线更新已通过。
+3. **MSI 环境后续**：在不阻断 updater 的前提下检查/修复本机 Windows Installer 服务，再单独运行
    `tauri build --bundles msi --no-sign`；WiX 中文代码页配置已经修复，不得退回 1252。
 
 ## 📌 交接留言（2026-07-25，首批正式信任根已激活）
@@ -44,7 +47,7 @@
 
 1. **签署首批官方仓库**：确定准备发布的插件 zip 与 HTTPS URL，生成最终 SHA-256/大小索引；由维护者在本地调用
    `sign:plugin-repository` 注入私钥路径，输出所有条目都带 `keyId=lnr-plugin-2026-01` 的签名索引。
-2. **首次 updater 发布演练**：在受控构建环境通过 `TAURI_SIGNING_PRIVATE_KEY_PATH` 与
+2. **首次 updater 发布演练**：在受控构建环境通过 `TAURI_SIGNING_PRIVATE_KEY`（值可为私钥路径）与
    `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` 注入秘密，运行 `release:build`，检查 Windows 安装器与 `.sig`，
    生成 GitHub Release `latest.json`，并从旧版本真实执行检查、下载、安装和重启。
 3. **公网与安装复验**：在正常公网 DNS 下完成签名仓库加载/预览/二次下载安装、Gutenberg 获取与阅读；
