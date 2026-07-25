@@ -3042,14 +3042,18 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
   `library\library.sqlite`。
 - 静默卸载退出码 0；安装目录移除，开始菜单/桌面无残留 LightNovel Reader 快捷方式，Reader 进程为 0。
 - 卸载前后默认应用数据均为 2 个文件；相对路径、长度和 SHA-256 清单完全一致，确认卸载保留用户数据。
-- 主机网络对 Gutenberg OPDS HEAD 请求返回 HTTP 200，但系统 DNS 仍解析为保留测试地址 `198.18.0.4`。
+- 主机网络对 Gutenberg OPDS HEAD 请求返回 HTTP 200，但 FlClash 虚拟网卡 DNS `198.18.0.2`
+  把域名解析为 fake-IP `198.18.0.4`。
+- WLAN DNS `192.168.3.1` 与 Google DNS-over-HTTPS 均返回真实公网 IP `152.19.134.47`，确认
+  Gutenberg 本身和上游 DNS 正常，阻塞来自本机 FlClash fake-IP 模式。
 - `cargo test -p reader runs_gutenberg_search_book_chapter_acquire_flow -- --ignored --nocapture`：
   失败于“插件 HTTP 禁止访问本机或内网地址”；这是 SSRF 防护对保留地址的预期拒绝，不是搜索/解析断言失败。
 
 结论：
 
 - NSIS 安装/启动/卸载与数据保留公开前验收通过。
-- 不为适配当前 DNS 映射而削弱 SSRF 防护；Gutenberg 搜索、预览、获取仍须在返回真实公网 IP 的网络环境复验。
+- 不为适配当前 DNS 映射而削弱 SSRF 防护；应在 FlClash 为 `gutenberg.org` 配置
+  real-IP/`fake-ip-filter` 或暂时退出其虚拟 DNS，再复验搜索、预览、获取。
 - GitHub Release 尚未创建，旧版本真实在线更新仍未验证。
 
 下一步：

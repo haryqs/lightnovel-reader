@@ -26,9 +26,11 @@
 
 下一步优先级：
 
-1. **Gutenberg 公网复验**：当前主机 HTTPS 请求返回 200，但系统 DNS 仍把 `www.gutenberg.org` 映射为
-   `198.18.0.4`；实时插件测试被 SSRF 防护正确拒绝。必须换到返回真实公网 IP 的 DNS/网络环境复验
-   搜索、预览和获取，再决定将 `gutenberg-test` 提升为正式来源或只作为预发布测试资产。
+1. **Gutenberg 公网复验**：当前主机 HTTPS 请求返回 200，但 FlClash 虚拟网卡 DNS `198.18.0.2`
+   把 `www.gutenberg.org` 映射为 fake-IP `198.18.0.4`；实时插件测试被 SSRF 防护正确拒绝。WLAN DNS
+   `192.168.3.1` 与 DNS-over-HTTPS 均返回真实公网 IP `152.19.134.47`。在 FlClash 为
+   `gutenberg.org` 配置 real-IP/`fake-ip-filter` 或暂时退出其虚拟 DNS 后，复验搜索、预览和获取；
+   不得为适配 fake-IP 直接放宽 SSRF 保留地址限制。
 2. **真实在线更新**：NSIS 安装/启动/卸载及数据保留已通过；GitHub Release 尚未创建，因此旧版本的检查、
    下载、安装和重启仍待发布后执行，不要提前宣称在线更新通过。
 3. **MSI 环境后续**：在不阻断 updater 的前提下检查/修复本机 Windows Installer 服务，再单独运行
