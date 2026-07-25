@@ -2975,3 +2975,31 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
 
 - 维护者在本机运行交互式 updater 构建脚本并输入密码。
 - 生成 `v0.3.1` updater 候选、验收安装/更新链后再公开统一 GitHub Release。
+
+## 2026-07-25：定位首次 updater 构建失败并收窄 NSIS 主路径
+
+事实与修复：
+
+- 维护者运行 `build-signed-updater.ps1`；Tauri 接受了 updater 私钥密码，发布信任门、前端构建与 Rust
+  release 编译均通过。
+- 首次失败发生在 WiX `light.exe`。手动详细复现得到 `LGHT0311`：默认 `en-US / code page 1252`
+  无法编码文件关联中文；`tauri.conf.json` 已新增 `windows.wix.language = "zh-CN"`。
+- 中文代码页生效后，手动 linker 显示本机 Windows Installer 服务不可访问，ICE01–ICE09 报
+  `LGHT0217`；这是 MSI 环境问题，不是密钥或应用编译问题。
+- 新增 `release:build:updater`，只构建 NSIS；交互式脚本改用该入口，并把提示/错误文本改为 ASCII，
+  避免 Windows PowerShell 5 对无 BOM UTF-8 脚本显示乱码。
+
+验证：
+
+- `npm.cmd run tauri -- build --bundles msi --no-sign`：WiX 中文文件名已生成，1252 错误消失；
+  仍被本机 Windows Installer 服务的 ICE 验证阻断。
+- `npm.cmd run tauri -- build --bundles nsis --no-sign`：通过，生成
+  `target/release/bundle/nsis/LightNovel Reader_0.3.1_x64-setup.exe`。
+- Tauri 官方 NSIS 3.11 与 `nsis_tauri_utils` 已下载并完成哈希校验。
+- `npm.cmd run check:project` 与 `npm.cmd run build`：通过。
+- `cargo test --workspace`：通过（Tauri 7 passed / 1 个公网测试 ignored，reading-core 149 passed）。
+
+未验证 / 阻塞：
+
+- 本轮 NSIS 使用 `--no-sign` 诊断，因此尚无正式 `.sig`；维护者需重新运行交互式签名脚本。
+- MSI 仍需修复本机 Windows Installer 服务后复验，但不阻断 updater 主路径。

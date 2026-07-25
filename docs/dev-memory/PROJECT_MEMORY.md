@@ -60,6 +60,9 @@ EPUB 的 `source.acquire` 本地 asset 获取闭环均已落地。官方仓库 E
   SHA-256/大小；签名工具可强制核对私钥对应公钥；验收工具只用编译内公钥复核全部包。
   首个 `gutenberg-test@0.1.0` 候选已签名并指向未来 `v0.3.1` GitHub Release，当前只在仓库外暂存。
   同时新增带安全密码提示的 updater 构建脚本与 `latest.json` 生成器；正式 updater 构建仍待维护者交互输入密码。
+- 2026-07-25：首次 updater 签名演练确认私钥密码有效、release 编译成功，但可选 MSI 暴露两个独立问题：
+  WiX 默认 1252 不能编码中文，以及本机 Windows Installer 服务不可访问。WiX 已改为 `zh-CN`；
+  updater 主路径收窄为 NSIS，NSIS `--no-sign` 已通过并缓存官方工具，待维护者重新输入密码生成 `.sig`。
 - 2026-07-25：维护者在仓库外分别生成插件仓库 Ed25519 私钥与带密码的 Tauri updater 私钥，只提交两套公钥。
   插件 keyring 激活 `lnr-plugin-2026-01` 并开启强制验签；Tauri updater 公钥与 `createUpdaterArtifacts=true` 已配置。
   发布门现同时检查四项：强制插件验签、合法非空插件 keyring、updater 公钥和 updater 签名产物开关。

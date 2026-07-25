@@ -4,6 +4,11 @@
 
 当前事实：
 
+- 首次交互式签名构建已确认密码和 updater 私钥可被 Tauri 接受，前端/Rust release 编译通过；随后被可选 MSI
+  打包阻断。WiX 先暴露 `en-US/1252` 无法编码中文的 `LGHT0311`，改为 `zh-CN` 后又暴露本机 Windows Installer
+  服务不可访问导致 ICE01–ICE09 `LGHT0217`。
+- updater 构建脚本现只构建正式主产物 NSIS，提示文本改为 ASCII 以兼容 Windows PowerShell 5。
+  `tauri build --bundles nsis --no-sign` 已通过并生成安装器；Tauri 官方 NSIS 工具已下载缓存。
 - 新增 `prepare:plugin-repository-release`：从 zip 内唯一 manifest 生成 unsigned 索引、复制包并计算
   SHA-256/大小，默认拒绝覆盖。
 - `sign:plugin-repository` 新增 `--expected-public-key-base64`，正式签名前会确认私钥与编译内公钥匹配。
@@ -15,13 +20,15 @@
 
 下一步优先级：
 
-1. **交互式 updater 构建**：维护者运行 `scripts/build-signed-updater.ps1` 并在本机提示中输入 updater
-   私钥密码；检查 NSIS/MSI 及 `.sig`。
+1. **重新执行交互式 updater 构建**：维护者运行 `scripts/build-signed-updater.ps1` 并在本机提示中输入 updater
+   私钥密码；这次只构建已验证通过的 NSIS，检查安装器与 `.sig`。
 2. **生成统一 v0.3.1 Release 候选**：用 `prepare:updater-release` 生成 `latest.json`，把 updater 产物、
    `repository.json` 与 `gutenberg-test.zip` 放入同一个 Release 候选，避免插件专用 Release 抢占
    updater 的 `/releases/latest`。
 3. **公开前验收**：在正常公网 DNS 下复验 Gutenberg 搜索/预览/获取；决定将 `gutenberg-test`
    提升为正式来源或只作为预发布测试资产。之后才创建 GitHub Release，并从旧版本执行真实更新。
+4. **MSI 环境后续**：在不阻断 updater 的前提下检查/修复本机 Windows Installer 服务，再单独运行
+   `tauri build --bundles msi --no-sign`；WiX 中文代码页配置已经修复，不得退回 1252。
 
 ## 📌 交接留言（2026-07-25，首批正式信任根已激活）
 

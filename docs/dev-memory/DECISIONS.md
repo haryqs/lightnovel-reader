@@ -863,3 +863,23 @@ Tauri 经 app-wide 每域限速、SSRF/DNS 固定、禁止重定向的同一 HTT
 
 - `v0.3.1` Release 只有在插件仓库、公钥验收、updater `.sig`、`latest.json` 和安装测试同时就绪后才公开。
 - 插件签名与 updater 签名仍使用两套独立私钥；“共用 Release”不代表共用密钥或信任域。
+
+## 2026-07-25：Windows updater 以 NSIS 为唯一主产物，MSI 不阻断更新发布
+
+决策：
+
+1. Windows updater 的 `latest.json` 固定引用 NSIS 安装器及其 `.sig`；交互式签名脚本只构建 NSIS。
+2. MSI 保留为可选辅助格式，单独诊断和验收，不参与 updater 发布是否可继续的判定。
+3. WiX 语言固定为 `zh-CN`，使中文文件关联元数据使用可编码的代码页。
+
+理由：
+
+- Tauri updater 同一平台只需要一个有效安装器 URL/签名；NSIS 已配置 current-user + passive，符合当前更新路径。
+- 首次演练中，MSI 的默认 1252 代码页先触发 `LGHT0311`；修复后本机 Windows Installer 服务又使
+  ICE01–ICE09 触发 `LGHT0217`。两者都不应阻断已经可工作的 NSIS。
+- NSIS 无签名真实构建已通过，且其 Tauri 官方打包工具已完成下载与哈希校验。
+
+后果：
+
+- `release:build:updater` 成为 Windows updater 的签名构建入口；`release:build` 仍可用于环境完整时同时构建两种格式。
+- MSI 发布前需修复本机 Windows Installer 服务并单独复验；不能把 `--no-sign` 产物当作正式 updater。

@@ -13,20 +13,20 @@ $passwordPointer = [IntPtr]::Zero
 $plainPassword = $null
 
 try {
-    $securePassword = Read-Host '请输入 Tauri updater 私钥密码（输入不会显示）' -AsSecureString
+    $securePassword = Read-Host 'Enter the Tauri updater private-key password (input is hidden)' -AsSecureString
     $passwordPointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($securePassword)
     $plainPassword = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($passwordPointer)
     if ([string]::IsNullOrEmpty($plainPassword)) {
-        throw 'updater 私钥密码不能为空'
+        throw 'The updater private-key password must not be empty.'
     }
 
     $env:TAURI_SIGNING_PRIVATE_KEY_PATH = $resolvedPrivateKey
     $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = $plainPassword
     Set-Location -LiteralPath $repoRoot
 
-    & npm.cmd run release:build
+    & npm.cmd run release:build:updater
     if ($LASTEXITCODE -ne 0) {
-        throw "Tauri release build 失败，退出码：$LASTEXITCODE"
+        throw "Tauri signed NSIS build failed with exit code $LASTEXITCODE."
     }
 }
 finally {
