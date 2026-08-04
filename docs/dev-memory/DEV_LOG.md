@@ -3127,4 +3127,5 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
 
 待验证 / 下一步：
 
-- 当前分支尚未推送/合并，GitHub Release 尚未创建；旧版本真实在线更新仍未验证。
+- `codex/v0.7-release-hardening` 已推送，GitHub PR #45 已创建；GitHub 显示与 `main`
+  无冲突且可自动合并。PR 尚未合并，GitHub Release 尚未创建；旧版本真实在线更新仍未验证。

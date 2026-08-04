@@ -19,10 +19,11 @@
 - 插件候选位于 `E:\lightnovel-reader-release-staging\v0.1.0-gutenberg`；与既有签名 updater
   组装后的五文件统一候选位于 `E:\lightnovel-reader-release-staging\v0.3.1-release-rc3`。
   复制前后 updater 三个文件哈希一致，RC3 插件签名复验通过；尚未上传 GitHub。
+- `codex/v0.7-release-hardening` 已推送到 origin；GitHub PR #45 已创建，当前无冲突且可自动合并。
 
 下一步优先级：
 
-1. **审阅与统一发布**：将当前 `codex/v0.7-release-hardening` 分支推送、审阅并合并到 `main`；
+1. **审阅与统一发布**：审阅 GitHub PR #45 并合并到 `main`；
    然后只上传 RC3 五个公开资产，不要上传 RC/RC2 中的 `gutenberg-test` 旧资产。
 2. **真实在线更新**：NSIS 安装/启动/卸载及数据保留已通过；GitHub Release 尚未创建，因此旧版本的检查、
    下载、安装和重启仍待发布后执行，不要提前宣称在线更新通过。
