@@ -902,3 +902,23 @@ Tauri 经 app-wide 每域限速、SSRF/DNS 固定、禁止重定向的同一 HTT
 
 - 所有当前文档、运行时夹具、包名和发布索引统一使用 `gutenberg`。
 - 旧 `gutenberg-test` 候选仅保留于本机仓库外作审计，不进入 GitHub Release。
+
+## 2026-08-04：updater 资产名必须在生成 latest.json 时对齐 GitHub
+
+决策：
+
+1. Windows updater 公开资产名只使用字母、数字、点、下划线和连字号，不保留 Tauri 默认文件名中的空格。
+2. `prepare:updater-release` 默认把安装器名中的空格替换为点号，复制安装器和 `.sig`，
+   并用同一最终名生成 `latest.json` URL；`--asset-name` 可显式覆盖，但仍必须通过安全文件名校验。
+3. 草稿上传后必须以 GitHub 返回的资产名、大小和 SHA-256 再与本地候选逐项比对。
+
+理由：
+
+- GitHub 实际上传时将 `LightNovel Reader_...exe` 规范化为 `LightNovel.Reader_...exe`，
+  而原 `latest.json` 仍指向带空格 URL，若公开将导致自动更新 404。
+- 签名覆盖安装器字节而不是资产名，因此重命名不需要重新签名，但 URL 必须重新生成。
+
+后果：
+
+- 增加 `test:prepare-updater-release`，固定“原始名带空格 → 输出名与 URL 使用点号”的回归。
+- 首次公开候选升级为 RC5；草稿 Release 只保留 GitHub-safe 的五个资产。

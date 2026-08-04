@@ -28,6 +28,7 @@
     "sign:plugin-repository": "node scripts/sign-plugin-repository.mjs",
     "verify:plugin-repository-release": "node scripts/verify-plugin-repository-release.mjs",
     "prepare:updater-release": "node scripts/prepare-updater-release.mjs",
+    "test:prepare-updater-release": "node scripts/test-prepare-updater-release.mjs",
     "prepackage:beta": "node scripts/check-release-trust.mjs",
     "package:beta": "powershell -ExecutionPolicy Bypass -File scripts/package-beta.ps1",
     "preinstaller:web": "node scripts/check-release-trust.mjs",

@@ -7,7 +7,7 @@ import {
   readdirSync,
   writeFileSync,
 } from 'node:fs'
-import { basename, join, resolve } from 'node:path'
+import { join, resolve } from 'node:path'
 
 function readOption(name, fallback = '') {
   const index = process.argv.indexOf(name)
@@ -41,6 +41,7 @@ const configPath = resolve(readOption('--config', 'src-tauri/tauri.conf.json'))
 const outDirOption = readOption('--out-dir')
 const baseUrlOption = readOption('--base-url')
 const versionOption = readOption('--version').trim()
+const assetNameOption = readOption('--asset-name').trim()
 const notes = readOption('--notes', '')
 const pubDateOption = readOption('--pub-date')
 const force = hasFlag('--force')
@@ -83,9 +84,16 @@ if (!existsSync(signaturePath)) fail(`NSIS updater signature not found: ${signat
 const signature = readFileSync(signaturePath, 'utf8').trim()
 if (!signature) fail(`NSIS updater signature is empty: ${signaturePath}`)
 
+// GitHub 会把 Release 资产名中的空格规范化为点号。发布前就使用最终名，
+// 避免 latest.json 指向一个实际不存在的带空格 URL。
+const assetName = assetNameOption || installerName.replaceAll(' ', '.')
+if (!/^[0-9A-Za-z._-]+\.exe$/i.test(assetName)) {
+  fail('--asset-name must be a GitHub-safe .exe file name containing only letters, digits, dot, underscore or hyphen')
+}
+
 const outDir = resolve(outDirOption)
-const outputInstaller = join(outDir, installerName)
-const outputSignature = join(outDir, basename(signaturePath))
+const outputInstaller = join(outDir, assetName)
+const outputSignature = join(outDir, `${assetName}.sig`)
 const latestJsonPath = join(outDir, 'latest.json')
 const outputPaths = [outputInstaller, outputSignature, latestJsonPath]
 if (!force && outputPaths.some((path) => existsSync(path))) {
@@ -93,7 +101,7 @@ if (!force && outputPaths.some((path) => existsSync(path))) {
 }
 
 const installerUrl = new URL(
-  encodeURIComponent(installerName),
+  encodeURIComponent(assetName),
   `${baseUrl.toString().replace(/\/+$/, '')}/`,
 )
 const latest = {

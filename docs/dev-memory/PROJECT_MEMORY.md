@@ -32,11 +32,11 @@ EPUB 的 `source.acquire` 本地 asset 获取闭环均已落地。官方仓库 E
 官方索引现强制要求 `lnr-plugin-2026-01` 或后续受信 key 的包签名。FlClash 已为 Gutenberg 排除 fake-IP；
 公网复验随即发现旧 HTML 搜索入口漂移，示例已切换到 Gutenberg 官方 OPDS 搜索并增加离线回归，
 搜索、详情、章节与 EPUB 获取的真实全链路现已通过。首次公开前已将测试身份收口为正式来源
-`gutenberg@0.1.0`，资产名为 `gutenberg.zip`；正式私钥签署与独立公钥验收均通过。它已与既有
-updater NSIS、`.sig`、`latest.json` 组装为仓库外统一 `v0.3.1-release-rc3` 候选，尚未公开上传。
-正式候选的 NSIS 安装、启动、卸载及默认应用数据逐文件保留也已通过。开发分支已推送，
-GitHub PR #45 已建立且无合并冲突；下一步是审阅/合并后创建统一 GitHub Release，
-再执行旧版本真实在线更新。
+`gutenberg@0.1.0`，资产名为 `gutenberg.zip`；正式私钥签署与独立公钥验收均通过。GitHub
+会把 Release 资产名中的空格改为点号，updater 生成器已同步该规则并增加回归；最终五资产
+`v0.3.1-release-rc5` 已逐项验收并上传到不公开的 `v0.3.1` 草稿 Release。
+正式候选的 NSIS 安装、启动、卸载及默认应用数据逐文件保留也已通过。GitHub PR #45 已合并到
+`main`；下一步是人工确认并公开草稿，再执行旧版本真实在线更新。
 
 2026-07-21 起，所有正式分发入口增加发布信任门：官方插件强制验签、插件 Ed25519 公钥 keyring 与 Tauri updater
 公钥必须同时配置，缺一即阻断打包；开发构建保持可用。插件包签名和应用更新签名属于两个独立信任域。
@@ -61,6 +61,9 @@ GitHub PR #45 已建立且无合并冲突；下一步是审阅/合并后创建�
 
 近期状态：
 
+- 2026-08-04：PR #45 已合并。创建 `v0.3.1` 草稿时发现 GitHub 会把 NSIS 资产名空格规范化为点号，
+  导致旧 `latest.json` URL 漂移；生成器现会预先输出 GitHub-safe 文件名并有独立回归。
+  修正后的 RC5 五资产已上传草稿，GitHub 摘要与本机逐项一致，尚未公开。
 - 2026-08-04：公开前将 `gutenberg-test` 测试身份提升为正式 `gutenberg` 来源；
   目录、包名、manifest 文案和运行时夹具已同步，首个公开版本从 `0.1.0` 开始。
   `gutenberg.zip` 已由 `lnr-plugin-2026-01` 签署并组装为统一 `v0.3.1-release-rc3`。

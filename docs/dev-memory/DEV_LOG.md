@@ -3129,3 +3129,32 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
 
 - `codex/v0.7-release-hardening` 已推送，GitHub PR #45 已创建；GitHub 显示与 `main`
   无冲突且可自动合并。PR 尚未合并，GitHub Release 尚未创建；旧版本真实在线更新仍未验证。
+
+## 2026-08-04：修正 GitHub updater 资产名并创建 v0.3.1 草稿
+
+事实与修正：
+
+- PR #45 已合并到 `main`，远端合并提交为 `479fbd8`。
+- 创建首个 `v0.3.1` 草稿 Release 时，GitHub 将带空格的 NSIS 资产名
+  `LightNovel Reader_0.3.1_x64-setup.exe` 规范化为点号名，与 RC3 `latest.json` URL 不一致。
+- 草稿未公开，因此没有用户影响。`prepare-updater-release.mjs` 现会在输出文件和 URL 中预先把空格换为点号，
+  并支持经安全名校验的 `--asset-name`。
+- 新增 `test-prepare-updater-release.mjs` 与 npm 入口，固定安装器、`.sig` 和 `latest.json` URL 的同名规则。
+- 修正后的统一候选为 `E:\lightnovel-reader-release-staging\v0.3.1-release-rc5`；
+  草稿中 RC3 资产已全部替换为 RC5，草稿仍未公开。
+
+验证：
+
+- `npm.cmd run test:prepare-updater-release`：通过。
+- 修正后的 `prepare:updater-release` 直接从原 Tauri NSIS 产物成功生成点号资产名；
+  `latest.json` URL 为 `.../LightNovel.Reader_0.3.1_x64-setup.exe`，内嵌签名与 `.sig` 一致。
+- RC5 `verify:plugin-repository-release`：通过，仍使用 `lnr-plugin-2026-01`。
+- GitHub 草稿为 `isDraft=true`、`targetCommitish=main`；五个资产均为 `uploaded`，
+  名称、大小和 SHA-256 与 RC5 本地文件逐项一致。
+- `npm.cmd run check:project`、`npm.cmd run check:release-trust` 与 `npm.cmd run build`：通过。
+- `cargo test --workspace`：通过（Tauri 8 passed / 1 个公网测试 ignored，reading-core 149 passed）。
+
+待验证 / 下一步：
+
+- 草稿尚未公开；需人工最终确认后发布。
+- 发布后从旧版本验证检查、下载、安装与重启的真实更新链。

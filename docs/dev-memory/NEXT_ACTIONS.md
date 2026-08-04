@@ -1,6 +1,6 @@
 # 下一步任务队列
 
-## 📌 交接留言（2026-08-04，正式 Gutenberg 来源与统一 RC3 已就绪）
+## 📌 交接留言（2026-08-04，v0.3.1 RC5 草稿 Release 已就绪）
 
 当前事实：
 
@@ -16,16 +16,18 @@
   `Project Gutenberg`，首个公开版本为 `0.1.0`，跟踪资产为 `gutenberg.zip`。
 - 正式候选由 `lnr-plugin-2026-01` 签名并通过独立公钥复验，SHA-256 为
   `76f715e85e6360c9a8e0f7ec5bfe5fdaaed26b74221388d4da0d4fc074b0f692`。
-- 插件候选位于 `E:\lightnovel-reader-release-staging\v0.1.0-gutenberg`；与既有签名 updater
-  组装后的五文件统一候选位于 `E:\lightnovel-reader-release-staging\v0.3.1-release-rc3`。
-  复制前后 updater 三个文件哈希一致，RC3 插件签名复验通过；尚未上传 GitHub。
-- `codex/v0.7-release-hardening` 已推送到 origin；GitHub PR #45 已创建，当前无冲突且可自动合并。
+- GitHub 会把 NSIS 资产名中的空格改为点号；`prepare:updater-release` 已固化该规则并增加回归，
+  避免 `latest.json` 指向不存在的带空格资产。
+- 插件候选位于 `E:\lightnovel-reader-release-staging\v0.1.0-gutenberg`；最终五文件统一候选位于
+  `E:\lightnovel-reader-release-staging\v0.3.1-release-rc5`。插件签名、updater URL/签名及五文件哈希均已复验。
+- GitHub PR #45 已合并到 `main`；`v0.3.1` 草稿 Release 已创建，目标为 `main`，
+  五个 RC5 资产状态均为 uploaded，GitHub 返回 SHA-256 与本机逐项一致；草稿尚未公开。
 
 下一步优先级：
 
-1. **审阅与统一发布**：审阅 GitHub PR #45 并合并到 `main`；
-   然后只上传 RC3 五个公开资产，不要上传 RC/RC2 中的 `gutenberg-test` 旧资产。
-2. **真实在线更新**：NSIS 安装/启动/卸载及数据保留已通过；GitHub Release 尚未创建，因此旧版本的检查、
+1. **最终确认与公开**：人工确认草稿标题、说明和五个 RC5 资产后点击发布；
+   不要上传 RC/RC2/RC3 中的旧 `gutenberg-test` 或带空格 updater 资产。
+2. **真实在线更新**：NSIS 安装/启动/卸载及数据保留已通过；Release 尚未公开，因此旧版本的检查、
    下载、安装和重启仍待发布后执行，不要提前宣称在线更新通过。
 3. **MSI 环境后续**：在不阻断 updater 的前提下检查/修复本机 Windows Installer 服务，再单独运行
    `tauri build --bundles msi --no-sign`；WiX 中文代码页配置已经修复，不得退回 1252。
