@@ -1,5 +1,235 @@
 # 开发日志
 
+## 2026-07-20：插件仓库签名发布链离线 smoke
+
+变更：
+
+- Tauri 下载后包校验提取为可单测胶水函数，固定顺序为包大小上限 → SHA-256 → Ed25519；预览和安装仍共同调用
+  同一下载/校验入口。新增 RFC 8032 向量测试，覆盖合法签名、哈希先于签名失败、坏签名和强制模式拒绝 unsigned。
+- 新增 `scripts/smoke-plugin-repository-signature.mjs` / `smoke:plugin-repository-signature`：每次在系统临时目录生成
+  Ed25519 密钥、真实插件 zip 与仓库索引，调用正式 `sign-plugin-repository`，验证原始 zip 签名、单字节篡改和无关公钥拒绝，
+  再串联 reading-core 与 Tauri 定向测试。
+- smoke 临时目录带专用 marker，默认只在确认目标位于系统临时目录且 marker 存在后清理；临时私钥默认随夹具删除。
+  `--keep-data` 仅用于本地诊断，文档明确禁止发布保留目录。
+- 补回已有 WebDriver 仓库生命周期脚本的 `smoke:plugin-repo` npm 入口；离线签名 smoke 与真实窗口 smoke 的覆盖边界已在
+  SDK、README、发布测试文档和限制说明中区分。
+- 同步 PROJECT_MEMORY 与 NEXT_ACTIONS：离线发布链回归已完成，正式密钥/受控 HTTPS 仓库窗口复验仍待外部发布流程。
+
+已验证：
+
+- `cargo test -p reader plugin_repository_command_tests -- --nocapture` 通过：4 passed。
+- `node --check scripts/smoke-plugin-repository-signature.mjs` 通过。
+- `npm.cmd run smoke:plugin-repository-signature` 通过：签名工具、原始字节验签、单字节篡改、错误公钥、
+  reading-core 10 个仓库测试和 Tauri 4 个胶水测试全部通过；临时私钥/夹具已删除。
+- `npm.cmd run tauri -- build --debug --no-bundle` 通过，生成包含本轮改动的 `target/debug/reader.exe`。
+- `npm.cmd run build` 通过：18 modules，WASM 569.10 KiB，PWA 22 个 precache 条目。
+- `cargo test --workspace` 通过：reading-core 149 passed；桌面壳 7 passed / 1 ignored；其余 crate/doc tests 通过。
+- `npm.cmd run check:project` 通过：arch / dev-memory / protocol / wasm 四项守卫全绿。
+- 限定范围 `rustfmt --check`、两个新增/修改 smoke 脚本语法检查与 `git diff --check` 通过；后者仅有 Windows LF/CRLF 提示。
+
+待验证：
+
+- 仍缺带正式 keyring 的受控 HTTPS 仓库，因此本轮不声称真实 Tauri 网络索引加载、预览/安装二次下载已通过。
+- WebDriver 本地包生命周期 smoke 已把包检查/安装失败改为硬失败并实际重跑；旧 149 驱动与 WebView2 150 不匹配，
+  从微软官方临时下载精确匹配的 `150.0.4078.83` 后仍在会话创建后遇到 `not connected to DevTools`。
+  对照运行既有 `smoke:plugin-source` 发生相同断开，判定为当前 Tauri WebDriver/GUI 环境共性阻断；临时驱动已删除。
+- 正式私钥生成、秘密管理、轮换/撤销和强制签名开关需要发布者在独立离线流程中完成。
+
+下一步：
+
+- 获得正式发布密钥授权后，录入公钥/稳定 keyId、签署全部官方包并切换强制签名；随后在真实 HTTPS 环境跑窗口 E2E。
+- 独立继续正常公网 DNS 下的 Gutenberg 获取入库复验，以及便携/NSIS 数据保留检查。
+
+## 2026-07-20：官方插件仓库 Ed25519 原始包验签
+
+变更：
+
+- `reading-core::plugin_repository` 新增编译期可信公钥环校验与 Ed25519 验签；签名对象固定为下载到的原始插件 zip 字节，
+  不是 JSON、哈希文本或解压目录。签名声明必须使用已知 `keyId`，公钥与签名分别严格解码为 32/64 字节。
+- 官方仓库索引加载会校验签名元数据和可信 `keyId`；预览与安装会分别重新下载包，并依次完成 SHA-256 与 Ed25519 验签，
+  不复用上一阶段的临时可信结果。非法签名按 `forbidden` 返回。
+- 桌面壳新增独立 `plugin_trust` 编译期公钥环；仓库不保存私钥。当前尚无正式发布公钥，因此公钥环为空，
+  `REQUIRE_OFFICIAL_PLUGIN_SIGNATURES=false`；未签名条目仅在显式人工白名单模式下允许并显示警告，声明了未知签名的条目仍会被拒绝。
+- 桥接协议为仓库包预览/安装增加可选 `signature` 参数；前端候选项区分“待下载验签”和“未签名 · 人工白名单”，
+  避免把只经过索引形状校验的条目误报为已验签。
+- 新增 `scripts/sign-plugin-repository.mjs` 与 `npm.cmd run sign:plugin-repository`：用离线 PKCS#8 Ed25519 私钥签署原始 zip，
+  校验索引中的 SHA-256/大小，输出带签名索引和供公钥环录入的原始公钥 Base64；脚本不写出私钥。
+- `reading-core` 原生 feature 新增已有锁文件中的 `ring` / `base64` 可选依赖，WASM feature 不携带这两个依赖。
+- 同步仓库 JSON Schema、SDK README、桥接协议、插件契约、开发大纲、决策、工程陷阱、项目记忆与下一步队列。
+
+已验证：
+
+- `cargo test -p reading-core plugin_repository::tests -- --nocapture` 通过：10 passed，覆盖有效签名、篡改包、未知 key、
+  未签名人工模式与强制签名模式。
+- 临时生成 Ed25519 密钥和仓库夹具，运行签名脚本 smoke 通过；临时产物已删除。
+- `cargo check -p reading-core --no-default-features --features wasm` 通过，确认原生验签依赖未进入 WASM 配置。
+- `cargo check -p reader` 与 `npx.cmd tsc --noEmit` 通过。
+- `npm.cmd run build` 通过：18 modules，WASM 569.10 KiB，PWA 22 个 precache 条目。
+- `cargo test --workspace` 通过：reading-core 149 passed；桌面壳 4 passed / 1 ignored；其余 crate/doc tests 通过。
+- `npm.cmd run check:project` 通过：arch / dev-memory / protocol / wasm 四项守卫全绿。
+- `plugin-sdk/repository.schema.json` JSON 解析、签名脚本语法检查、限定范围 `rustfmt --check` 与 `git diff --check` 通过；
+  后者仅有 Windows LF/CRLF 提示。
+
+下一步：
+
+- 在离线环境生成并托管正式 Ed25519 发布私钥，仅把正式公钥和稳定 `keyId` 编入 `plugin_trust`，发布首个已签名官方索引后
+  将 `REQUIRE_OFFICIAL_PLUGIN_SIGNATURES` 切为 `true`。
+- 为签名仓库补真实 Tauri HTTPS 窗口 smoke，覆盖合法签名安装、zip 篡改、未知 key 与预览后安装重新验签。
+- 继续在正常公网 DNS 的 Windows/Tauri 环境复验 Gutenberg 获取入库闭环；不为测试放宽 SSRF 门。
+
+## 2026-07-20：开放资源插件 source.acquire 获取入库闭环
+
+变更：
+
+- QuickJS 运行时开放 SDK 可选 `acquire(remoteId, mode)`，对返回的 `AcquireProposal` 做 DTO、长度、
+  manifest 精确域名与 core 授权裁决；新增越域 URL 和 rights escalation 拒绝测试。
+- 以 additive `source.acquire` / `acquirePluginSourceBook` 接入正式获取：重新执行 `getBook + acquire(cacheForReading)`，
+  只接受 manifest/提案一致的 `public-domain/open-license` 和 `application/epub+zip`。
+- Tauri 复用 app-wide 每域限速、SSRF/DNS 固定、禁止重定向的插件 HTTP 执行器下载 EPUB；非 2xx 返回结构化
+  `httpStatus`，无效 EPUB 返回 `parseError`。下载字节不经过前端 bridge，验证后由 core 写入对象仓库并挂到远程 edition。
+- 插件来源搜索卡片和书籍详情对合法 `acquire` 来源显示“获取并阅读”，获取后复用当前内置/外部阅读偏好打开。
+- Gutenberg 示例新增 `acquire` capability 与 EPUB3 下载提案，并重新打包联网测试 zip；ignored E2E 扩展为
+  `search → getBook → getChapter → acquire proposal`。
+- 同步 README、SDK README、协议文档、插件契约、开发大纲、决策、工程陷阱、项目记忆与下一步队列。
+
+已验证：
+
+- `cargo check -p reader` 通过。
+- `cargo test -p reading-core --features quickjs runs_async_sdk_flow_with_http_html_kv_and_sanitizing -- --nocapture` 通过。
+- `cargo test -p reading-core --features quickjs acquire_rejects_out_of_domain_and_rights_escalation -- --nocapture` 通过。
+- `npx.cmd tsc --noEmit` 通过。
+- `npm.cmd run build` 通过：18 modules，WASM 569.10 KiB，PWA 22 个 precache 条目。
+- `cargo test --workspace` 通过：reading-core 147 passed；桌面壳 4 passed / 1 ignored；其余 crate/doc tests 通过。
+- `npm.cmd run check:project` 通过：arch / dev-memory / protocol / wasm 四项守卫全绿。
+- `git diff --check` 通过（仅 Windows LF/CRLF 提示）。
+
+环境限制：
+
+- 本轮在沙箱内和经批准的沙箱外均实际运行 Gutenberg 联网 E2E，但系统 DNS 都把
+  `www.gutenberg.org` 解析到 `198.18.0.15`；SSRF 门按设计拒绝，因此没有完成真实公网 EPUB 下载/入库窗口复验。
+  未为测试放宽安全策略。
+
+下一步：
+
+- 在正常公网 DNS 的 Windows/Tauri 环境安装 Gutenberg 示例，完成搜索、章节预览、“获取并阅读”、对象仓库落盘和重启回读。
+- 然后处理官方仓库签名验签/人工白名单发布决策，以及便携包和 NSIS 数据保留复验。
+
+## 2026-07-20：真实 Tauri 来源 smoke、每域限速与源站条款门控
+
+变更：
+
+- 新增 `scripts/tauri-plugin-source-smoke.mjs` / `smoke:plugin-source`，在隔离 app data 的真实
+  `reader.exe` 中覆盖插件安装、来源下拉、搜索、详情、纯文本章节预览、显式收藏、来源记录、停用与重启持久化。
+- smoke 发现并修复“搜索框本地防抖刷新覆盖在线/插件结果”的 UI 竞态；在线搜索入口现在会先取消待执行的本地刷新。
+- 插件 HTTP 执行器改为 AppState 共享实例，所有一次性 QuickJS Runtime 共用精确域名调度器；同域请求最短间隔 1 秒，
+  不同域互不阻塞，并统一使用宿主 User-Agent。SSRF/DNS 固定/禁止重定向等既有边界不变。
+- manifest `legal` 新增可选 `termsUrl`；`official-free + HTTP` 必须声明有效 HTTPS 条款地址，并在安装前要求用户勾选确认。
+  安装预览会显示和打开条款；`PluginValidation` 新增 `requiresSourceTermsConfirmation`。
+- 离线测试插件补条款地址并重新打包；桌面 smoke 会显式确认条款。
+
+已验证：
+
+- `npm.cmd run tauri -- build --debug --no-bundle` 通过并生成最新 `target/debug/reader.exe`。
+- `npm.cmd run smoke:plugin-source` 在真实 Tauri 窗口通过完整离线来源闭环；同时验证搜索不落库、收藏不获取正文。
+- `cargo test -p reading-core` 通过（143 passed）；`cargo test -p reader plugin_executor::tests` 通过（3 passed / 1 ignored）。
+- `npx.cmd tsc --noEmit` 与新增 smoke 脚本语法检查通过。
+
+环境限制：
+
+- Gutenberg ignored E2E 已再次实际运行，但当前环境仍把 `www.gutenberg.org` 解析到保留地址，按 SSRF 策略预期拒绝；
+  未放宽安全边界，仍需正常公网 DNS 的 Windows/Tauri 环境完成最终复验。
+
+下一步：
+
+- 为 `public_domain/open_license` 设计插件 acquire 提案到本地 asset 的合法获取闭环；
+  `official_free/user_declared` 继续只允许外链/临时预览，不因收藏自动缓存。
+
+## 2026-07-20：干净检出 WASM 构建修复与正式插件来源流程
+
+变更：
+
+- 安装并验证 `wasm32-unknown-unknown` 与锁文件匹配的 `wasm-bindgen-cli 0.2.122`，重新生成并跟踪
+  `src/worker/reading-core-wasm/` 下的 JS、类型声明与约 569 KiB WASM 二进制。
+- 新增跨平台 `scripts/build-reading-core-wasm.mjs`：从 `Cargo.lock` 读取绑定版本，检查 Rust target/CLI，
+  编译 `reading-core --no-default-features --features wasm` 后生成浏览器绑定；新增 `check-wasm-artifacts.mjs` 验证文件、WASM 文件头和必要导出。
+- `package.json` 新增 `build:wasm` / `check:wasm`，并把产物守卫接入 `check:project` 与生产构建。
+- 新增正式 `source.list/search/getBook/getChapter/collect` 桥接，不改变 `plugin.testFlow` 的诊断语义。
+  Tauri 统一装载已启用插件并在阻塞线程运行 QuickJS；`source.collect` 会重新执行 `getBook` 后再进入 core。
+- 新增 `reading-core::plugin_source`：把用户显式收藏的插件书籍幂等映射为
+  `source(kind=plugin) + series/volume/edition + source_record`。稳定键由插件 id + 规范书籍 URL 哈希派生；
+  搜索不自动落库，收藏不自动下载/缓存正文，卸载插件也不删除已有来源记录。
+- QuickJS 返回值校验收紧：书籍/章节/封面 URL 必须属于 manifest 精确域名；单页最多 200 个搜索结果、
+  一本最多 20,000 章，并限制 URL、标题与简介长度。章节 HTML 仍先经 core 清洗。
+- 书库在线来源下拉框会动态加入启用插件，支持分页搜索、详情、章节列表、纯文本正文预览、源站打开和显式收藏。
+  章节 UI 不把插件 HTML 直接注入主文档，也不加载插件返回的远程资源。
+- 修正离线 `scripts/test-plugin` manifest 的 `apiVersion`/capability，重新打包 zip，并新增正式
+  `search/getBook/getChapter` 确定性测试与收藏/幂等/授权映射/越界 URL 测试。
+- 同步 README、AGENTS、桥接协议、插件契约、开发大纲、决策、工程陷阱、项目记忆和下一步队列。
+
+已验证：
+
+- `npm.cmd run build:wasm` 通过：`reading-core` WASM release 编译与 wasm-bindgen 生成成功。
+- `npm.cmd run check:wasm` 通过。
+- `cargo check -p reader` 通过，Tauri 已真实编译新增 source commands 与 QuickJS feature。
+- `cargo test --workspace` 通过：`reading-core` 145 passed；桌面壳 3 passed / 1 ignored；其余 crate/doc tests 通过。
+- `npx.cmd tsc --noEmit` 通过。
+- `npm.cmd run build` 通过：18 modules，WASM 569.10 KiB，PWA 22 个 precache 条目。
+- `npm.cmd run check:project` 通过：check-arch / check-dev-memory / check-protocol-freeze / check-wasm-artifacts 全绿。
+- `git diff --check` 通过（仅 Windows LF/CRLF 提示）。
+
+未完成的验证：
+
+- 尚未在真实 Tauri 窗口安装 `scripts/test-plugin/test-plugin-hello.zip`，人工走完来源下拉搜索、章节预览、收藏、停用与重启流程。
+- Gutenberg 公网 E2E 仍受当前环境 fake-IP DNS 阻断；需在正常公网 DNS 环境复验，不能为测试放宽内网防护。
+
+下一步：
+
+- 先跑真实 Tauri 离线正式来源 smoke，再跑正常公网 Gutenberg 流程。
+- 补每域限速和来源 ToS/用户确认门控，再考虑任何 `official-free + acquire`。
+- acquire 门完成后，只为 `public_domain/open_license` 设计插件正文缓存为本地 asset 的新增流程。
+
+## 2026-07-20：v0.7 QuickJS 契约对齐、沙箱收口与完整试跑
+
+变更：
+
+- 开工时执行 `git fetch --all --prune`，确认本地 `main` 与 `origin/main` 同为 `a03103c`，GitHub 无新提交。
+- Tauri 对 `reading-core` 启用 `quickjs` feature，将先前未被桌面构建覆盖的 runtime 路径纳入真实编译。
+- 重整 `plugin_runtime`：支持 SDK `export default`、Promise 形状、`search(query, page)` /
+  `getBook(bookUrl)` / `getChapter(chapterUrl)` 标量参数、`HttpResponse.text()`、`host.html`、持久化 KV、
+  字符集解码、可读 JS 异常堆栈、DTO 校验和章节 HTML 安全清洗。
+- `PluginHttpExecutor` 改为返回状态/响应头/原始字节，Tauri reqwest 实现按计划头和超时执行；
+  禁止自动重定向，拒绝本机/内网/保留地址，并用已校验的 DNS 结果固定连接，防止重定向和 DNS rebinding 绕过域名门。
+- 新增 64 MiB QuickJS 堆、25 秒截止时间、8 MiB HTTP/HTML/JSON 上限和 4 KiB 日志上限；HTTP 超时会受当次 Runtime 剩余时间约束。
+- 桥接层新增 `PluginTestFlowResult` 和 `testPluginFlow`；Tauri command 改为 `spawn_blocking` 中自动跑完三个必选方法，
+  插件面板显示完整结果。Web 壳显式返回不支持。
+- 测试插件和 Gutenberg 示例均改为正式 SDK 写法并重新打包；Gutenberg 阅读链接同时兼容当前 `/cache/epub/...html` 和旧 `/files/...html` 形状。
+- 同步 SDK README、插件契约/运行时方案、桥接协议、项目记忆、开发大纲、决策日志和下一步队列。
+
+已验证：
+
+- `cargo check -p reading-core --features quickjs` 通过。
+- `cargo check -p reader` 通过。
+- `cargo test -p reading-core --features quickjs` 通过（138 passed），含确定性 `search → getBook → getChapter` 夹具。
+- `cargo test --workspace` 通过：`reading-core` 138 passed，桌面壳 3 passed / 1 ignored，其余 crate/doc tests 通过。
+- `npm.cmd run check:project` 通过：check-arch / check-dev-memory / check-protocol-freeze 全绿。
+- 临时补上缺失 WASM 模块的 `.d.ts` 后，`npx.cmd tsc --noEmit` 通过；临时声明已删除，本轮 TS 协议/桥接改动无类型错误。
+- `git diff --check` 通过（仅 Windows LF/CRLF 提示）。
+- Gutenberg ignored 联网 E2E 已实际运行，当前 Codex DNS 将 `www.gutenberg.org` 映射为保留网段 `198.18.0.15`，
+  因新的内网防护被预期拒绝；未为通过环境特例而放宽沙箱。
+
+未完成的验证：
+
+- `npm.cmd run build` 的 check-arch/check-protocol 已通过，但 TypeScript 在主分支既有的
+  `src/worker/reading-core-wasm/reading_core.js` 缺失处停止。当前检出同时缺 wasm32 target 与 wasm-pack/wasm-bindgen CLI；
+  本轮未联网安装全局构建工具，也未伪造 WASM 产物。
+
+下一步：
+
+- 在正常公网 DNS 的真实 Tauri 窗口安装 `plugin-sdk/examples/gutenberg-test/gutenberg-test.zip` 并点“测试”复验。
+- 先补齐可重复的 reading-core WASM 构建/生成流程，恢复干净检出的 `npm.cmd run build`。
+- 新增正式 `source.*` 消息/UI，把插件搜索结果转成可收藏的来源记录；不改 `plugin.testFlow` 的诊断语义。
+- 在任何 `official-free + acquire` 放行前补每域限速和源站 ToS 门控。
+
 ## 2026-06-23：v0.7 官方插件仓库下载校验安装链路
 
 变更：
@@ -2647,3 +2877,255 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
 
 - Tauri应用中安装test-plugin-hello.zip→点测试按钮验证
 - 写自动化集成测试调plugin_test_run
+
+## 2026-07-21：增加正式发布信任门并评估嵌入式 WDIO
+
+变更：
+
+- 新增 `scripts/check-release-trust.mjs` 与 `scripts/test-release-trust.mjs`，检查官方插件强制验签、Ed25519 公钥 keyring 和 Tauri updater 公钥。
+- `package:beta`、`installer:web` 的 npm pre-hook 及 `release:build` 接入门禁；开发构建不受影响。
+- 建立 v0.7 检查点提交 `8a8f83f`。
+
+验证：
+
+- `npm.cmd run test:release-trust`：通过。
+- 当前仓库 `npm.cmd run check:release-trust`：按设计阻断三项未配置状态。
+- `cargo check -p reader`：通过。
+- `cargo test --workspace`：通过（Tauri 7 passed / 1 个公网测试 ignored，reading-core 149 passed）。
+- `npm.cmd run build` 与 `npm.cmd run check:project`：通过。
+- WDIO embedded spike 完成依赖、Rust 插件和真实会话调研，但因上游 `native-utils` 导出缺失、Windows EdgeDriver
+  版本解析错误及嵌入会话不稳定未达到提交门槛；相关实验代码和依赖已撤回。
+
+未验证 / 阻塞：
+
+- 正式插件发布公钥、updater 公钥及对应私钥秘密管理尚未由维护者配置，因此正式分发门禁保持红灯。
+- 真实 HTTPS 官方仓库、正常公网 DNS 下 Gutenberg 以及最终安装/更新演练仍待具备外部条件后执行。
+
+下一步：
+
+- 维护者安全生成并分别管理插件发布密钥与 updater 密钥，只把公钥注入仓库。
+- 签署官方仓库全部 zip、开启强制验签，跑受控 HTTPS 与正式分发演练。
+
+## 2026-07-25：接入首批插件与 updater 正式公钥
+
+变更：
+
+- `src-tauri/src/plugin_trust.rs` 新增 `lnr-plugin-2026-01` Ed25519 公钥，并开启官方仓库强制验签。
+- `src-tauri/tauri.conf.json` 接入独立 updater 公钥，启用 `bundle.createUpdaterArtifacts=true`。
+- 发布门新增 updater 产物开关检查；单测覆盖四项未配置状态。
+- 同步 AGENTS、项目长期记忆、决策、下一步队列与发布说明。
+
+验证：
+
+- `node --check scripts/check-release-trust.mjs`：通过。
+- `node --check scripts/test-release-trust.mjs`：通过。
+- `npm.cmd run test:release-trust`：通过。
+- `npm.cmd run check:release-trust`：通过，识别插件 keyId、updater 公钥和签名产物开关。
+- `cargo check -p reader`：通过。
+- `npm.cmd run build` 与 `npm.cmd run check:project`：通过。
+- `cargo test --workspace`：通过（Tauri 7 passed / 1 个公网测试 ignored，reading-core 149 passed）。
+- `npm.cmd run smoke:plugin-repository-signature`：通过，覆盖原始 zip 签名、单字节篡改、错公钥和 core/Tauri 校验链。
+- `npm.cmd run tauri -- build --debug --no-bundle`：通过，确认 Tauri 接受 updater 产物配置且不需要读取正式私钥即可完成非分发构建。
+
+未验证 / 阻塞：
+
+- Codex 未读取插件/updater 私钥或 updater 密码，因此未执行真实私钥签名和正式 updater release build。
+- 官方仓库最终 zip/URL 尚未确定，真实 HTTPS 签名仓库与 `latest.json` 更新链尚未演练。
+
+下一步：
+
+- 由维护者在仓库外用插件私钥签署首批正式 repository。
+- 在受控环境注入 updater 私钥与密码，构建 `.sig` 并完成旧版本到新版本的真实更新测试。
+
+## 2026-07-25：生成首个正式密钥签名仓库候选并补齐发布工具
+
+变更：
+
+- 新增 `scripts/prepare-plugin-repository-release.mjs`：从 zip 内唯一 manifest 生成 unsigned 索引，
+  复制包并计算 SHA-256/大小，默认拒绝覆盖。
+- `scripts/sign-plugin-repository.mjs` 新增预期公钥参数，拿错私钥时在写出签名索引前失败。
+- 新增 `scripts/verify-plugin-repository-release.mjs`：仅用公钥独立复核包哈希、大小、keyId 和签名。
+- 用仓库外正式私钥签署 `gutenberg-test@0.1.0` 候选，公钥匹配 `lnr-plugin-2026-01`；
+  候选指向未来统一 `v0.3.1` GitHub Release，仅留在仓库外暂存，未上传。
+- 新增 `scripts/build-signed-updater.ps1`，以隐藏输入提示 updater 密码并在退出时清理环境变量/密码缓冲。
+- 新增 `scripts/prepare-updater-release.mjs`，从实际 NSIS 安装器与 `.sig` 生成 Tauri 静态
+  `latest.json`；版本默认读取并强制匹配 Tauri 配置。
+- 更新 SDK 发布说明、发布测试入口、项目记忆和决策记录。
+
+验证：
+
+- 新增/修改 JavaScript 脚本 `node --check`：通过。
+- 发布准备夹具：通过；确认从真实 zip manifest 生成索引、哈希正确且重复输出被拒绝。
+- updater 发布夹具：通过；确认安装器 URL 编码、`.sig` 内容嵌入 `latest.json`。
+- updater 版本漂移门：通过；显式版本与 Tauri `0.3.1` 不一致时在写出前失败。
+- `npm.cmd run smoke:plugin-repository-signature`：通过；新增公钥匹配门与独立公钥验收覆盖，
+  同时通过 reading-core/Tauri 验签测试。
+- 正式候选执行 `verify:plugin-repository-release`：通过，1 个条目使用 `lnr-plugin-2026-01`。
+- `npm.cmd run check:project`、`npm.cmd run check:release-trust` 与 `npm.cmd run build`：通过。
+- `cargo test --workspace`：通过（Tauri 7 passed / 1 个公网测试 ignored，reading-core 149 passed）。
+- `git diff --check`：通过（仅 Windows LF→CRLF 提示）。
+
+未验证 / 阻塞：
+
+- updater 私钥带密码；Codex 未读取密码，正式 `release:build` 尚未运行。
+- 候选尚未在正常公网 DNS 下复验，也未创建或上传 GitHub Release。
+- `gutenberg-test` 仍以测试示例命名；公开前需决定提升为正式来源还是只作为预发布资产。
+
+下一步：
+
+- 维护者在本机运行交互式 updater 构建脚本并输入密码。
+- 生成 `v0.3.1` updater 候选、验收安装/更新链后再公开统一 GitHub Release。
+
+## 2026-07-25：定位首次 updater 构建失败并收窄 NSIS 主路径
+
+事实与修复：
+
+- 维护者运行 `build-signed-updater.ps1`；Tauri 接受了 updater 私钥密码，发布信任门、前端构建与 Rust
+  release 编译均通过。
+- 首次失败发生在 WiX `light.exe`。手动详细复现得到 `LGHT0311`：默认 `en-US / code page 1252`
+  无法编码文件关联中文；`tauri.conf.json` 已新增 `windows.wix.language = "zh-CN"`。
+- 中文代码页生效后，手动 linker 显示本机 Windows Installer 服务不可访问，ICE01–ICE09 报
+  `LGHT0217`；这是 MSI 环境问题，不是密钥或应用编译问题。
+- 新增 `release:build:updater`，只构建 NSIS；交互式脚本改用该入口，并把提示/错误文本改为 ASCII，
+  避免 Windows PowerShell 5 对无 BOM UTF-8 脚本显示乱码。
+
+验证：
+
+- `npm.cmd run tauri -- build --bundles msi --no-sign`：WiX 中文文件名已生成，1252 错误消失；
+  仍被本机 Windows Installer 服务的 ICE 验证阻断。
+- `npm.cmd run tauri -- build --bundles nsis --no-sign`：通过，生成
+  `target/release/bundle/nsis/LightNovel Reader_0.3.1_x64-setup.exe`。
+- Tauri 官方 NSIS 3.11 与 `nsis_tauri_utils` 已下载并完成哈希校验。
+- `npm.cmd run check:project` 与 `npm.cmd run build`：通过。
+- `cargo test --workspace`：通过（Tauri 7 passed / 1 个公网测试 ignored，reading-core 149 passed）。
+
+未验证 / 阻塞：
+
+- 本轮 NSIS 使用 `--no-sign` 诊断，因此尚无正式 `.sig`；维护者需重新运行交互式签名脚本。
+- MSI 仍需修复本机 Windows Installer 服务后复验，但不阻断 updater 主路径。
+
+## 2026-07-25：修正 updater 构建私钥环境变量
+
+事实与修复：
+
+- 维护者再次运行交互式脚本；发布门、前端构建、Rust release 编译和 NSIS 打包均通过，但生成 updater
+  签名时报告已找到公钥、未找到私钥。
+- 根因不是密码错误：独立 `tauri signer sign` 支持 `TAURI_SIGNING_PRIVATE_KEY_PATH`，但
+  `tauri build` 的 bundler 阶段实际读取 `TAURI_SIGNING_PRIVATE_KEY`。
+- `build-signed-updater.ps1` 现把同一个仓库外私钥路径同时注入两个兼容变量，并在成功或失败时同时清理；
+  密码继续只通过隐藏提示进入进程环境，并清理非托管缓冲。
+
+验证：
+
+- `npm.cmd run tauri -- signer sign --help`：确认 signer CLI 同时声明
+  `TAURI_SIGNING_PRIVATE_KEY` 与 `TAURI_SIGNING_PRIVATE_KEY_PATH`。
+- PowerShell 语法解析、`check-arch`、`check-dev-memory`、`check:release-trust` 与
+  `git diff --check`：通过。
+- 修正后的 `build-signed-updater.ps1`：通过；release 前端与 Rust 编译、NSIS 打包和 Tauri updater
+  签名均成功，生成安装器与 432 字节 `.sig`。
+- `prepare:updater-release`：通过；`latest.json` 版本为 `0.3.1`，URL 指向统一 `v0.3.1` Release，
+  内嵌签名与 `.sig` 一致，候选与源安装器/签名哈希一致。
+- `verify:plugin-repository-release`：通过；1 个条目由 `lnr-plugin-2026-01` 验签。
+- 已组装仓库外 `v0.3.1-release` 统一候选，只含五个公开文件，不含私钥、密码或 unsigned 索引。
+
+下一步：
+
+- 在正常公网 DNS 下复验 Gutenberg 和 NSIS 数据保留；决定插件测试资产定位后再上传统一 GitHub Release，
+  并从旧版本执行真实在线更新。
+
+## 2026-07-25：完成正式 NSIS 数据保留验收并复查 Gutenberg 网络阻塞
+
+验证：
+
+- 正式统一候选 NSIS 静默安装退出码 0，安装目录包含 `reader.exe` 与 `uninstall.exe`。
+- 安装版成功启动，并在默认 `%APPDATA%\com.lightnovel.reader` 创建真实 `reader.db` 和
+  `library\library.sqlite`。
+- 静默卸载退出码 0；安装目录移除，开始菜单/桌面无残留 LightNovel Reader 快捷方式，Reader 进程为 0。
+- 卸载前后默认应用数据均为 2 个文件；相对路径、长度和 SHA-256 清单完全一致，确认卸载保留用户数据。
+- 主机网络对 Gutenberg OPDS HEAD 请求返回 HTTP 200，但 FlClash 虚拟网卡 DNS `198.18.0.2`
+  把域名解析为 fake-IP `198.18.0.4`。
+- WLAN DNS `192.168.3.1` 与 Google DNS-over-HTTPS 均返回真实公网 IP `152.19.134.47`，确认
+  Gutenberg 本身和上游 DNS 正常，阻塞来自本机 FlClash fake-IP 模式。
+- `cargo test -p reader runs_gutenberg_search_book_chapter_acquire_flow -- --ignored --nocapture`：
+  失败于“插件 HTTP 禁止访问本机或内网地址”；这是 SSRF 防护对保留地址的预期拒绝，不是搜索/解析断言失败。
+
+结论：
+
+- NSIS 安装/启动/卸载与数据保留公开前验收通过。
+- 不为适配当前 DNS 映射而削弱 SSRF 防护；应在 FlClash 为 `gutenberg.org` 配置
+  real-IP/`fake-ip-filter` 或暂时退出其虚拟 DNS，再复验搜索、预览、获取。
+- GitHub Release 尚未创建，旧版本真实在线更新仍未验证。
+
+下一步：
+
+- 换用正常公网 DNS 环境完成 Gutenberg 全流程；确定插件资产定位后再发布统一 GitHub Release，并执行旧版本更新。
+
+## 2026-07-26：完成 Gutenberg 公网闭环并生成 0.1.1 统一 RC2
+
+事实与修复：
+
+- FlClash 开启 DNS 覆写、保留 `+.gutenberg.org` fake-IP 排除并重启后，
+  `gutenberg.org` 与 `www.gutenberg.org` 均解析到真实公网 IP `152.19.134.47`；
+  SSRF 保留地址拒绝规则未放宽。
+- 首次真实公网测试到达 Gutenberg 后发现旧 `/ebooks/search/` HTML 入口只返回搜索表单，
+  不再返回原 `.booklink` 结果。插件搜索改用 Gutenberg 官方 `/ebooks/search.opds/` Atom feed，
+  只接受 `/ebooks/<id>.opds` 书目条目并按 feed 的 `rel=next` 判断下一页。
+- 新增无网络 OPDS 夹具回归，固定主题条目过滤、作者、详情、章节与 EPUB 获取提案。
+- 宿主 User-Agent 更新为带当前版本和项目仓库联系地址的标识，满足源站识别要求；
+  既有每域最少 1 秒限速、固定 DNS、禁止重定向和 SSRF 防护保持不变。
+- 插件版本升为 `0.1.1` 并重建跟踪 zip。新仓库候选由 `lnr-plugin-2026-01`
+  正式私钥签署，只用公钥独立验收通过。
+- 新候选位于 `E:\lightnovel-reader-release-staging\v0.1.1-plugin-repository`；
+  五文件统一候选位于 `E:\lightnovel-reader-release-staging\v0.3.1-release-rc2`，
+  不包含私钥、密码或 unsigned 索引。updater 三个资产复制前后 SHA-256 一致。
+
+验证：
+
+- `cargo test -p reader parses_gutenberg_opds_fixture_without_network -- --nocapture`：通过。
+- `cargo test -p reader runs_gutenberg_search_book_chapter_acquire_flow -- --ignored --nocapture`：
+  在允许公网访问的环境通过，正式 `gutenberg` 身份成功完成全链路。
+- `cargo test -p reader runs_gutenberg_search_book_chapter_acquire_flow -- --ignored --nocapture`：
+  在允许公网访问的环境通过；OPDS 返回 25 个 entry，并成功提出
+  `https://www.gutenberg.org/ebooks/11.epub3.images`。
+- `prepare:plugin-repository-release`：通过；`gutenberg-test@0.1.1` 包 SHA-256 为
+  `5ccb02b011143bc685ea9aa1a297c00a2dedb019c4b970aa80bc6c694e0bd2a7`。
+- `verify:plugin-repository-release`：新插件候选与统一 RC2 均通过，keyId 为
+  `lnr-plugin-2026-01`。
+- `cargo test --workspace`：通过（Tauri 8 passed / 1 个公网测试 ignored，reading-core 149 passed）。
+- `npm.cmd run check:project`、`npm.cmd run check:release-trust` 与 `npm.cmd run build`：通过。
+
+未验证 / 下一步：
+
+- 统一 RC2 尚未上传 GitHub；旧版本真实检查、下载、安装与重启仍未验证。
+- 公开前仍需决定 `gutenberg-test` 是保留为预发布测试资产，还是重命名并调整文案后提升为正式来源。
+
+## 2026-08-04：将 Gutenberg 插件提升为正式来源并组装 RC3
+
+变更：
+
+- 首次公开前将目录从 `examples/gutenberg-test` 重命名为 `examples/gutenberg`，
+  manifest id 改为 `gutenberg`、显示名改为 `Project Gutenberg`，正式首版定为 `0.1.0`。
+- 描述和合规备注从 E2E 测试文案改为用户可见的公共领域书籍搜索、预览与本地 EPUB 获取说明。
+- 运行时夹具、SDK README 与插件契约文档已同步新路径和稳定 id。
+- 重建 `gutenberg.zip`，从包内真实 manifest 生成候选，由 `lnr-plugin-2026-01`
+  正式私钥签署并只用公钥独立验收。
+- 新插件候选位于 `E:\lightnovel-reader-release-staging\v0.1.0-gutenberg`；
+  与既有 updater 组装后的五文件统一候选位于
+  `E:\lightnovel-reader-release-staging\v0.3.1-release-rc3`，不包含私钥、密码或 unsigned 索引。
+
+已验证：
+
+- `git fetch --all --prune`：远端 `origin/main` 仍为 `a03103c`，无需合并新提交。
+- `cargo test -p reader parses_gutenberg_opds_fixture_without_network -- --nocapture`：通过。
+- 包内只有 `manifest.json` 与 `plugin.js`，身份为 `gutenberg@0.1.0`。
+- 插件包 SHA-256 为 `76f715e85e6360c9a8e0f7ec5bfe5fdaaed26b74221388d4da0d4fc074b0f692`；
+  独立候选与统一 RC3 的 Ed25519 验收均通过。
+- RC3 的 updater 三个文件与已验收源产物 SHA-256 逐一一致；
+  `latest.json` 与 `repository.json` 均指向 `v0.3.1` GitHub Release 的最终资产名。
+- `cargo test --workspace`：通过（Tauri 8 passed / 1 个公网测试 ignored，reading-core 149 passed）。
+- `npm.cmd run check:project`、`npm.cmd run check:release-trust` 与 `npm.cmd run build`：通过。
+
+待验证 / 下一步：
+
+- `codex/v0.7-release-hardening` 已推送，GitHub PR #45 已创建；GitHub 显示与 `main`
+  无冲突且可自动合并。PR 尚未合并，GitHub Release 尚未创建；旧版本真实在线更新仍未验证。

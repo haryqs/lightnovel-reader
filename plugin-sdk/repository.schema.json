@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://reader.invalid/plugin-sdk/repository.schema.json",
   "title": "阅读器官方源插件仓库索引",
-  "description": "官方白名单插件仓库的索引格式。索引只声明合法插件元数据、HTTPS zip 包、SHA-256 与可选签名元数据；不代表自动安装或自动执行。",
+  "description": "官方白名单插件仓库的索引格式。索引声明合法插件元数据、HTTPS zip 包、SHA-256 与可选 Ed25519 包签名；不代表自动安装或自动执行。",
   "type": "object",
   "required": ["schemaVersion", "entries"],
   "additionalProperties": false,
@@ -51,11 +51,15 @@
             "type": "object",
             "required": ["algorithm", "keyId", "value"],
             "additionalProperties": false,
-            "description": "预留签名元数据。当前 core 只校验形状，不做密码学验签。",
+            "description": "插件 zip 原始字节的 Ed25519 签名。keyId 必须属于客户端编译内 keyring；预览和安装每次下载后都会重新验签。",
             "properties": {
               "algorithm": { "type": "string", "enum": ["ed25519"] },
               "keyId": { "type": "string", "minLength": 1, "maxLength": 128 },
-              "value": { "type": "string", "minLength": 1, "maxLength": 512 }
+              "value": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9+/]{86}==$",
+                "description": "64-byte Ed25519 signature encoded as standard padded Base64"
+              }
             }
           }
         }

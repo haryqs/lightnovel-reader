@@ -23,6 +23,7 @@
 - 单本/多本 EPUB 直接导入书库。
 - 插件 SDK 契约草案。
 - 插件 manifest 宿主侧校验骨架（`reading-core::plugin_manifest`）。
+- 桌面 QuickJS 插件运行时与 `search → getBook → getChapter` 完整试跑。
 - 项目记忆与开发流程工具。
 
 当前定位修订（2026-06-21）：
@@ -33,8 +34,10 @@
   缓存/阅读流程。
 - 商业、受保护或未知授权正文只保存元数据与官方入口，不自动抓取、不缓存、不镜像。
 
-当前最重要的事实：**v0.3 本地书库闭环已完成并经自动冒烟（smoke:tauri/p0/p1）验证，
-v0.3.1 加固（迁移框架/解析缓存/安全清洗）+ 安装器已就绪，仅差合并 PR #1 + 一次原生选择器人工点验即可发版。**
+当前最重要的事实：**v0.3-v0.6.5 产品闭环和 v1.0 四阶段架构已落地；当前主线是 v0.7 桌面插件来源收口。
+QuickJS/host API/完整试跑、正式 `source.*` 来源收藏、开放 EPUB 获取、真实离线 Tauri smoke、每域限速与条款门均已落地；
+官方仓库 Ed25519 包验签、正式发布 keyring 与 Gutenberg 公网搜索到获取全链路已通过；
+当前剩余收口是公开统一 GitHub Release 并完成旧版本到 v0.3.1 的真实在线更新。**
 
 ## 总体路线
 
@@ -205,12 +208,18 @@ v0.3 本地书库闭环
 
 - QuickJS 桌面运行时。
 - `plugin-sdk` manifest 校验。
-  - 已起步：`reading-core::plugin_manifest` 解析/校验 manifest、权限/能力去重、精确域名白名单与合规提示。
-  - 已起步：`reading-core::plugin_package` / `plugin_store` 支持 zip 安装包预览、本地写入与已安装插件列表；书库 UI 已有安装前权限确认面板，仍不执行 JS。
+  - 已完成：`reading-core::plugin_manifest` 解析/校验 manifest、权限/能力去重、精确域名白名单与合规提示。
+  - 已完成：`reading-core::plugin_package` / `plugin_store` 支持 zip 安装包预览、本地写入、启停/卸载与已安装列表。
+- SDK `export default` / Promise / DTO 运行时校验。
 - `host.http` 域名白名单。
 - `host.html` 解析能力。
 - `host.kv` 私有存储。
 - 官方白名单示例源。
+- 插件面板完整流程试跑。
+- 正式来源列表、分页搜索、书籍/章节读取与纯文本章节预览。
+- 用户显式收藏插件书籍为远程 `source_record`；搜索不自动落库，不自动获取正文。
+- 可选 `acquire` 只为 `public-domain/open-license` 返回 EPUB 提案；宿主复核后写入 `cached` asset 并可直接阅读。
+- 官方仓库包在 SHA-256 后对 zip 原始字节做 Ed25519 验签；预览/安装分别复验，私钥永不进入客户端仓库。
 
 ### 验收标准
 
@@ -218,6 +227,10 @@ v0.3 本地书库闭环
 - 插件不能访问未声明域名。
 - 插件安装时显示权限与合规信息。
 - 官方示例源可搜索、取书目、取章节。
+- 已启用插件可出现在在线来源选择器；停用后立即退出正式来源列表。
+- 收藏同一插件书籍保持幂等，书架来源面板可看到 `sourceKind=plugin` 记录。
+- 声明 `acquire` 的公共版权/开放授权示例可“获取并阅读”；official-free/user-declared 不能自动缓存正文。
+- 对外启用官方仓库前，正式发布公钥进入编译内 keyring，索引全部签署并开启强制签名模式。
 
 ## v0.8：Android
 

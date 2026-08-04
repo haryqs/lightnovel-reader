@@ -214,6 +214,7 @@ export type PluginLegalKind = 'public-domain' | 'open-license' | 'official-free'
 export interface PluginLegal {
   kind: PluginLegalKind
   note?: string
+  termsUrl?: string
 }
 
 export interface PluginManifest {
@@ -234,6 +235,7 @@ export interface PluginManifest {
 export interface PluginValidation {
   officialRepositoryEligible: boolean
   requiresUserLegalConfirmation: boolean
+  requiresSourceTermsConfirmation: boolean
   warnings: string[]
 }
 
@@ -277,6 +279,55 @@ export interface PluginRepositoryValidation {
 export interface PluginRepositoryCatalog {
   index: PluginRepositoryIndex
   validation: PluginRepositoryValidation
+}
+
+export interface PluginSearchResult {
+  url: string
+  title: string
+  author?: string
+  coverUrl?: string
+  summary?: string
+}
+
+export interface PluginSearchPage {
+  results: PluginSearchResult[]
+  hasMore: boolean
+}
+
+export interface PluginChapterRef {
+  url: string
+  title: string
+  group?: string
+}
+
+export interface PluginBookDetail {
+  url: string
+  title: string
+  author?: string
+  coverUrl?: string
+  description?: string
+  chapters: PluginChapterRef[]
+}
+
+export interface PluginChapterContent {
+  title: string
+  html: string
+}
+
+export interface PluginTestFlowResult {
+  search: PluginSearchPage
+  book: PluginBookDetail
+  chapter: PluginChapterContent
+}
+
+/** source.list 返回的已启用正式来源；不包含安装时间等管理元数据。 */
+export interface PluginSourceDescriptor {
+  id: string
+  name: string
+  description?: string
+  language?: string
+  legal: PluginLegal
+  capabilities: PluginCapability[]
 }
 
 // ---- 桥接接口:每个方法对应协议里的一条消息 ----
@@ -344,10 +395,24 @@ export interface ReaderBridge {
   uninstallPlugin(pluginId: string): Promise<void>
   /** plugin.repository.load — 拉取官方插件仓库索引并由 core 校验；不下载插件包 */
   loadPluginRepositoryIndex(url: string): Promise<PluginRepositoryCatalog>
-  /** plugin.repository.inspectPackage — 下载官方索引包、校验 SHA-256 并返回安装前预览；不执行插件代码 */
-  inspectRepositoryPluginPackage(packageUrl: string, packageSha256: string): Promise<PluginInstallPreview>
-  /** plugin.repository.installPackage — 重新下载官方索引包、校验 SHA-256 后安装；不执行插件代码 */
-  installRepositoryPluginPackage(packageUrl: string, packageSha256: string): Promise<InstalledPlugin>
+  /** plugin.repository.inspectPackage — 下载官方索引包、校验 SHA-256/可选 Ed25519 签名并返回安装前预览 */
+  inspectRepositoryPluginPackage(packageUrl: string, packageSha256: string, signature?: PluginPackageSignature): Promise<PluginInstallPreview>
+  /** plugin.repository.installPackage — 重新下载并复验 SHA-256/可选 Ed25519 签名后安装 */
+  installRepositoryPluginPackage(packageUrl: string, packageSha256: string, signature?: PluginPackageSignature): Promise<InstalledPlugin>
+  /** plugin.testFlow — 在 QuickJS 中依次验证 search → getBook → getChapter */
+  testPluginFlow(pluginId: string, query: string): Promise<PluginTestFlowResult>
+  /** source.list — 列出可用于正式搜索的已启用插件来源 */
+  listPluginSources(): Promise<PluginSourceDescriptor[]>
+  /** source.search — 在指定插件来源搜索；结果不会自动入库 */
+  searchPluginSource(pluginId: string, query: string, page: number): Promise<PluginSearchPage>
+  /** source.getBook — 读取经 SDK 与域名策略校验的书籍详情 */
+  getPluginSourceBook(pluginId: string, bookUrl: string): Promise<PluginBookDetail>
+  /** source.getChapter — 读取并经 core 清洗的单章内容 */
+  getPluginSourceChapter(pluginId: string, chapterUrl: string): Promise<PluginChapterContent>
+  /** source.collect — 用户显式收藏插件书籍为远程来源记录；不自动获取正文 */
+  collectPluginSourceBook(pluginId: string, bookUrl: string): Promise<LibraryBook>
+  /** source.acquire — 仅将 public_domain/open_license 插件提案的 EPUB 缓存为本地 asset */
+  acquirePluginSourceBook(pluginId: string, bookUrl: string): Promise<LibraryBook>
   // ── OPDS v0.6 ──
   /** opds.addSource — 添加一个 OPDS 书源 */
   opdsAddSource(name: string, url: string): Promise<OpdsSource>

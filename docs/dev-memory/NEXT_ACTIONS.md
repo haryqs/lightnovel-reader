@@ -1,5 +1,120 @@
 # 下一步任务队列
 
+## 📌 交接留言（2026-08-04，正式 Gutenberg 来源与统一 RC3 已就绪）
+
+当前事实：
+
+- FlClash 已开启 DNS 覆写，并通过 `+.gutenberg.org` fake-IP 排除让系统解析恢复真实公网 IP
+  `152.19.134.47`；SSRF 防护保持不变。
+- 正常公网下旧 `/ebooks/search/` HTML 入口已不返回搜索结果。插件现使用 Gutenberg 官方
+  `/ebooks/search.opds/` Atom feed，按 `.opds` 书目 id 提取作品，并按 `rel=next` 判断分页。
+- 宿主 User-Agent 更新为 `LightNovelReader/0.3.1 source-plugin-host`，附带项目仓库联系地址；
+  继续沿用同域最少 1 秒请求间隔。
+- 新增 Gutenberg OPDS 无网络回归，覆盖搜索、详情、章节和 EPUB 提案；真实公网忽略测试也已完成
+  `search → getBook → getChapter → acquire`，成功定位 `11.epub3.images`。
+- 公开前已将 `gutenberg-test` 改为正式 `gutenberg` 来源，显示名为
+  `Project Gutenberg`，首个公开版本为 `0.1.0`，跟踪资产为 `gutenberg.zip`。
+- 正式候选由 `lnr-plugin-2026-01` 签名并通过独立公钥复验，SHA-256 为
+  `76f715e85e6360c9a8e0f7ec5bfe5fdaaed26b74221388d4da0d4fc074b0f692`。
+- 插件候选位于 `E:\lightnovel-reader-release-staging\v0.1.0-gutenberg`；与既有签名 updater
+  组装后的五文件统一候选位于 `E:\lightnovel-reader-release-staging\v0.3.1-release-rc3`。
+  复制前后 updater 三个文件哈希一致，RC3 插件签名复验通过；尚未上传 GitHub。
+- `codex/v0.7-release-hardening` 已推送到 origin；GitHub PR #45 已创建，当前无冲突且可自动合并。
+
+下一步优先级：
+
+1. **审阅与统一发布**：审阅 GitHub PR #45 并合并到 `main`；
+   然后只上传 RC3 五个公开资产，不要上传 RC/RC2 中的 `gutenberg-test` 旧资产。
+2. **真实在线更新**：NSIS 安装/启动/卸载及数据保留已通过；GitHub Release 尚未创建，因此旧版本的检查、
+   下载、安装和重启仍待发布后执行，不要提前宣称在线更新通过。
+3. **MSI 环境后续**：在不阻断 updater 的前提下检查/修复本机 Windows Installer 服务，再单独运行
+   `tauri build --bundles msi --no-sign`；WiX 中文代码页配置已经修复，不得退回 1252。
+
+## 📌 交接留言（2026-07-25，首批正式信任根已激活）
+
+当前事实：
+
+- 维护者已在仓库外生成两套独立私钥：插件仓库 Ed25519 私钥与带密码的 Tauri updater 私钥；私钥和密码均未进入仓库。
+- 插件公钥 `lnr-plugin-2026-01` 已写入 `src-tauri/src/plugin_trust.rs`，并开启
+  `REQUIRE_OFFICIAL_PLUGIN_SIGNATURES=true`；官方索引从此不再接受 unsigned 条目。
+- Tauri updater 公钥已写入 `src-tauri/tauri.conf.json`，并开启 `bundle.createUpdaterArtifacts=true`。
+- `check:release-trust` 已扩展为四项门禁；`test:release-trust`、实际仓库门禁与 `cargo check -p reader` 已通过。
+
+下一步优先级：
+
+1. **签署首批官方仓库**：确定准备发布的插件 zip 与 HTTPS URL，生成最终 SHA-256/大小索引；由维护者在本地调用
+   `sign:plugin-repository` 注入私钥路径，输出所有条目都带 `keyId=lnr-plugin-2026-01` 的签名索引。
+2. **首次 updater 发布演练**：在受控构建环境通过 `TAURI_SIGNING_PRIVATE_KEY`（值可为私钥路径）与
+   `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` 注入秘密，运行 `release:build`，检查 Windows 安装器与 `.sig`，
+   生成 GitHub Release `latest.json`，并从旧版本真实执行检查、下载、安装和重启。
+3. **公网与安装复验**：在正常公网 DNS 下完成签名仓库加载/预览/二次下载安装、Gutenberg 获取与阅读；
+   抽检 NSIS 安装/卸载保留用户数据。窗口自动化仍沿用既有限制，不补丁 WDIO `node_modules`。
+
+## 📌 交接留言（2026-07-21，发布信任门与 Windows WDIO 调研）
+
+当前事实：
+
+- v0.7 插件来源收口已在 `codex/v0.7-release-hardening` 建立检查点提交 `8a8f83f`。
+- 新增 `check:release-trust`：正式分发前同时检查官方插件强制验签、非空且合法的 Ed25519 公钥 keyring，
+  以及非空的 Tauri updater 公钥；插件包签名和应用更新签名是两个独立信任域，不能共用或互相替代。
+- `package:beta`、`installer:web` 的 npm pre-hook 及新的 `release:build` 都接入该门禁。当前仓库会按设计阻断，
+  直到维护者注入正式公钥并开启 `REQUIRE_OFFICIAL_PLUGIN_SIGNATURES`；开发构建与测试不受影响。
+- `test:release-trust` 已覆盖合法配置、三项未配置、重复 keyId、非法 Base64 和错误公钥长度。
+- 评估过官方文档建议的 `@wdio/tauri-service` embedded provider，但未提交实验集成：`1.2.0` 固定的
+  `@wdio/native-utils@2.4.0` 缺少其导入的 `installMockSyncOverride`；升级到 2.5.0 后又发现 Windows EdgeDriver
+  版本解析只接受 `MSEdgeDriver`，而当前官方二进制输出 `Microsoft Edge WebDriver`，导致完全匹配的 150.0.4078.83
+  仍被判定为 unknown、重复下载，最终嵌入会话也不稳定。不要在项目内补丁 `node_modules`。
+
+下一步优先级：
+
+1. **配置正式信任材料**：由维护者在离线环境生成插件 Ed25519 发布密钥和 Tauri updater 签名密钥，私钥进入独立秘密管理；
+   只提交两个信任域各自的公钥。签署官方仓库全部 zip、开启强制插件验签后，让 `npm.cmd run check:release-trust` 变绿。
+2. **受控发布演练**：在正常公网 DNS 下运行真实 HTTPS 仓库加载/预览/安装二次下载、Gutenberg 获取与阅读；随后运行
+   `npm.cmd run release:build`，抽检 updater 签名、便携包、NSIS 安装/卸载保留用户数据。
+3. **窗口自动化后续**：优先等待/升级到修复上述两个 Windows 问题的 WDIO Tauri service，或在上游提交最小复现；
+   在此之前继续保留现有 `tauri-driver` smoke 和离线签名回归，不维护项目内依赖补丁。
+
+## 📌 交接留言（2026-07-20，v0.7 正式插件来源流程与 WASM 构建修复）
+
+当前事实：
+
+- 已执行 `git fetch --all --prune`；本地 `main` 与 `origin/main` 同为 `a03103c`，GitHub 没有新提交。
+- Tauri 现已显式启用 `reading-core/quickjs`，之前未被真实编译的 runtime 路径已修正。
+- QuickJS 运行时已对齐 SDK：`export default`、Promise、标量入参、`HttpResponse.text()`、
+  `host.html`、持久化 `host.kv`、可读 JS 异常堆栈、DTO 校验和章节 HTML 清洗。
+- `plugin.testFlow` 和插件面板“测试”按钮现会自动跑完 `search → getBook → getChapter`，而不是只跑 `search`。
+- 插件 HTTP 沙箱禁止自动重定向，解析后拒绝本机/内网/保留地址，并固定已校验 DNS 结果；
+  HTTP 响应体/HTML 输入/返回 JSON 上限 8 MiB，单条日志上限 4 KiB。
+- 无网络 runtime 全流程测试通过；Project Gutenberg 示例和 ignored 联网 E2E 已补。当前 Codex 环境把
+  `www.gutenberg.org` 解析到 `198.18.0.15` 保留网段，因内网防护被预期拒绝；没有为了跑测试放宽安全策略。
+- 浏览器端 `reading-core` 的 wasm-bindgen 产物已重新生成并纳入仓库；`build:wasm` 会校验锁定版本后重复生成，
+  `check:wasm` 已接入 `check:project` 和生产构建，干净检出不再因缺模块而失败。
+- 已新增 `source.list/search/getBook/getChapter/collect`，不改变 `plugin.testFlow` 诊断语义。启用插件会进入在线来源选择器，
+  支持分页搜索、详情/章节、纯文本正文预览和显式收藏；搜索不自动落库，收藏会重新执行 `getBook` 后由 core 幂等写来源记录。
+- 插件返回 URL 现在也必须属于 manifest 精确域名；单页搜索结果、章节数和文本长度有硬上限。
+  离线 `scripts/test-plugin` manifest 已对齐 SDK 并增加确定性正式来源调用测试。
+- QuickJS 可选 `acquire(remoteId, mode)` 与 additive `source.acquire` 已落地：仅放行
+  `public-domain/open-license + application/epub+zip`，宿主复核授权/域名，经共享限速/SSRF 下载器获取并验证 EPUB，
+  然后挂入远程 edition 的本地 `cached` asset；Gutenberg 示例和 UI “获取并阅读”已同步。
+- 官方仓库 Ed25519 包字节验签已落地：索引先校验可信 keyId，预览/安装在各自下载与 SHA-256 后重新验签；
+  `sign:plugin-repository` 从外部 PKCS#8 私钥签署 zip。当前编译内正式 keyring 仍为空，unsigned 条目显示人工白名单 warning。
+- `smoke:plugin-repository-signature` 已把临时密钥、真实 zip、正式签名工具、篡改/错 key 拒绝及 core/Tauri 验签测试串成
+  无公网/GUI 的可重复回归；真实 HTTPS 下载与正式 keyring 仍未复验。
+- 仓库 WebDriver smoke 已恢复 npm 入口并收紧为本地包失败即失败；当前 WebView2 150 环境即使用精确匹配驱动也会在
+  会话创建后断开 DevTools，且既有来源 smoke 同样复现，窗口自动化复验暂受环境阻断。
+
+下一步优先级：
+
+1. **真实窗口公网复验**：离线正式流程已由 `npm.cmd run smoke:plugin-source` 在真实 `reader.exe` 自动通过；
+   仍需在正常公网 DNS 的 Windows/Tauri 环境安装
+   `plugin-sdk/examples/gutenberg-test/gutenberg-test.zip`，完成搜索、章节预览与“获取并阅读”；或运行
+   `cargo test -p reader plugin_executor::tests::runs_gutenberg_search_book_chapter_acquire_flow -- --ignored --nocapture`。
+   当前 Codex 环境再次实跑仍因 fake-IP/保留地址被 SSRF 门预期拒绝，不得为测试放宽。
+2. **发布密钥门槛**：离线生成正式 Ed25519 发布密钥，私钥进入独立秘密管理；只把公钥 Base64 和 keyId 加入
+   `src-tauri/src/plugin_trust.rs`，签署官方索引全部 zip，验证轮换/撤销流程后把 `REQUIRE_OFFICIAL_PLUGIN_SIGNATURES` 切为 `true`；
+   随后用受控 HTTPS 仓库跑索引加载、预览、安装二次下载及篡改/未知 key 的真实窗口测试。
+3. **分发复验**：继续便携包目标机器抽检与 NSIS 卸载保留用户数据验证。
+
 ## 📌 交接留言（2026-06-27，11 commits，全 Phase 完工）
 
 > **实验室交接：** 以下是从上次会话到现在的完整进展。新会话进入后请先读 AGENTS.md，然后按开工纪律操作。

@@ -2,7 +2,19 @@
 
 ## 脚本概述
 
-`scripts/tauri-plugin-repository-smoke.mjs` 是插件仓库安装流程的 WebDriver smoke 测试，模拟用户在 lightnovel-reader 中安装插件的完整流程。
+插件仓库有两条互补 smoke：
+
+- `scripts/smoke-plugin-repository-signature.mjs`：无需 GUI/公网，使用临时 Ed25519 密钥串联夹具生成、正式签名工具、
+  原始 zip 验签、篡改/错误公钥拒绝，以及 reading-core/Tauri 胶水层测试。
+- `scripts/tauri-plugin-repository-smoke.mjs`：WebDriver 下验证本地包预览、安装、启停和卸载；网络仓库仍只验证错误路径。
+
+先运行离线签名 smoke：
+
+```powershell
+npm.cmd run smoke:plugin-repository-signature
+```
+
+脚本默认删除包含临时私钥的临时目录；仅诊断时可加 `-- --keep-data`，保留目录不得发布。
 
 ## 运行要求
 
@@ -48,9 +60,9 @@ npm run smoke:plugin-repo -- --keep-open
 ### ❌ 测试限制
 
 1. **网络仓库测试受限**
-   - 由于 `ensure_https_plugin_url` 强制 HTTPS，无法测试真实的网络仓库加载
-   - 只能测试网络错误的错误处理逻辑
-   - 无法验证 `plugin_load_repository_index` 的成功路径
+   - 当前 WebDriver 脚本没有受信测试 HTTPS 服务，因此只覆盖网络错误处理
+   - 离线签名 smoke 已覆盖发布工具与应用验签原语，但不经过真实 TLS/下载器
+   - `plugin_load_repository_index` 成功路径和预览/安装两次真实下载仍需受控 HTTPS fixture 或正式仓库验证
 
 2. **插件执行环境隔离**
    - 测试中不执行插件 JavaScript 代码
@@ -60,7 +72,10 @@ npm run smoke:plugin-repo -- --keep-open
 3. **平台依赖**
    - 需要真实的 WebDriver 环境
    - 需要构建的 Tauri 应用
+   - `msedgedriver` 与 WebView2 Runtime 的前三段版本必须一致；脚本只会选已安装的最高版本，不能保证它自动匹配 Runtime
    - 无法在 CI 无头环境中运行（除非配置了无头浏览器）
+   - 2026-07-21 评估的 `@wdio/tauri-service@1.2.0` embedded provider 暂不接入：其发布依赖组合缺少运行时导出，
+     且 Windows 驱动版本解析不识别当前 `Microsoft Edge WebDriver` 版本字符串，造成匹配驱动仍反复下载；项目不补丁 `node_modules`
 
 4. **并发安装未测试**
    - 只测试单个插件的生命周期
@@ -106,5 +121,6 @@ npm run smoke:plugin-repo -- --fixtures-dir ./custom-fixtures
 ## 与其他测试的关系
 
 - **前置**: `smoke:plugin-repository-fixtures` 生成测试用插件包
+- **离线签名链**: `smoke:plugin-repository-signature` 自动生成并清理临时密钥/夹具
 - **互补**: `tauri-webdriver-smoke.mjs` 测试基础 WebDriver 集成
-- **后续**: 真实插件执行需要额外的集成测试
+- **后续**: 真实 HTTPS 签名仓库与正式 keyring 仍需窗口端到端验证

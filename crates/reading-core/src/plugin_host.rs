@@ -15,6 +15,11 @@ use crate::plugin_store::InstalledPlugin;
 
 pub const DEFAULT_HTTP_TIMEOUT_MS: u64 = 15_000;
 pub const MAX_HTTP_TIMEOUT_MS: u64 = 60_000;
+pub const MAX_PLUGIN_HTTP_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
+pub const MAX_PLUGIN_HTML_INPUT_BYTES: usize = 8 * 1024 * 1024;
+pub const MAX_PLUGIN_HTML_SELECTOR_LEN: usize = 1024;
+pub const MAX_PLUGIN_LOG_MESSAGE_BYTES: usize = 4 * 1024;
+pub const MAX_PLUGIN_RESULT_JSON_BYTES: usize = 8 * 1024 * 1024;
 pub const MAX_PLUGIN_HEADERS: usize = 32;
 pub const MAX_PLUGIN_HEADER_NAME_LEN: usize = 64;
 pub const MAX_PLUGIN_HEADER_VALUE_LEN: usize = 1024;
@@ -107,6 +112,14 @@ pub struct HostHttpGetPlan {
     pub headers: BTreeMap<String, String>,
     pub timeout_ms: u64,
     pub ignored_headers: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HostHttpResponse {
+    pub status: u16,
+    pub headers: BTreeMap<String, String>,
+    pub body: Vec<u8>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -342,6 +355,7 @@ mod tests {
             legal: PluginLegal {
                 kind: legal_kind,
                 note: None,
+                terms_url: None,
             },
         }
     }
@@ -352,6 +366,7 @@ mod tests {
             validation: ManifestValidation {
                 official_repository_eligible: true,
                 requires_user_legal_confirmation: false,
+                requires_source_terms_confirmation: false,
                 warnings: Vec::new(),
             },
             entry_size: 1,

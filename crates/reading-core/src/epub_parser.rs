@@ -1122,7 +1122,7 @@ fn read_entry_bytes(entry: &mut zip::read::ZipFile) -> Result<Vec<u8>, String> {
     Ok(buf)
 }
 
-fn decode_text(raw: &[u8]) -> Result<String, String> {
+pub(crate) fn decode_text(raw: &[u8]) -> Result<String, String> {
     let (bom_encoding, bom_len) =
         encoding_rs::Encoding::for_bom(raw).unwrap_or((encoding_rs::UTF_8, 0));
 

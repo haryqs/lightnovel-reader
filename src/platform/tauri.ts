@@ -17,7 +17,13 @@ import type {
   OpdsSource,
   OpenedBook,
   PluginInstallPreview,
+  PluginBookDetail,
+  PluginChapterContent,
   PluginRepositoryCatalog,
+  PluginPackageSignature,
+  PluginSearchPage,
+  PluginSourceDescriptor,
+  PluginTestFlowResult,
   ReaderBridge,
   ReadingProgress,
   RemoteLibrarySource,
@@ -110,10 +116,24 @@ export const tauriBridge: ReaderBridge = {
     invoke('plugin_uninstall', { pluginId }),
   loadPluginRepositoryIndex: (url) =>
     invoke<PluginRepositoryCatalog>('plugin_load_repository_index', { url }),
-  inspectRepositoryPluginPackage: (packageUrl, packageSha256) =>
-    invoke<PluginInstallPreview>('plugin_inspect_repository_package', { packageUrl, packageSha256 }),
-  installRepositoryPluginPackage: (packageUrl, packageSha256) =>
-    invoke<InstalledPlugin>('plugin_install_repository_package', { packageUrl, packageSha256 }),
+  inspectRepositoryPluginPackage: (packageUrl, packageSha256, signature?: PluginPackageSignature) =>
+    invoke<PluginInstallPreview>('plugin_inspect_repository_package', { packageUrl, packageSha256, signature }),
+  installRepositoryPluginPackage: (packageUrl, packageSha256, signature?: PluginPackageSignature) =>
+    invoke<InstalledPlugin>('plugin_install_repository_package', { packageUrl, packageSha256, signature }),
+  testPluginFlow: (pluginId, query) =>
+    invoke<PluginTestFlowResult>('plugin_test_run', { pluginId, query }),
+  listPluginSources: () =>
+    invoke<PluginSourceDescriptor[]>('source_list'),
+  searchPluginSource: (pluginId, query, page) =>
+    invoke<PluginSearchPage>('source_search', { pluginId, query, page }),
+  getPluginSourceBook: (pluginId, bookUrl) =>
+    invoke<PluginBookDetail>('source_get_book', { pluginId, bookUrl }),
+  getPluginSourceChapter: (pluginId, chapterUrl) =>
+    invoke<PluginChapterContent>('source_get_chapter', { pluginId, chapterUrl }),
+  collectPluginSourceBook: (pluginId, bookUrl) =>
+    invoke<LibraryBook>('source_collect', { pluginId, bookUrl }),
+  acquirePluginSourceBook: (pluginId, bookUrl) =>
+    invoke<LibraryBook>('source_acquire', { pluginId, bookUrl }),
   // ── OPDS v0.6 ──
   opdsAddSource: (name, url) =>
     invoke<OpdsSource>('opds_add_source', { name, url }),

@@ -14,7 +14,6 @@ pub mod library;
 pub mod migrations;
 pub mod pagination;
 pub mod parse_cache;
-pub mod sync;
 #[cfg(feature = "native")]
 pub mod plugin_host;
 #[cfg(feature = "native")]
@@ -24,11 +23,14 @@ pub mod plugin_package;
 #[cfg(feature = "native")]
 pub mod plugin_repository;
 #[cfg(feature = "native")]
-pub mod plugin_store;
-#[cfg(feature = "native")]
 pub mod plugin_runtime;
 #[cfg(feature = "native")]
+pub mod plugin_source;
+#[cfg(feature = "native")]
+pub mod plugin_store;
+#[cfg(feature = "native")]
 pub mod storage;
+pub mod sync;
 
 // 壳需要与 core 共用同一个 rusqlite（类型必须同源），统一从这里取。
 #[cfg(feature = "native")]

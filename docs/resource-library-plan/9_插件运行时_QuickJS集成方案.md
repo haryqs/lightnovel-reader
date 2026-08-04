@@ -2,7 +2,9 @@
 
 > 范围声明：本文件只设计"如何把已有的 DTO/策略门（`plugin_manifest` / `plugin_package` / `plugin_store` / `plugin_repository` / `plugin_host`）接上一个真正执行 JS 的引擎"。不重新讨论"要不要插件运行时"——那是 `7_终局架构_多端与插件运行时.md` 已经定的结论（双引擎：桌面/Android/鸿蒙用 QuickJS，iOS 用 JavaScriptCore，过审约束 2.5.2）。本文聚焦 v0.7 的桌面 QuickJS 落地，并为 v0.9 的引擎切换留好边界。
 >
-> 纯方案设计，不写实现代码。
+> 本文最初是纯方案设计。2026-07-20 实现复核后，桌面端已按本方案接入 QuickJS；实际代码以
+> `crates/reading-core/src/plugin_runtime.rs` 和 `src-tauri/src/plugin_executor.rs` 为准。当前采用同步 Rust 回调 + JS Promise
+> 包装，整个 Runtime 在 Tauri `spawn_blocking` 中执行，不让 QuickJS Context 跨 Rust async await 点；SDK 可见语义仍是 Promise。
 
 ## 〇、现状盘点（决策的起点）
 

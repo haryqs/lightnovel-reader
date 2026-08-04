@@ -1,5 +1,24 @@
 import { ReaderCore, type PageMode, type ReaderLayoutSettings, type TocItem } from './reader-core'
-import { bridge, hasNativeBridge, isBridgeError, type InstalledPlugin, type LibraryBook, type LibrarySourceRecord, type OpdsEntry, type OpdsFeed, type OpdsSource, type PluginInstallPreview, type PluginRepositoryEntry, type RemoteLibrarySource } from './platform'
+import {
+  bridge,
+  hasNativeBridge,
+  isBridgeError,
+  type InstalledPlugin,
+  type LibraryBook,
+  type LibrarySourceRecord,
+  type OpdsEntry,
+  type OpdsFeed,
+  type OpdsSource,
+  type PluginBookDetail,
+  type PluginChapterContent,
+  type PluginInstallPreview,
+  type PluginPackageSignature,
+  type PluginRepositoryEntry,
+  type PluginSearchPage,
+  type PluginSearchResult,
+  type PluginSourceDescriptor,
+  type RemoteLibrarySource,
+} from './platform'
 import type { ThemeName } from './themes'
 
 const reader = new ReaderCore()
@@ -584,8 +603,19 @@ const pluginInstalledList = $('#plugin-installed-list')
 let opdsFeedCache: OpdsFeed | null = null
 let opdsSourceCache: OpdsSource | null = null
 let pendingPluginPackagePath = ''
-let pendingRepositoryPackage: { packageUrl: string; packageSha256: string } | null = null
+let pendingRepositoryPackage: {
+  packageUrl: string
+  packageSha256: string
+  signature?: PluginPackageSignature
+} | null = null
 let pendingPluginPreview: PluginInstallPreview | null = null
+let pluginSources: PluginSourceDescriptor[] = []
+let pluginSearchState: {
+  source: PluginSourceDescriptor
+  query: string
+  page: number
+  result: PluginSearchPage
+} | null = null
 let dismissedOpdsUrlHint = ''
 let libraryBooks: LibraryBook[] = []
 let librarySearchTimer: number | null = null
@@ -807,6 +837,7 @@ function renderPluginRepository(entries: PluginRepositoryEntry[], warnings: stri
       pluginLegalLabel(entry.manifest.legal.kind),
       entry.manifest.capabilities.map(pluginCapabilityLabel).join(', ') || '基础搜索',
       entry.packageSize ? formatBytes(entry.packageSize) : '未知大小',
+      entry.signature ? `待下载验签 · ${entry.signature.keyId}` : '未签名 · 人工白名单',
     ].join(' · ')
     main.append(name, meta)
 
@@ -854,11 +885,16 @@ async function inspectRepositoryEntry(entry: PluginRepositoryEntry, button: HTML
   button.disabled = true
   button.textContent = '校验中…'
   try {
-    const preview = await bridge.inspectRepositoryPluginPackage(entry.packageUrl, entry.packageSha256)
+    const preview = await bridge.inspectRepositoryPluginPackage(
+      entry.packageUrl,
+      entry.packageSha256,
+      entry.signature,
+    )
     pendingPluginPackagePath = ''
     pendingRepositoryPackage = {
       packageUrl: entry.packageUrl,
       packageSha256: entry.packageSha256,
+      signature: entry.signature,
     }
     pendingPluginPreview = preview
     renderPluginInstallPreview(preview, entry.packageUrl)
@@ -900,6 +936,9 @@ function renderPluginInstallPreview(preview: PluginInstallPreview, path: string)
     pluginFact('能力', preview.manifest.capabilities.map(pluginCapabilityLabel).join(', ') || '基础搜索'),
     pluginFact('域名', preview.manifest.domains.join(', ')),
   )
+  if (preview.manifest.legal.termsUrl) {
+    facts.append(pluginFact('源站条款', preview.manifest.legal.termsUrl))
+  }
 
   const warnings = document.createElement('div')
   warnings.className = preview.validation.warnings.length > 0
@@ -907,22 +946,36 @@ function renderPluginInstallPreview(preview: PluginInstallPreview, path: string)
     : 'plugin-preview-warnings plugin-preview-warnings-ok'
   warnings.textContent = preview.validation.warnings.length > 0
     ? preview.validation.warnings.join(' · ')
-    : '未发现额外合规警告。安装后仍不会执行插件代码。'
+    : '未发现额外合规警告。安装动作不会执行代码；只有启用后由用户主动使用来源时才会运行。'
 
   const confirmation = document.createElement('label')
   confirmation.className = 'plugin-confirm'
   const checkbox = document.createElement('input')
   checkbox.type = 'checkbox'
-  checkbox.checked = !preview.validation.requiresUserLegalConfirmation
-  checkbox.disabled = !preview.validation.requiresUserLegalConfirmation
+  const requiresConfirmation = preview.validation.requiresUserLegalConfirmation
+    || preview.validation.requiresSourceTermsConfirmation
+  checkbox.checked = !requiresConfirmation
+  checkbox.disabled = !requiresConfirmation
   const confirmText = document.createElement('span')
-  confirmText.textContent = preview.validation.requiresUserLegalConfirmation
-    ? '我确认该 user-declared 插件来源与合法性由我自行负责'
-    : '官方可收录类型：无需额外 user-declared 确认'
+  confirmText.textContent = preview.validation.requiresSourceTermsConfirmation
+    ? '我已阅读源站条款，并同意按宿主每域限速使用该 official-free 来源'
+    : preview.validation.requiresUserLegalConfirmation
+      ? '我确认该 user-declared 插件来源与合法性由我自行负责'
+      : '官方可收录类型：无需额外来源条款确认'
   confirmation.append(checkbox, confirmText)
 
   const actions = document.createElement('div')
   actions.className = 'plugin-preview-actions'
+  if (preview.manifest.legal.termsUrl) {
+    const terms = document.createElement('button')
+    terms.className = 'btn'
+    terms.textContent = '查看源站条款'
+    terms.addEventListener('click', () => {
+      void bridge.openExternal(preview.manifest.legal.termsUrl as string)
+        .catch((error) => showPluginPanelMessage(`打开源站条款失败：${formatError(error)}`, true))
+    })
+    actions.appendChild(terms)
+  }
   const install = document.createElement('button')
   install.className = 'btn btn-primary'
   install.textContent = '确认安装'
@@ -961,6 +1014,7 @@ async function installPendingPlugin(confirmUserLegal: boolean) {
       ? await bridge.installRepositoryPluginPackage(
         pendingRepositoryPackage.packageUrl,
         pendingRepositoryPackage.packageSha256,
+        pendingRepositoryPackage.signature,
       )
       : await bridge.installPluginPackage(pendingPluginPackagePath, confirmUserLegal)
     clearPluginPreview()
@@ -996,6 +1050,31 @@ async function refreshInstalledPlugins() {
   } catch (e: any) {
     pluginInstalledList.innerHTML = ''
     showPluginPanelMessage(`读取已安装插件失败：${formatError(e)}`, true)
+  }
+  await refreshPluginSources()
+}
+
+async function refreshPluginSources() {
+  const selected = libraryRemoteSourceSelect.value
+  for (const option of Array.from(libraryRemoteSourceSelect.options)) {
+    if (option.dataset.pluginSource === 'true') option.remove()
+  }
+  pluginSources = []
+  if (!isTauriRuntime()) return
+  try {
+    pluginSources = await bridge.listPluginSources()
+    for (const source of pluginSources) {
+      const option = document.createElement('option')
+      option.value = `plugin:${source.id}`
+      option.dataset.pluginSource = 'true'
+      option.textContent = `${source.name}（插件来源）`
+      libraryRemoteSourceSelect.appendChild(option)
+    }
+    if (Array.from(libraryRemoteSourceSelect.options).some((option) => option.value === selected)) {
+      libraryRemoteSourceSelect.value = selected
+    }
+  } catch (e) {
+    console.warn('读取正式插件来源失败', e)
   }
 }
 
@@ -1048,7 +1127,7 @@ function renderInstalledPlugins(plugins: InstalledPlugin[]) {
     const testBtn = document.createElement('button')
     testBtn.className = 'btn btn-small'
     testBtn.textContent = '测试'
-    testBtn.title = '用测试查询运行插件 search 方法'
+    testBtn.title = '用测试查询验证 search → getBook → getChapter 完整流程'
     testBtn.addEventListener('click', () => {
       void testPluginRun(plugin.manifest.id)
     })
@@ -1082,19 +1161,16 @@ async function uninstallInstalledPlugin(plugin: InstalledPlugin) {
 }
 
 async function testPluginRun(pluginId: string) {
-  showPluginPanelMessage(`正在测试运行插件 ${pluginId}...`, false)
+  showPluginPanelMessage(`正在验证插件 ${pluginId} 的 search → getBook → getChapter...`, false)
   try {
-    const result = await invokePluginTest(pluginId, 'search', '{"query":"test"}')
-    showPluginPanelMessage(`插件运行结果:\n${JSON.stringify(result, null, 2)}`, false)
+    const result = await bridge.testPluginFlow(pluginId, 'test')
+    showPluginPanelMessage(
+      `插件完整流程通过：搜索 ${result.search.results.length} 条 → ${result.book.title} → ${result.chapter.title}\n${JSON.stringify(result, null, 2)}`,
+      false,
+    )
   } catch (e: any) {
     showPluginPanelMessage(`测试运行失败：${formatError(e)}`, true)
   }
-}
-
-async function invokePluginTest(pluginId: string, method: string, argsJson: string): Promise<any> {
-  // 走 Tauri invoke（main.ts 已通过 platform 层访问）
-  const { invoke } = await import('../src/platform/tauri')
-  return (invoke as any)('plugin_test_run', { pluginId, method, argsJson })
 }
 
 function showPluginPanelMessage(message: string, error = false) {
@@ -1160,11 +1236,25 @@ libraryBatchLinkBtn.addEventListener('click', () => {
 // 在线找书：用 AniList 拉元数据 → 落库为远程条目（availability=remote）→ 直接展示结果。
 // 只取索引/封面/简介，正文一律跳官方外链（版权红线）。
 async function searchRemoteBooks() {
+  // 输入框同时用于本地筛选；用户输入后立即点击在线搜索时，必须取消尚未触发的
+  // 本地防抖刷新，避免它在远程结果返回后覆盖插件/在线来源的结果网格。
+  if (librarySearchTimer !== null) {
+    window.clearTimeout(librarySearchTimer)
+    librarySearchTimer = null
+  }
   const query = librarySearchInput.value.trim()
-  const source = (libraryRemoteSourceSelect.value || 'anilist') as RemoteLibrarySource
-  const sourceLabel = REMOTE_SOURCE_LABEL[source] || source
+  const selectedSource = libraryRemoteSourceSelect.value || 'anilist'
+  const pluginSource = selectedSource.startsWith('plugin:')
+    ? pluginSources.find((source) => source.id === selectedSource.slice('plugin:'.length))
+    : undefined
+  const source = selectedSource as RemoteLibrarySource
+  const sourceLabel = pluginSource?.name || REMOTE_SOURCE_LABEL[source] || selectedSource
   if (!query) {
     showError('先在搜索框输入要在线查找的关键词')
+    return
+  }
+  if (selectedSource.startsWith('plugin:') && !pluginSource) {
+    showError('该插件来源已停用或不可用，请刷新来源列表')
     return
   }
   if (!isTauriRuntime()) {
@@ -1174,21 +1264,378 @@ async function searchRemoteBooks() {
   const original = librarySearchRemoteBtn.textContent
   librarySearchRemoteBtn.disabled = true
   librarySearchRemoteBtn.textContent = '搜索中…'
-  libraryGrid.innerHTML = `<div class="library-state">正在 ${sourceLabel} 搜索元数据…</div>`
+  if (pluginSource) {
+    showPluginSourceGridState(`正在 ${sourceLabel} 搜索元数据…`)
+  } else {
+    libraryGrid.innerHTML = `<div class="library-state">正在 ${sourceLabel} 搜索元数据…</div>`
+  }
   try {
-    libraryBooks = await bridge.searchRemoteLibraryBooksFromSource(source, query)
-    renderLibraryBooks()
+    if (pluginSource) {
+      await loadPluginSourcePage(pluginSource, query, 1)
+    } else {
+      libraryBooks = await bridge.searchRemoteLibraryBooksFromSource(source, query)
+      renderLibraryBooks()
+    }
   } catch (e: any) {
-    libraryGrid.innerHTML = `<div class="library-state library-state-error">在线搜索失败：${formatError(e)}</div>`
+    showPluginSourceGridState(`在线搜索失败：${formatError(e)}`, true)
   } finally {
     librarySearchRemoteBtn.disabled = false
     librarySearchRemoteBtn.textContent = original
   }
 }
 
+function canAcquirePluginSource(source: PluginSourceDescriptor): boolean {
+  return source.capabilities.includes('acquire')
+    && (source.legal.kind === 'public-domain' || source.legal.kind === 'open-license')
+}
+
+function showPluginSourceGridState(message: string, error = false) {
+  libraryGrid.innerHTML = ''
+  const state = document.createElement('div')
+  state.className = error ? 'library-state library-state-error' : 'library-state'
+  state.textContent = message
+  libraryGrid.appendChild(state)
+}
+
+async function loadPluginSourcePage(
+  source: PluginSourceDescriptor,
+  query: string,
+  page: number,
+) {
+  showPluginSourceGridState(`正在 ${source.name} 搜索第 ${page} 页…`)
+  const result = await bridge.searchPluginSource(source.id, query, page)
+  pluginSearchState = { source, query, page, result }
+  renderPluginSourceResults(source, query, page, result)
+}
+
+function renderPluginSourceResults(
+  source: PluginSourceDescriptor,
+  query: string,
+  page: number,
+  result: PluginSearchPage,
+) {
+  libraryGrid.innerHTML = ''
+  updateBatchLinkButton([])
+
+  const toolbar = document.createElement('div')
+  toolbar.className = 'plugin-source-results-toolbar'
+  const summary = document.createElement('div')
+  summary.className = 'plugin-source-results-summary'
+  summary.textContent = `${source.name} · “${query}” · 第 ${page} 页 · ${result.results.length} 条`
+  const paging = document.createElement('div')
+  paging.className = 'plugin-source-results-actions'
+  if (page > 1) {
+    const previous = document.createElement('button')
+    previous.className = 'btn btn-subtle'
+    previous.textContent = '← 上一页'
+    previous.addEventListener('click', () => {
+      void loadPluginSourcePage(source, query, page - 1).catch((error) => {
+        showPluginSourceGridState(`插件来源搜索失败：${formatError(error)}`, true)
+      })
+    })
+    paging.appendChild(previous)
+  }
+  if (result.hasMore) {
+    const next = document.createElement('button')
+    next.className = 'btn btn-primary'
+    next.textContent = '下一页 →'
+    next.addEventListener('click', () => {
+      void loadPluginSourcePage(source, query, page + 1).catch((error) => {
+        showPluginSourceGridState(`插件来源搜索失败：${formatError(error)}`, true)
+      })
+    })
+    paging.appendChild(next)
+  }
+  toolbar.append(summary, paging)
+  libraryGrid.appendChild(toolbar)
+
+  if (result.results.length === 0) {
+    const empty = document.createElement('div')
+    empty.className = 'library-state'
+    empty.textContent = '该插件来源没有返回匹配结果。'
+    libraryGrid.appendChild(empty)
+    return
+  }
+
+  for (const item of result.results) {
+    const card = document.createElement('article')
+    card.className = 'book-card book-card-remote plugin-source-card'
+    const cover = document.createElement('div')
+    cover.className = 'cover'
+    if (item.coverUrl) {
+      const image = document.createElement('img')
+      image.loading = 'lazy'
+      image.decoding = 'async'
+      image.src = item.coverUrl
+      image.alt = ''
+      cover.appendChild(image)
+    } else {
+      cover.textContent = '来源'
+    }
+    const title = document.createElement('div')
+    title.className = 'title'
+    title.textContent = item.title
+    const author = document.createElement('div')
+    author.className = 'author'
+    author.textContent = item.author || '作者未提供'
+    const tags = document.createElement('div')
+    tags.className = 'book-tags'
+    for (const text of [pluginLegalLabel(source.legal.kind), source.language?.toUpperCase()].filter(Boolean)) {
+      const tag = document.createElement('span')
+      tag.textContent = text as string
+      tags.appendChild(tag)
+    }
+    const description = document.createElement('div')
+    description.className = 'plugin-source-card-summary'
+    description.textContent = item.summary || source.description || '该结果未提供简介。'
+    const actions = document.createElement('div')
+    actions.className = 'book-card-actions'
+    const detail = document.createElement('button')
+    detail.className = 'btn btn-primary'
+    detail.textContent = '查看章节'
+    detail.addEventListener('click', () => {
+      void showPluginSourceBook(source, item)
+    })
+    const collect = document.createElement('button')
+    collect.className = 'btn btn-subtle'
+    collect.textContent = '收藏来源'
+    collect.addEventListener('click', () => {
+      void collectPluginSourceBook(source, item.url, collect)
+    })
+    actions.appendChild(detail)
+    if (canAcquirePluginSource(source)) {
+      const acquire = document.createElement('button')
+      acquire.className = 'btn btn-subtle'
+      acquire.textContent = '获取并阅读'
+      acquire.addEventListener('click', () => {
+        void acquirePluginSourceBook(source, item.url, acquire)
+      })
+      actions.appendChild(acquire)
+    }
+    const external = document.createElement('button')
+    external.className = 'btn btn-subtle'
+    external.textContent = '打开源站'
+    external.addEventListener('click', () => {
+      void bridge.openExternal(item.url).catch((error) => showError(formatError(error)))
+    })
+    actions.append(collect, external)
+    card.append(cover, title, author, tags, description, actions)
+    libraryGrid.appendChild(card)
+  }
+}
+
+async function showPluginSourceBook(source: PluginSourceDescriptor, item: PluginSearchResult) {
+  showPluginSourceGridState(`正在读取《${item.title}》详情…`)
+  try {
+    const book = await bridge.getPluginSourceBook(source.id, item.url)
+    renderPluginSourceBook(source, book)
+  } catch (error) {
+    showPluginSourceGridState(`读取插件书籍详情失败：${formatError(error)}`, true)
+  }
+}
+
+function renderPluginSourceBook(source: PluginSourceDescriptor, book: PluginBookDetail) {
+  libraryGrid.innerHTML = ''
+  updateBatchLinkButton([])
+  const panel = document.createElement('section')
+  panel.className = 'plugin-source-book'
+  const toolbar = document.createElement('div')
+  toolbar.className = 'plugin-source-book-toolbar'
+  const back = document.createElement('button')
+  back.className = 'btn btn-subtle'
+  back.textContent = '← 返回搜索结果'
+  back.addEventListener('click', () => {
+    if (pluginSearchState) {
+      renderPluginSourceResults(
+        pluginSearchState.source,
+        pluginSearchState.query,
+        pluginSearchState.page,
+        pluginSearchState.result,
+      )
+    } else {
+      void refreshLibraryBooks()
+    }
+  })
+  const toolbarActions = document.createElement('div')
+  toolbarActions.className = 'plugin-source-results-actions'
+  const collect = document.createElement('button')
+  collect.className = 'btn btn-primary'
+  collect.textContent = '收藏来源'
+  collect.addEventListener('click', () => {
+    void collectPluginSourceBook(source, book.url, collect)
+  })
+  if (canAcquirePluginSource(source)) {
+    const acquire = document.createElement('button')
+    acquire.className = 'btn btn-primary'
+    acquire.textContent = '获取并阅读'
+    acquire.addEventListener('click', () => {
+      void acquirePluginSourceBook(source, book.url, acquire)
+    })
+    toolbarActions.appendChild(acquire)
+  }
+  const external = document.createElement('button')
+  external.className = 'btn btn-subtle'
+  external.textContent = '打开源站'
+  external.addEventListener('click', () => {
+    void bridge.openExternal(book.url).catch((error) => showError(formatError(error)))
+  })
+  toolbarActions.append(collect, external)
+  toolbar.append(back, toolbarActions)
+
+  const header = document.createElement('div')
+  header.className = 'plugin-source-book-header'
+  if (book.coverUrl) {
+    const cover = document.createElement('img')
+    cover.className = 'plugin-source-book-cover'
+    cover.src = book.coverUrl
+    cover.alt = ''
+    header.appendChild(cover)
+  }
+  const copy = document.createElement('div')
+  const title = document.createElement('h3')
+  title.textContent = book.title
+  const meta = document.createElement('div')
+  meta.className = 'plugin-source-book-meta'
+  meta.textContent = [
+    book.author || '作者未提供',
+    source.name,
+    pluginLegalLabel(source.legal.kind),
+    `${book.chapters.length} 章`,
+  ].join(' · ')
+  const description = document.createElement('p')
+  description.textContent = book.description || '该来源未提供书籍简介。'
+  copy.append(title, meta, description)
+  header.appendChild(copy)
+
+  const chapters = document.createElement('div')
+  chapters.className = 'plugin-source-chapters'
+  const visibleChapters = book.chapters.slice(0, 200)
+  for (const chapter of visibleChapters) {
+    const row = document.createElement('div')
+    row.className = 'plugin-source-chapter-row'
+    const label = document.createElement('div')
+    label.className = 'plugin-source-chapter-title'
+    label.textContent = chapter.group ? `${chapter.group} · ${chapter.title}` : chapter.title
+    const preview = document.createElement('button')
+    preview.className = 'btn btn-small'
+    preview.textContent = '预览正文'
+    preview.addEventListener('click', () => {
+      void previewPluginSourceChapter(source, book, chapter, preview)
+    })
+    row.append(label, preview)
+    chapters.appendChild(row)
+  }
+  if (book.chapters.length > visibleChapters.length) {
+    const omitted = document.createElement('div')
+    omitted.className = 'plugin-source-chapters-omitted'
+    omitted.textContent = `章节较多，当前先展示前 ${visibleChapters.length} 章。`
+    chapters.appendChild(omitted)
+  }
+  if (book.chapters.length === 0) {
+    const empty = document.createElement('div')
+    empty.className = 'plugin-empty'
+    empty.textContent = '该来源没有返回章节。'
+    chapters.appendChild(empty)
+  }
+  panel.append(toolbar, header, chapters)
+  libraryGrid.appendChild(panel)
+}
+
+async function previewPluginSourceChapter(
+  source: PluginSourceDescriptor,
+  book: PluginBookDetail,
+  chapter: PluginBookDetail['chapters'][number],
+  button: HTMLButtonElement,
+) {
+  button.disabled = true
+  button.textContent = '读取中…'
+  try {
+    const content = await bridge.getPluginSourceChapter(source.id, chapter.url)
+    renderPluginSourceChapter(source, book, content)
+  } catch (error) {
+    showError(`读取插件章节失败：${formatError(error)}`)
+  } finally {
+    button.disabled = false
+    button.textContent = '预览正文'
+  }
+}
+
+function renderPluginSourceChapter(
+  source: PluginSourceDescriptor,
+  book: PluginBookDetail,
+  content: PluginChapterContent,
+) {
+  libraryGrid.innerHTML = ''
+  const panel = document.createElement('section')
+  panel.className = 'plugin-source-book plugin-source-chapter-preview'
+  const back = document.createElement('button')
+  back.className = 'btn btn-subtle'
+  back.textContent = '← 返回章节列表'
+  back.addEventListener('click', () => renderPluginSourceBook(source, book))
+  const title = document.createElement('h3')
+  title.textContent = content.title
+  const note = document.createElement('div')
+  note.className = 'plugin-source-book-meta'
+  note.textContent = '正文已由 reading-core 清洗；此处以纯文本预览，不会加载插件返回的远程资源。'
+  const parsed = new DOMParser().parseFromString(content.html, 'text/html')
+  const fullText = parsed.body.textContent?.replace(/\s+/g, ' ').trim() || ''
+  const text = document.createElement('pre')
+  text.className = 'plugin-source-chapter-text'
+  text.textContent = fullText.length > 50_000
+    ? `${fullText.slice(0, 50_000)}\n\n……预览已截断……`
+    : fullText
+  panel.append(back, title, note, text)
+  libraryGrid.appendChild(panel)
+}
+
+async function collectPluginSourceBook(
+  source: PluginSourceDescriptor,
+  bookUrl: string,
+  button: HTMLButtonElement,
+) {
+  button.disabled = true
+  const original = button.textContent
+  button.textContent = '收藏中…'
+  try {
+    const collected = await bridge.collectPluginSourceBook(source.id, bookUrl)
+    librarySearchInput.value = ''
+    pluginSearchState = null
+    await refreshLibraryBooks()
+    prependPluginSummary(`已收藏插件来源：${collected.title} · ${source.name}`)
+  } catch (error) {
+    showError(`收藏插件来源失败：${formatError(error)}`)
+  } finally {
+    button.disabled = false
+    button.textContent = original
+  }
+}
+
+async function acquirePluginSourceBook(
+  source: PluginSourceDescriptor,
+  bookUrl: string,
+  button: HTMLButtonElement,
+) {
+  button.disabled = true
+  const original = button.textContent
+  button.textContent = '获取中…'
+  try {
+    const acquired = await bridge.acquirePluginSourceBook(source.id, bookUrl)
+    librarySearchInput.value = ''
+    pluginSearchState = null
+    await refreshLibraryBooks()
+    prependPluginSummary(`已获取开放资源：${acquired.title} · ${source.name}`)
+    await openAcquiredLibraryBook(acquired)
+  } catch (error) {
+    showError(`获取插件 EPUB 失败：${formatError(error)}`)
+  } finally {
+    button.disabled = false
+    button.textContent = original
+  }
+}
+
 async function openLibrary() {
   libraryView.hidden = false
-  await refreshLibraryBooks()
+  await Promise.all([refreshPluginSources(), refreshLibraryBooks()])
 }
 
 async function refreshLibraryBooks() {
