@@ -242,15 +242,15 @@ mod tests {
 
     fn gutenberg_runtime(http: Arc<dyn PluginHttpExecutor>) -> PluginRuntime {
         let manifest = parse_manifest_json(include_str!(
-            "../../plugin-sdk/examples/gutenberg-test/manifest.json"
+            "../../plugin-sdk/examples/gutenberg/manifest.json"
         ))
         .expect("Gutenberg manifest should remain valid");
         PluginRuntime::new(
             manifest,
-            include_str!("../../plugin-sdk/examples/gutenberg-test/plugin.js").into(),
+            include_str!("../../plugin-sdk/examples/gutenberg/plugin.js").into(),
             http,
             PathBuf::new(),
-            "gutenberg-test".into(),
+            "gutenberg".into(),
         )
     }
 

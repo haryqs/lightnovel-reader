@@ -1,6 +1,6 @@
 # 下一步任务队列
 
-## 📌 交接留言（2026-07-26，Gutenberg 公网闭环与统一 RC2 已完成）
+## 📌 交接留言（2026-08-04，正式 Gutenberg 来源与统一 RC3 已就绪）
 
 当前事实：
 
@@ -12,18 +12,18 @@
   继续沿用同域最少 1 秒请求间隔。
 - 新增 Gutenberg OPDS 无网络回归，覆盖搜索、详情、章节和 EPUB 提案；真实公网忽略测试也已完成
   `search → getBook → getChapter → acquire`，成功定位 `11.epub3.images`。
-- `gutenberg-test` 版本升为 `0.1.1`，跟踪 zip 已重建；正式候选由 `lnr-plugin-2026-01`
-  签名并通过独立公钥复验，SHA-256 为
-  `5ccb02b011143bc685ea9aa1a297c00a2dedb019c4b970aa80bc6c694e0bd2a7`。
-- 新插件候选位于 `E:\lightnovel-reader-release-staging\v0.1.1-plugin-repository`；
-  与既有签名 updater 组装后的五文件统一候选位于
-  `E:\lightnovel-reader-release-staging\v0.3.1-release-rc2`。复制前后 updater 三个文件哈希一致，
-  RC2 插件签名复验通过；均尚未上传 GitHub。
+- 公开前已将 `gutenberg-test` 改为正式 `gutenberg` 来源，显示名为
+  `Project Gutenberg`，首个公开版本为 `0.1.0`，跟踪资产为 `gutenberg.zip`。
+- 正式候选由 `lnr-plugin-2026-01` 签名并通过独立公钥复验，SHA-256 为
+  `76f715e85e6360c9a8e0f7ec5bfe5fdaaed26b74221388d4da0d4fc074b0f692`。
+- 插件候选位于 `E:\lightnovel-reader-release-staging\v0.1.0-gutenberg`；与既有签名 updater
+  组装后的五文件统一候选位于 `E:\lightnovel-reader-release-staging\v0.3.1-release-rc3`。
+  复制前后 updater 三个文件哈希一致，RC3 插件签名复验通过；尚未上传 GitHub。
 
 下一步优先级：
 
-1. **插件正式定位与发布**：决定保留 `gutenberg-test` 作为预发布验证资产，还是先重命名/调整文案后提升为
-   正式来源。决定后只发布最终候选，不要同时上传旧 `0.1.0` 资产。
+1. **审阅与统一发布**：将当前 `codex/v0.7-release-hardening` 分支推送、审阅并合并到 `main`；
+   然后只上传 RC3 五个公开资产，不要上传 RC/RC2 中的 `gutenberg-test` 旧资产。
 2. **真实在线更新**：NSIS 安装/启动/卸载及数据保留已通过；GitHub Release 尚未创建，因此旧版本的检查、
    下载、安装和重启仍待发布后执行，不要提前宣称在线更新通过。
 3. **MSI 环境后续**：在不阻断 updater 的前提下检查/修复本机 Windows Installer 服务，再单独运行

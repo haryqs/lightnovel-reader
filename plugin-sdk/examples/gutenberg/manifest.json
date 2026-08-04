@@ -1,0 +1,18 @@
+{
+  "$schema": "../../manifest.schema.json",
+  "apiVersion": "0.1",
+  "id": "gutenberg",
+  "name": "Project Gutenberg",
+  "version": "0.1.0",
+  "description": "搜索 Project Gutenberg 公共领域书籍，预览正文并获取 EPUB 到本地书库。",
+  "author": "reader 团队",
+  "language": "en",
+  "entry": "plugin.js",
+  "domains": ["www.gutenberg.org"],
+  "permissions": ["http"],
+  "capabilities": ["acquire"],
+  "legal": {
+    "kind": "public-domain",
+    "note": "Project Gutenberg 提供公共领域电子书；获取的 EPUB 仅供用户在本地书库阅读"
+  }
+}

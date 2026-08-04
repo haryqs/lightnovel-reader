@@ -31,10 +31,11 @@
 EPUB 的 `source.acquire` 本地 asset 获取闭环均已落地。官方仓库 Ed25519 包字节验签与首批正式发布 keyring 已落地，
 官方索引现强制要求 `lnr-plugin-2026-01` 或后续受信 key 的包签名。FlClash 已为 Gutenberg 排除 fake-IP；
 公网复验随即发现旧 HTML 搜索入口漂移，示例已切换到 Gutenberg 官方 OPDS 搜索并增加离线回归，
-搜索、详情、章节与 EPUB 获取的真实全链路现已通过。修复后的 `gutenberg-test@0.1.1` 已由正式私钥签署，
-并与既有 updater NSIS、`.sig`、`latest.json` 组装为仓库外统一 `v0.3.1-release-rc2` 候选，尚未公开上传。
-正式候选的 NSIS 安装、启动、卸载及默认应用数据逐文件保留也已通过；下一步是决定是否把测试示例提升为
-正式来源，然后创建统一 GitHub Release 并执行旧版本真实在线更新。
+搜索、详情、章节与 EPUB 获取的真实全链路现已通过。首次公开前已将测试身份收口为正式来源
+`gutenberg@0.1.0`，资产名为 `gutenberg.zip`；正式私钥签署与独立公钥验收均通过。它已与既有
+updater NSIS、`.sig`、`latest.json` 组装为仓库外统一 `v0.3.1-release-rc3` 候选，尚未公开上传。
+正式候选的 NSIS 安装、启动、卸载及默认应用数据逐文件保留也已通过；下一步是将开发分支审阅/合并后
+创建统一 GitHub Release，再执行旧版本真实在线更新。
 
 2026-07-21 起，所有正式分发入口增加发布信任门：官方插件强制验签、插件 Ed25519 公钥 keyring 与 Tauri updater
 公钥必须同时配置，缺一即阻断打包；开发构建保持可用。插件包签名和应用更新签名属于两个独立信任域。
@@ -59,6 +60,9 @@ EPUB 的 `source.acquire` 本地 asset 获取闭环均已落地。官方仓库 E
 
 近期状态：
 
+- 2026-08-04：公开前将 `gutenberg-test` 测试身份提升为正式 `gutenberg` 来源；
+  目录、包名、manifest 文案和运行时夹具已同步，首个公开版本从 `0.1.0` 开始。
+  `gutenberg.zip` 已由 `lnr-plugin-2026-01` 签署并组装为统一 `v0.3.1-release-rc3`。
 - 2026-07-26：FlClash 开启 DNS 覆写、为 `+.gutenberg.org` 配置 fake-IP 排除并重启后，
   系统解析恢复真实公网 IP `152.19.134.47`。首次公网请求发现旧 HTML 搜索页已不再返回结果；
   Gutenberg 示例改用官方 `search.opds` Atom feed，增加无网络 OPDS 夹具回归，宿主 User-Agent

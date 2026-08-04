@@ -1,5 +1,4 @@
-// Project Gutenberg 公共版权测试插件。
-// 用于真实联网验证 search → getBook → getChapter。
+// Project Gutenberg 公共领域书籍来源。
 
 const BASE = 'https://www.gutenberg.org'
 

@@ -883,3 +883,22 @@ Tauri 经 app-wide 每域限速、SSRF/DNS 固定、禁止重定向的同一 HTT
 
 - `release:build:updater` 成为 Windows updater 的签名构建入口；`release:build` 仍可用于环境完整时同时构建两种格式。
 - MSI 发布前需修复本机 Windows Installer 服务并单独复验；不能把 `--no-sign` 产物当作正式 updater。
+
+## 2026-08-04：Gutenberg 以稳定正式身份首次发布
+
+决策：
+
+1. 首次公开前将插件 id 从 `gutenberg-test` 改为稳定的 `gutenberg`，显示名为
+   `Project Gutenberg`，资产名为 `gutenberg.zip`。
+2. 因旧 id 从未公开发布，正式身份从插件版本 `0.1.0` 开始，不承诺对仓库外测试候选的升级兼容。
+3. 统一 `v0.3.1` Release 只允许上传正式 `gutenberg` 资产，不上传任何 `gutenberg-test` 旧候选。
+
+理由：
+
+- 插件 id 是安装、本地存储和后续升级的稳定身份；公开后再改名会被客户端视为两个插件。
+- 测试字样会让用户误以为资产不可长期使用；当前已有离线回归、公网 E2E、合规限速与强制验签支撑正式定位。
+
+后果：
+
+- 所有当前文档、运行时夹具、包名和发布索引统一使用 `gutenberg`。
+- 旧 `gutenberg-test` 候选仅保留于本机仓库外作审计，不进入 GitHub Release。

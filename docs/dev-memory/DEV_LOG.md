@@ -3083,6 +3083,8 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
 
 - `cargo test -p reader parses_gutenberg_opds_fixture_without_network -- --nocapture`：通过。
 - `cargo test -p reader runs_gutenberg_search_book_chapter_acquire_flow -- --ignored --nocapture`：
+  在允许公网访问的环境通过，正式 `gutenberg` 身份成功完成全链路。
+- `cargo test -p reader runs_gutenberg_search_book_chapter_acquire_flow -- --ignored --nocapture`：
   在允许公网访问的环境通过；OPDS 返回 25 个 entry，并成功提出
   `https://www.gutenberg.org/ebooks/11.epub3.images`。
 - `prepare:plugin-repository-release`：通过；`gutenberg-test@0.1.1` 包 SHA-256 为
@@ -3096,3 +3098,33 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
 
 - 统一 RC2 尚未上传 GitHub；旧版本真实检查、下载、安装与重启仍未验证。
 - 公开前仍需决定 `gutenberg-test` 是保留为预发布测试资产，还是重命名并调整文案后提升为正式来源。
+
+## 2026-08-04：将 Gutenberg 插件提升为正式来源并组装 RC3
+
+变更：
+
+- 首次公开前将目录从 `examples/gutenberg-test` 重命名为 `examples/gutenberg`，
+  manifest id 改为 `gutenberg`、显示名改为 `Project Gutenberg`，正式首版定为 `0.1.0`。
+- 描述和合规备注从 E2E 测试文案改为用户可见的公共领域书籍搜索、预览与本地 EPUB 获取说明。
+- 运行时夹具、SDK README 与插件契约文档已同步新路径和稳定 id。
+- 重建 `gutenberg.zip`，从包内真实 manifest 生成候选，由 `lnr-plugin-2026-01`
+  正式私钥签署并只用公钥独立验收。
+- 新插件候选位于 `E:\lightnovel-reader-release-staging\v0.1.0-gutenberg`；
+  与既有 updater 组装后的五文件统一候选位于
+  `E:\lightnovel-reader-release-staging\v0.3.1-release-rc3`，不包含私钥、密码或 unsigned 索引。
+
+已验证：
+
+- `git fetch --all --prune`：远端 `origin/main` 仍为 `a03103c`，无需合并新提交。
+- `cargo test -p reader parses_gutenberg_opds_fixture_without_network -- --nocapture`：通过。
+- 包内只有 `manifest.json` 与 `plugin.js`，身份为 `gutenberg@0.1.0`。
+- 插件包 SHA-256 为 `76f715e85e6360c9a8e0f7ec5bfe5fdaaed26b74221388d4da0d4fc074b0f692`；
+  独立候选与统一 RC3 的 Ed25519 验收均通过。
+- RC3 的 updater 三个文件与已验收源产物 SHA-256 逐一一致；
+  `latest.json` 与 `repository.json` 均指向 `v0.3.1` GitHub Release 的最终资产名。
+- `cargo test --workspace`：通过（Tauri 8 passed / 1 个公网测试 ignored，reading-core 149 passed）。
+- `npm.cmd run check:project`、`npm.cmd run check:release-trust` 与 `npm.cmd run build`：通过。
+
+待验证 / 下一步：
+
+- 当前分支尚未推送/合并，GitHub Release 尚未创建；旧版本真实在线更新仍未验证。
