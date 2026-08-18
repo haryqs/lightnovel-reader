@@ -3254,6 +3254,7 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
 
 未验证 / 下一步：
 
-- Billing 概览已显示 GitHub Free / $0 / 无下次付款 / 0 of 2000 Actions 分钟；但 2026-08-18 再次手动运行
-  `main` CI 仍在零步骤阶段被后台以 `account is locked due to a billing issue` 拒绝。Support #4676102 待人工处理。
+- 本轮提交 `7018990` 已推送并创建 PR #47；push 运行 `32130316608` 与 pull_request 运行
+  `32130322027` 均真实执行全部 Windows job 并全绿，证明 Actions 后台锁已解除。Support #4676102
+  可在 GitHub 回复后关闭。
 - 正式 v0.7.0 签名五资产尚未生成，因此本轮只用临时公私钥和合成资产回归验收逻辑，不声称正式候选已通过。
