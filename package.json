@@ -35,6 +35,8 @@
     "verify:plugin-repository-release": "node scripts/verify-plugin-repository-release.mjs",
     "prepare:updater-release": "node scripts/prepare-updater-release.mjs",
     "test:prepare-updater-release": "node scripts/test-prepare-updater-release.mjs",
+    "verify:release-candidate": "node scripts/verify-release-candidate.mjs",
+    "test:release-candidate": "node scripts/test-verify-release-candidate.mjs",
     "prepackage:beta": "node scripts/check-release-trust.mjs && node scripts/check-version-alignment.mjs && node scripts/check-open-source-license.mjs",
     "package:beta": "powershell -ExecutionPolicy Bypass -File scripts/package-beta.ps1",
     "preinstaller:web": "node scripts/check-release-trust.mjs && node scripts/check-version-alignment.mjs && node scripts/check-open-source-license.mjs",

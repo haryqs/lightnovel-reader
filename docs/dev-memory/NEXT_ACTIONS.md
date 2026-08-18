@@ -11,16 +11,17 @@
 - 旧 `v0.3.1` 草稿 Release 与 RC5 资产不再是公开候选；签名安装器和 `latest.json` 不能只改名复用。
 - 重复嵌套目录已移到可恢复备份 `C:\Users\41267\Documents\Codex\2026-08-18\n\work\lightnovel-reader-duplicate-backup-20260818`；
   三个内容未变化的 sync 假修改已从工作区状态清除。
-- `codex/v0.7.0-release-finalize` 已推送并创建 PR #46；GitHub 判定 `MERGEABLE / CLEAN`。
-- CI 文件已通过官方 actionlint 1.7.12，但 GitHub Actions 因账户付款失败或 spending limit 不足在启动前阻断，
-  没有执行任何 job；这不是代码或 workflow YAML 失败。
+- PR #46 已合并到 `main`（`504635b`），仓库已切换为 Public；许可证、版本门与 CI 均已进入发布目标。
+- Billing 概览现为 GitHub Free、$0 用量、无下次付款和 0/2000 Actions 分钟，但 Actions runner 后台仍返回
+  `account is locked due to a billing issue`。GitHub Support 工单 #4676102 已提交，需等待人工解除后台锁定。
+- 新增统一五资产验收器：不读取私钥，自动核对应用版本/tag/URL、精确资产白名单、updater `.sig` 引用、
+  插件 SHA-256/大小与编译内公钥 Ed25519 签名；旧 v0.3.1 URL、篡改包和额外密钥文件均有回归阻断。
 
 下一步优先级：
 
-1. **恢复 Actions**：维护者在 GitHub `Settings → Billing & plans` 处理失败付款或提高 Actions spending limit，
-   然后重新运行 PR #46 的 CI。
-2. **审阅并合并**：CI 通过后审阅并合并 PR #46 到 `main`，确保源码归档与产物对应同一提交。
-3. **重建正式资产**：使用仓库外 updater 私钥构建并签署 v0.7.0 NSIS，重新生成/验收五资产；不得上传秘密。
+1. **等待 Actions 解锁**：跟进 Support #4676102；后台解除后重新运行 `main` CI，不能把当前零步骤失败误报为测试失败。
+2. **重建正式资产**：使用仓库外 updater 私钥构建并签署 v0.7.0 NSIS，重新生成五资产；不得上传秘密。
+3. **统一候选验收**：运行 `verify:release-candidate`，再以其输出的大小/SHA-256 与 GitHub 上传结果逐项核对。
 4. **替换草稿并公开**：将旧 v0.3.1 草稿候选废弃或替换为 v0.7.0，公开后完成真实在线更新与数据保留复验。
 
 ## 📌 交接留言（2026-08-18，补齐开源许可证发布门）
