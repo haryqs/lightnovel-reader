@@ -3274,7 +3274,7 @@ checksum = "20675572f6f24e9e76ef639bc5552774ed45f1c30e2951e1e99c59888861c539"
 
 [[package]]
 name = "reader"
-version = "0.1.0"
+version = "0.7.0"
 dependencies = [
  "reading-core",
  "reqwest 0.12.28",
@@ -3290,7 +3290,7 @@ dependencies = [
 
 [[package]]
 name = "reading-core"
-version = "0.1.0"
+version = "0.7.0"
 dependencies = [
  "base64 0.22.1",
  "csv",
@@ -4169,7 +4169,7 @@ dependencies = [
 
 [[package]]
 name = "sync-server"
-version = "0.1.0"
+version = "0.7.0"
 dependencies = [
  "axum",
  "futures",

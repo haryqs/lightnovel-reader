@@ -23,6 +23,17 @@ mod plugin_executor;
 mod plugin_trust;
 mod sync_commands;
 
+const APP_USER_AGENT: &str = concat!(
+    "LightNovel Reader/",
+    env!("CARGO_PKG_VERSION"),
+    " (https://github.com/haryqs/lightnovel-reader)"
+);
+const OPDS_USER_AGENT: &str = concat!(
+    "LightNovel-Reader/",
+    env!("CARGO_PKG_VERSION"),
+    " (OPDS client; https://github.com/haryqs/lightnovel-reader)"
+);
+
 struct LoadedBook {
     book_id: String,     // 内容哈希；持久化解析缓存的 key
     bytes: Arc<Vec<u8>>, // 解码后的 EPUB 原始字节，供按需解析与图片协议复用
@@ -1157,10 +1168,7 @@ async fn search_bangumi(
         .query(&[("limit", BANGUMI_SEARCH_LIMIT.to_string())])
         .header("content-type", "application/json")
         .header("accept", "application/json")
-        .header(
-            "user-agent",
-            "LightNovel Reader/0.3.1 (https://github.com/haryqs/lightnovel-reader)",
-        )
+        .header("user-agent", APP_USER_AGENT)
         .body(body)
         .send()
         .await
@@ -1229,7 +1237,7 @@ async fn search_narou(
         .get(narou::ENDPOINT)
         .query(&params)
         .header("accept", "application/json")
-        .header("user-agent", "LightNovel Reader")
+        .header("user-agent", APP_USER_AGENT)
         .send()
         .await
         .map_err(|e| BridgeError::network(format!("Narou request failed: {e}")))?;
@@ -1456,7 +1464,7 @@ fn extract_csv_from_zip(bytes: &[u8]) -> Result<String, BridgeError> {
 async fn fetch_bytes(url: &str, label: &str) -> Result<Vec<u8>, BridgeError> {
     let resp = reqwest::Client::new()
         .get(url)
-        .header("user-agent", "LightNovel Reader/0.3.1")
+        .header("user-agent", APP_USER_AGENT)
         .send()
         .await
         .map_err(|e| BridgeError::network(format!("下载{label}失败: {e}")))?;
@@ -1476,7 +1484,7 @@ async fn fetch_bytes(url: &str, label: &str) -> Result<Vec<u8>, BridgeError> {
 async fn fetch_text(url: &str, label: &str) -> Result<String, BridgeError> {
     let resp = reqwest::Client::new()
         .get(url)
-        .header("user-agent", "LightNovel Reader/0.3.1")
+        .header("user-agent", APP_USER_AGENT)
         .send()
         .await
         .map_err(|e| BridgeError::network(format!("下载{label}失败: {e}")))?;
@@ -1707,10 +1715,7 @@ async fn opds_browse_feed(url: String) -> Result<connectors::opds::OpdsFeed, Bri
     let resp = client
         .get(url)
         .header("accept", "application/atom+xml, application/opds+json, application/xml, text/xml, application/json")
-        .header(
-            "user-agent",
-            "LightNovel-Reader/0.6 (OPDS client; https://github.com/haryqs/lightnovel-reader)",
-        )
+        .header("user-agent", OPDS_USER_AGENT)
         .send()
         .await
         .map_err(|e| BridgeError::network(format!("OPDS request failed: {e}")))?;
@@ -1768,10 +1773,7 @@ async fn opds_search_feed(
     let resp = client
         .get(&search_url)
         .header("accept", "application/atom+xml, application/opds+json, application/xml, text/xml, application/json")
-        .header(
-            "user-agent",
-            "LightNovel-Reader/0.6 (OPDS client; https://github.com/haryqs/lightnovel-reader)",
-        )
+        .header("user-agent", OPDS_USER_AGENT)
         .send()
         .await
         .map_err(|e| BridgeError::network(format!("OPDS search request failed: {e}")))?;
@@ -1863,10 +1865,7 @@ async fn opds_download_epub(
     let client = reqwest::Client::new();
     let resp = client
         .get(&acquisition_url)
-        .header(
-            "user-agent",
-            "LightNovel-Reader/0.6 (OPDS client; https://github.com/haryqs/lightnovel-reader)",
-        )
+        .header("user-agent", OPDS_USER_AGENT)
         .send()
         .await
         .map_err(|e| BridgeError::network(format!("下载 EPUB 失败: {e}")))?;

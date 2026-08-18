@@ -37,7 +37,9 @@ fn sync_cred_path(app_data: &PathBuf) -> PathBuf {
 
 fn load_cred(app_data: &PathBuf) -> Option<SyncCredential> {
     let path = sync_cred_path(app_data);
-    if !path.exists() { return None; }
+    if !path.exists() {
+        return None;
+    }
     std::fs::read_to_string(&path)
         .ok()
         .and_then(|s| serde_json::from_str(&s).ok())
@@ -184,9 +186,14 @@ pub fn sync_pull(
     since: Option<u64>,
 ) -> Result<Vec<serde_json::Value>, BridgeError> {
     let cred = load_cred(&app_data).ok_or_else(|| BridgeError::forbidden("未配对"))?;
-    let mut url = format!("{}/sync/changes?library_id={}", 
-        cred.server_url.trim_end_matches('/'), cred.library_id);
-    if let Some(c) = since { url.push_str(&format!("&since={}", c)); }
+    let mut url = format!(
+        "{}/sync/changes?library_id={}",
+        cred.server_url.trim_end_matches('/'),
+        cred.library_id
+    );
+    if let Some(c) = since {
+        url.push_str(&format!("&since={}", c));
+    }
 
     let resp = client()
         .get(&url)
@@ -194,6 +201,7 @@ pub fn sync_pull(
         .send()
         .map_err(|e| BridgeError::network(format!("拉取失败: {e}")))?;
 
-    let body: Vec<serde_json::Value> = resp.json().map_err(|e| BridgeError::parse(e.to_string()))?;
+    let body: Vec<serde_json::Value> =
+        resp.json().map_err(|e| BridgeError::parse(e.to_string()))?;
     Ok(body)
 }

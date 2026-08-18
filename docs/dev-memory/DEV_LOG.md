@@ -3158,3 +3158,69 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
 
 - 草稿尚未公开；需人工最终确认后发布。
 - 发布后从旧版本验证检查、下载、安装与重启的真实更新链。
+
+## 2026-08-18：补齐 AGPL-3.0-only 许可证与发布门
+
+完成：
+
+- 从 SPDX 官方 license-list-data 取得未修改的 `AGPL-3.0-only` 标准正文并加入根目录 `LICENSE`；
+  本机文件 SHA-256 与官方原文一致。
+- `package.json`、`package-lock.json`、`src-tauri`、`reading-core` 与 `sync-server` 统一声明
+  `AGPL-3.0-only`；Cargo 包补充项目仓库地址，Tauri crate 作者占位改为项目贡献者。
+- 新增 `scripts/check-open-source-license.mjs`：校验标准许可证正文哈希、npm 元数据和三个 Cargo manifest；
+  新增 `test-open-source-license.mjs`，覆盖完整配置、正文被修改及包元数据漂移。
+- `check:license` 已接入 `check:project`、生产构建、beta/Web 安装器 pre-hook 与正式 Tauri 分发入口。
+- README、发布单一入口、PROJECT_MEMORY 和 NEXT_ACTIONS 同步当前信任根、Gutenberg/NSIS 验收、版本轴、
+  GitHub 点号资产名和真实在线更新边界。
+
+验证：
+
+- `npm.cmd run check:project`：通过，含架构、记忆、协议、WASM 与许可证检查。
+- `npm.cmd run build`：通过，TypeScript 与 Vite/PWA 生产构建成功。
+- `npm.cmd run test:license`：通过。
+- `npm.cmd run check:release-trust`、`npm.cmd run test:release-trust`、
+  `npm.cmd run test:prepare-updater-release`：通过。
+- `cargo metadata --no-deps --format-version 1`：通过。
+- `cargo test --workspace`：通过（Tauri 8 passed / 1 个真实公网测试 ignored，reading-core 149 passed）。
+- `cargo test -p reading-core --features quickjs`：149 passed。
+- `git diff --check`：通过；仅报告仓库既有 Windows LF/CRLF 转换提示。
+
+未验证 / 下一步：
+
+- 本轮未提交或推送；草稿 Release 目标仍需先包含 updater 点号资产名修复和许可证收口。
+- 未改变仓库 Private 可见性、未编辑或公开 GitHub 草稿，也未执行发布后的旧版本在线更新。
+- 未删除 `.codex/.codex`、`docs/docs`、`public/public`、`scripts/scripts`、`tools/tools` 重复目录；
+  需维护者确认它们不是需要保留的本地文件后再清理。
+
+## 2026-08-18：统一 v0.7.0 首发版本并增加 CI 质量门
+
+完成：
+
+- 将 npm、Tauri、`reader`、`reading-core` 与 `sync-server` 统一为 `0.7.0`；Cargo 锁文件同步更新。
+- Tauri 壳与插件执行器 User-Agent 改为从 `CARGO_PKG_VERSION` 生成，避免代码中继续固化旧版本号。
+- 新增 `check-version-alignment.mjs` / `test-version-alignment.mjs`，覆盖一致、漂移与非法 SemVer；版本门已接入
+  项目检查、生产构建、beta/Web 安装器和正式分发入口。
+- 新增 Windows GitHub Actions CI，覆盖 npm 项目/发布门、版本/许可/updater 回归、前端生产构建、
+  Rust workspace、QuickJS 与 rustfmt 检查。
+- 现行 README、发布入口、开发大纲、决策、项目记忆与任务队列均以 v0.7.0 为首个公开版本；
+  旧 v0.3.1 RC5 和草稿 Release 仅保留为历史证据，明确禁止通过改名复用签名产物。
+- 五组误生成的嵌套重复目录已移到可恢复备份
+  `C:\Users\41267\Documents\Codex\2026-08-18\n\work\lightnovel-reader-duplicate-backup-20260818`；
+  三个内容未变化的 sync 假修改已清理。随后运行 rustfmt，规范了四个既有 Rust 文件的格式。
+
+验证：
+
+- `npm.cmd run check:project`、`npm.cmd run check:release-trust`、`npm.cmd run build`：通过。
+- `npm.cmd run test:version`、`test:license`、`test:release-trust`、`test:prepare-updater-release`：通过。
+- `cargo test --workspace --locked`：通过（Tauri 8 passed / 1 个公网测试 ignored，reading-core 149 passed）。
+- `cargo test -p reading-core --features quickjs --locked`：149 passed。
+- `cargo fmt --all -- --check`、`cargo metadata --locked --no-deps --format-version 1`、`git diff --check`：通过。
+- `npm.cmd run tauri -- build --bundles nsis --no-sign`：通过，生成
+  `target/release/bundle/nsis/LightNovel Reader_0.7.0_x64-setup.exe`，10,530,935 字节，
+  SHA-256 `6FAEF42868ECB118B2CA891860EBADDF1A5FE99BCB28DCA593E920E208A12CDD`。
+
+未验证 / 下一步：
+
+- 本轮 NSIS 明确为无签名构建验证，不是正式 updater；尚未用仓库外私钥生成 v0.7.0 `.sig`、`latest.json`
+  和最终五资产，也未做 v0.7.0 安装/启动/卸载及在线更新复验。
+- 未推送、未修改 GitHub 仓库可见性，也未编辑或公开远端 v0.3.1 草稿 Release。

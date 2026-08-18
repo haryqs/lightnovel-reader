@@ -13,6 +13,11 @@ use reading_core::plugin_host::{
 use reading_core::plugin_runtime::PluginHttpExecutor;
 
 pub const PLUGIN_DOMAIN_MIN_INTERVAL: Duration = Duration::from_secs(1);
+const PLUGIN_USER_AGENT: &str = concat!(
+    "LightNovelReader/",
+    env!("CARGO_PKG_VERSION"),
+    " source-plugin-host (+https://github.com/haryqs/lightnovel-reader)"
+);
 
 /// App-wide exact-domain scheduler. Runtimes are disposable, so the limiter must live in
 /// AppState and be shared by every source command instead of being recreated per JS call.
@@ -76,10 +81,7 @@ impl PluginHttpExecutor for ReqwestExecutor {
             .timeout(std::time::Duration::from_millis(plan.timeout_ms))
             .redirect(reqwest::redirect::Policy::none())
             .no_proxy()
-            .user_agent(
-                "LightNovelReader/0.3.1 source-plugin-host \
-                 (+https://github.com/haryqs/lightnovel-reader)",
-            )
+            .user_agent(PLUGIN_USER_AGENT)
             .resolve_to_addrs(host, &addresses)
             .build()
             .map_err(|e| format!("HTTP 客户端创建失败: {e}"))?;

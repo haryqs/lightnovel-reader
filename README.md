@@ -73,6 +73,7 @@ npm.cmd run tauri dev
 ```powershell
 node scripts/check-arch.mjs
 node scripts/check-dev-memory.mjs
+npm.cmd run check:license
 npm.cmd run build
 cargo test --workspace
 git diff --check
@@ -115,6 +116,11 @@ npm.cmd run tauri build
 - `docs/resource-library-plan/7_终局架构_多端与插件运行时.md`
 - `docs/resource-library-plan/8_桥接协议_v0.1.md`
 
+## 开源许可
+
+项目代码以 [GNU Affero General Public License v3.0](LICENSE)（SPDX：`AGPL-3.0-only`）发布。
+根目录许可证正文和 npm/Cargo 包元数据由 `npm.cmd run check:license` 校验，并已接入项目检查、生产构建与正式分发入口。
+
 ## 当前开发线
 
-当前主线已推进到协议 `1.0-rc.1` 冻结候选：Tauri command 与 shell promise 错误已统一为结构化 `BridgeError { code, message, details? }`，并由 `scripts/check-protocol-freeze.mjs` 守住协议版本/错误码/文档一致性。v0.7 桌面插件链路现已具备 manifest/权限/域名白名单、zip 安装、官方仓库 SHA-256 + Ed25519 包验签、QuickJS、`host.http/html/kv/log`、完整诊断试跑、正式 `source.*` 搜索/详情/章节/收藏，以及公共版权/开放授权 EPUB 获取入库；真实离线窗口 smoke、每域限速和条款确认也已完成。当前仍需配置正式发布公钥并切换强制签名，同时在正常公网 DNS 下复验 Gutenberg 搜索到获取全链路。分发线仍需继续便携包目标机器抽检和 NSIS 卸载保留数据验证。
+当前主线已推进到协议 `1.0-rc.1` 冻结候选：Tauri command 与 shell promise 错误已统一为结构化 `BridgeError { code, message, details? }`，并由 `scripts/check-protocol-freeze.mjs` 守住协议版本/错误码/文档一致性。v0.7 桌面插件链路现已具备 manifest/权限/域名白名单、zip 安装、官方仓库 SHA-256 + Ed25519 包验签、QuickJS、`host.http/html/kv/log`、正式 `source.*` 与开放资源 EPUB 获取闭环；首批插件和 updater 公钥、Gutenberg 公网全链路、NSIS 安装/卸载及数据保留均已验证。首个公开应用版本已统一为 `v0.7.0`；npm、Tauri 与三个第一方 Cargo 包由版本一致性门禁防止漂移。旧 `v0.3.1` 草稿 Release 不再作为公开候选，下一步是重新构建并签署 `v0.7.0` 产物、同步远端发布目标，再完成真实在线更新验证。

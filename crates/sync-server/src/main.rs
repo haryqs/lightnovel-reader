@@ -64,11 +64,11 @@ struct ChangeEntry {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct SnapshotResponse {
-    editions: Vec<String>,       // JSON rows
+    editions: Vec<String>, // JSON rows
     assets: Vec<String>,
     annotations: Vec<String>,
     reading_states: Vec<String>,
-    blob_hashes: Vec<String>,    // SHA-256 of EPUB files on server
+    blob_hashes: Vec<String>, // SHA-256 of EPUB files on server
 }
 
 // ---- App State ----
@@ -456,7 +456,11 @@ async fn handle_ws(
     ws.on_upgrade(move |socket| async move {
         let (mut sender, mut _receiver) = socket.split();
         while let Ok(msg) = rx.recv().await {
-            if sender.send(axum::extract::ws::Message::Text(msg.into())).await.is_err() {
+            if sender
+                .send(axum::extract::ws::Message::Text(msg.into()))
+                .await
+                .is_err()
+            {
                 break;
             }
         }

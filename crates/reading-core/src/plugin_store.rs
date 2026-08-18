@@ -46,8 +46,7 @@ pub fn install_plugin_package(
         && !confirmed_user_legal
     {
         return Err(
-            "plugin requires explicit legal confirmation (user declaration or source terms)"
-                .into(),
+            "plugin requires explicit legal confirmation (user declaration or source terms)".into(),
         );
     }
 

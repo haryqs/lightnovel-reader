@@ -8,8 +8,8 @@ const bundleDir = join(workDir, 'bundle')
 const nsisDir = join(bundleDir, 'nsis')
 const outDir = join(workDir, 'out')
 const configPath = join(workDir, 'tauri.conf.json')
-const sourceName = 'LightNovel Reader_0.3.1_x64-setup.exe'
-const assetName = 'LightNovel.Reader_0.3.1_x64-setup.exe'
+const sourceName = 'LightNovel Reader_0.7.0_x64-setup.exe'
+const assetName = 'LightNovel.Reader_0.7.0_x64-setup.exe'
 
 function assertCheck(condition, message) {
   if (!condition) throw new Error(message)
@@ -28,14 +28,14 @@ try {
   mkdirSync(nsisDir, { recursive: true })
   writeFileSync(join(nsisDir, sourceName), 'signed installer fixture')
   writeFileSync(join(nsisDir, `${sourceName}.sig`), 'signed updater fixture\n')
-  writeFileSync(configPath, `${JSON.stringify({ version: '0.3.1' })}\n`)
+  writeFileSync(configPath, `${JSON.stringify({ version: '0.7.0' })}\n`)
 
   const result = spawnSync(process.execPath, [
     join(import.meta.dirname, 'prepare-updater-release.mjs'),
     '--bundle-dir', bundleDir,
     '--config', configPath,
     '--out-dir', outDir,
-    '--base-url', 'https://github.com/haryqs/lightnovel-reader/releases/download/v0.3.1',
+    '--base-url', 'https://github.com/haryqs/lightnovel-reader/releases/download/v0.7.0',
     '--pub-date', '2026-08-04T00:00:00.000Z',
   ], { encoding: 'utf8', windowsHide: true })
 
@@ -45,10 +45,10 @@ try {
   assertCheck(!existsSync(join(outDir, sourceName)), 'space-containing installer name should not be emitted')
 
   const latest = JSON.parse(readFileSync(join(outDir, 'latest.json'), 'utf8'))
-  assertCheck(latest.version === '0.3.1', 'latest.json should preserve the configured version')
+  assertCheck(latest.version === '0.7.0', 'latest.json should preserve the configured version')
   assertCheck(
     latest.platforms['windows-x86_64'].url ===
-      `https://github.com/haryqs/lightnovel-reader/releases/download/v0.3.1/${assetName}`,
+      `https://github.com/haryqs/lightnovel-reader/releases/download/v0.7.0/${assetName}`,
     'latest.json should reference the GitHub-safe installer asset',
   )
   assertCheck(
