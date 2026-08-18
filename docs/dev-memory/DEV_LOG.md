@@ -3223,4 +3223,7 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
 
 - 本轮 NSIS 明确为无签名构建验证，不是正式 updater；尚未用仓库外私钥生成 v0.7.0 `.sig`、`latest.json`
   和最终五资产，也未做 v0.7.0 安装/启动/卸载及在线更新复验。
-- 未推送、未修改 GitHub 仓库可见性，也未编辑或公开远端 v0.3.1 草稿 Release。
+- 本地提交 `67aa72d` 与其前置 updater 修复已推送到 `codex/v0.7.0-release-finalize`，并创建 PR #46；
+  GitHub 判定 `MERGEABLE / CLEAN`。未修改仓库可见性，也未编辑或公开远端 v0.3.1 草稿 Release。
+- push 与 pull_request 两次 Actions 运行都在启动前失败。GitHub 网页注解明确指向账户近期付款失败或
+  Actions spending limit 不足；没有 job 被执行。官方 actionlint 1.7.12 对 `ci.yml` 校验通过，排除 YAML 语法问题。

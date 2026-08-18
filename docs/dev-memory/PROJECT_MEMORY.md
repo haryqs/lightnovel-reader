@@ -66,6 +66,8 @@ updater 点号资产名修复、AGPL-3.0-only 根许可证/发布门、版本门
 - 2026-08-18：首个公开应用版本从未发布的 `v0.3.1` 草稿统一为 `v0.7.0`；npm、Tauri 与三个第一方
   Cargo 包已对齐并增加版本门。新增 Windows GitHub Actions，执行项目/发布门、前端构建、Rust workspace、
   QuickJS 与 rustfmt 检查。v0.7.0 无签名 NSIS 已真实构建成功；正式签名资产仍必须用仓库外私钥重建。
+  收口分支已推送并创建 PR #46，GitHub 判定可干净合并；Actions 因账户付款/spending limit 在启动前阻断，
+  官方 actionlint 已确认 workflow 文件有效，需维护者先在 Billing & plans 恢复 Actions。
 - 2026-08-18：补齐 SPDX 官方 `AGPL-3.0-only` 根许可证，npm 与三个 Cargo 包均声明同一许可证；
   新增 `check:license` 和独立回归，校验未修改的标准许可证正文与包元数据，并接入项目检查、生产构建、
   beta/Web 安装器和正式 Tauri 分发入口。README/发布文档同步当前信任根、公网/安装验证和在线更新边界。

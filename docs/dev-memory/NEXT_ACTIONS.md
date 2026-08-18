@@ -11,11 +11,15 @@
 - 旧 `v0.3.1` 草稿 Release 与 RC5 资产不再是公开候选；签名安装器和 `latest.json` 不能只改名复用。
 - 重复嵌套目录已移到可恢复备份 `C:\Users\41267\Documents\Codex\2026-08-18\n\work\lightnovel-reader-duplicate-backup-20260818`；
   三个内容未变化的 sync 假修改已从工作区状态清除。
+- `codex/v0.7.0-release-finalize` 已推送并创建 PR #46；GitHub 判定 `MERGEABLE / CLEAN`。
+- CI 文件已通过官方 actionlint 1.7.12，但 GitHub Actions 因账户付款失败或 spending limit 不足在启动前阻断，
+  没有执行任何 job；这不是代码或 workflow YAML 失败。
 
 下一步优先级：
 
-1. **审阅并提交**：全量检查和 v0.7.0 无签名 NSIS 构建已经通过；审阅差异后提交当前收口。
-2. **同步发布目标**：将收口提交合入远端 `main`，等待 GitHub Actions 通过，确保源码归档与产物对应同一提交。
+1. **恢复 Actions**：维护者在 GitHub `Settings → Billing & plans` 处理失败付款或提高 Actions spending limit，
+   然后重新运行 PR #46 的 CI。
+2. **审阅并合并**：CI 通过后审阅并合并 PR #46 到 `main`，确保源码归档与产物对应同一提交。
 3. **重建正式资产**：使用仓库外 updater 私钥构建并签署 v0.7.0 NSIS，重新生成/验收五资产；不得上传秘密。
 4. **替换草稿并公开**：将旧 v0.3.1 草稿候选废弃或替换为 v0.7.0，公开后完成真实在线更新与数据保留复验。
 
