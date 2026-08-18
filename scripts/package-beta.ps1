@@ -121,7 +121,7 @@ $readme = @(
   "- samples\folder\Smoke Test Series\Vol02\smoke-test-lightnovel-vol2.epub",
   "",
   "Current boundary:",
-  "- This package is for v0.3.1 smoke testing.",
+  "- This package is for v$version smoke testing.",
   "- Manual P0 is still required before a real beta release.",
   "- The app does not bundle online novel text sources and does not bypass paid access, login, or DRM.",
   "",

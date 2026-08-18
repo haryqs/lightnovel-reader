@@ -1,6 +1,51 @@
 # 下一步任务队列
 
-## 📌 交接留言（2026-08-04，正式 Gutenberg 来源与统一 RC3 已就绪）
+## 📌 交接留言（2026-08-18，首个公开版本统一为 v0.7.0）
+
+当前事实：
+
+- npm、Tauri 与三个第一方 Cargo 包版本已统一为 `0.7.0`，运行时 User-Agent 从 Cargo 包版本生成；
+  协议 `1.0-rc.1` 与 `gutenberg@0.1.0` 保持独立版本。
+- 新增 `check:version` / `test:version`，并将版本一致性接入项目检查、生产构建、beta/Web 安装器与正式分发入口。
+- 新增 Windows GitHub Actions 质量门，覆盖 npm 项目门、发布回归、前端构建、Cargo workspace 与 QuickJS 测试。
+- 旧 `v0.3.1` 草稿 Release 与 RC5 资产不再是公开候选；签名安装器和 `latest.json` 不能只改名复用。
+- 重复嵌套目录已移到可恢复备份 `C:\Users\41267\Documents\Codex\2026-08-18\n\work\lightnovel-reader-duplicate-backup-20260818`；
+  三个内容未变化的 sync 假修改已从工作区状态清除。
+- `codex/v0.7.0-release-finalize` 已推送并创建 PR #46；GitHub 判定 `MERGEABLE / CLEAN`。
+- CI 文件已通过官方 actionlint 1.7.12，但 GitHub Actions 因账户付款失败或 spending limit 不足在启动前阻断，
+  没有执行任何 job；这不是代码或 workflow YAML 失败。
+
+下一步优先级：
+
+1. **恢复 Actions**：维护者在 GitHub `Settings → Billing & plans` 处理失败付款或提高 Actions spending limit，
+   然后重新运行 PR #46 的 CI。
+2. **审阅并合并**：CI 通过后审阅并合并 PR #46 到 `main`，确保源码归档与产物对应同一提交。
+3. **重建正式资产**：使用仓库外 updater 私钥构建并签署 v0.7.0 NSIS，重新生成/验收五资产；不得上传秘密。
+4. **替换草稿并公开**：将旧 v0.3.1 草稿候选废弃或替换为 v0.7.0，公开后完成真实在线更新与数据保留复验。
+
+## 📌 交接留言（2026-08-18，补齐开源许可证发布门）
+
+当前事实：
+
+- 根目录已补入 SPDX 官方 `AGPL-3.0-only` 完整正文；`package.json`、`package-lock.json` 和三个 Cargo 包
+  均声明 `AGPL-3.0-only`，Cargo 包同时指向项目仓库。
+- 新增 `check:license` 与 `test:license`：标准许可证正文或 npm/Cargo 元数据漂移会失败；项目检查、生产构建、
+  beta/Web 安装器和正式 Tauri 分发入口均已接入该门。
+- 本轮 `check:project`、生产构建、许可证/发布信任/updater 回归、Cargo workspace 与 QuickJS 特性测试均通过；
+  workspace 为 Tauri 8 passed / 1 个公网测试 ignored、reading-core 149 passed。
+- 当前分支仍比 `origin/main` 多 updater 点号资产名修复，许可证收口也尚未推送；草稿 Release 目标仍为 `main`。
+- 工作区的三个 sync 文件内容哈希与 Git 索引一致，仅显示换行/索引状态；`.codex/.codex`、`docs/docs`、
+  `public/public`、`scripts/scripts`、`tools/tools` 是未跟踪的重复目录，本轮未删除。
+
+下一步优先级：
+
+1. **同步发布目标**：审阅并提交许可证收口，把 updater 点号资产名修复与本轮提交合入远端 `main`；
+   确认草稿发布目标包含两者后才允许公开。
+2. **仓库公开准备**：确认重复目录确实可删后清理；将 GitHub 仓库从 Private 改为 Public，复核 GitHub 能识别
+   `AGPL-3.0` 许可证，并把草稿安装器文案改为实际点号资产名。
+3. **公开与在线更新**：人工公开五资产草稿，从旧版本完成检查、下载、安装、重启与用户数据保留复验。
+
+## 📌 交接留言（2026-08-04，v0.3.1 RC5 草稿 Release 已就绪）
 
 当前事实：
 
@@ -16,16 +61,18 @@
   `Project Gutenberg`，首个公开版本为 `0.1.0`，跟踪资产为 `gutenberg.zip`。
 - 正式候选由 `lnr-plugin-2026-01` 签名并通过独立公钥复验，SHA-256 为
   `76f715e85e6360c9a8e0f7ec5bfe5fdaaed26b74221388d4da0d4fc074b0f692`。
-- 插件候选位于 `E:\lightnovel-reader-release-staging\v0.1.0-gutenberg`；与既有签名 updater
-  组装后的五文件统一候选位于 `E:\lightnovel-reader-release-staging\v0.3.1-release-rc3`。
-  复制前后 updater 三个文件哈希一致，RC3 插件签名复验通过；尚未上传 GitHub。
-- `codex/v0.7-release-hardening` 已推送到 origin；GitHub PR #45 已创建，当前无冲突且可自动合并。
+- GitHub 会把 NSIS 资产名中的空格改为点号；`prepare:updater-release` 已固化该规则并增加回归，
+  避免 `latest.json` 指向不存在的带空格资产。
+- 插件候选位于 `E:\lightnovel-reader-release-staging\v0.1.0-gutenberg`；最终五文件统一候选位于
+  `E:\lightnovel-reader-release-staging\v0.3.1-release-rc5`。插件签名、updater URL/签名及五文件哈希均已复验。
+- GitHub PR #45 已合并到 `main`；`v0.3.1` 草稿 Release 已创建，目标为 `main`，
+  五个 RC5 资产状态均为 uploaded，GitHub 返回 SHA-256 与本机逐项一致；草稿尚未公开。
 
 下一步优先级：
 
-1. **审阅与统一发布**：审阅 GitHub PR #45 并合并到 `main`；
-   然后只上传 RC3 五个公开资产，不要上传 RC/RC2 中的 `gutenberg-test` 旧资产。
-2. **真实在线更新**：NSIS 安装/启动/卸载及数据保留已通过；GitHub Release 尚未创建，因此旧版本的检查、
+1. **最终确认与公开**：人工确认草稿标题、说明和五个 RC5 资产后点击发布；
+   不要上传 RC/RC2/RC3 中的旧 `gutenberg-test` 或带空格 updater 资产。
+2. **真实在线更新**：NSIS 安装/启动/卸载及数据保留已通过；Release 尚未公开，因此旧版本的检查、
    下载、安装和重启仍待发布后执行，不要提前宣称在线更新通过。
 3. **MSI 环境后续**：在不阻断 updater 的前提下检查/修复本机 Windows Installer 服务，再单独运行
    `tauri build --bundles msi --no-sign`；WiX 中文代码页配置已经修复，不得退回 1252。

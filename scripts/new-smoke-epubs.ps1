@@ -3,6 +3,8 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$repo = Resolve-Path (Join-Path $PSScriptRoot "..")
+$appVersion = (Get-Content -Raw -Encoding UTF8 (Join-Path $repo "package.json") | ConvertFrom-Json).version
 
 function Write-Utf8File($Path, $Content) {
   $dir = Split-Path -Parent $Path
@@ -33,7 +35,7 @@ function New-SmokeEpub($BuildDir, $Target, $BookId, $Title, $SeriesIndex, $BodyT
     <dc:title>$Title</dc:title>
     <dc:creator>Smoke Tester</dc:creator>
     <dc:language>zh-CN</dc:language>
-    <dc:description>Temporary EPUB generated for lightnovel-reader v0.3.1 desktop smoke testing.</dc:description>
+    <dc:description>Temporary EPUB generated for lightnovel-reader v$appVersion desktop smoke testing.</dc:description>
     <meta property="belongs-to-collection" id="series">Smoke Test Series</meta>
     <meta refines="#series" property="group-position">$SeriesIndex</meta>
   </metadata>

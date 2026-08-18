@@ -1,9 +1,11 @@
 [package]
 name = "reader"
-version = "0.1.0"
+version = "0.7.0"
 description = "轻小说阅读器（Tauri 桌面壳）"
-authors = ["you"]
+authors = ["LightNovel Reader contributors"]
 edition = "2021"
+license = "AGPL-3.0-only"
+repository = "https://github.com/haryqs/lightnovel-reader"
 
 # 本 crate 只做 Tauri 胶水：command 注册、窗口、URI 协议。
 # 业务逻辑（EPUB 解析/HTML 清洗/标注存储）一律在 crates/reading-core。

@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Windows build and test
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Set up Rust
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup component add rustfmt
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Run project guards
+        run: |
+          npm run check:project
+          npm run check:release-trust
+
+      - name: Test release guards
+        run: |
+          npm run test:version
+          npm run test:license
+          npm run test:release-trust
+          npm run test:prepare-updater-release
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Test Rust workspace
+        run: |
+          cargo fmt --all -- --check
+          cargo test --workspace --locked
+
+      - name: Test QuickJS feature explicitly
+        run: cargo test -p reading-core --features quickjs --locked

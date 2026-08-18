@@ -902,3 +902,46 @@ Tauri 经 app-wide 每域限速、SSRF/DNS 固定、禁止重定向的同一 HTT
 
 - 所有当前文档、运行时夹具、包名和发布索引统一使用 `gutenberg`。
 - 旧 `gutenberg-test` 候选仅保留于本机仓库外作审计，不进入 GitHub Release。
+
+## 2026-08-04：updater 资产名必须在生成 latest.json 时对齐 GitHub
+
+决策：
+
+1. Windows updater 公开资产名只使用字母、数字、点、下划线和连字号，不保留 Tauri 默认文件名中的空格。
+2. `prepare:updater-release` 默认把安装器名中的空格替换为点号，复制安装器和 `.sig`，
+   并用同一最终名生成 `latest.json` URL；`--asset-name` 可显式覆盖，但仍必须通过安全文件名校验。
+3. 草稿上传后必须以 GitHub 返回的资产名、大小和 SHA-256 再与本地候选逐项比对。
+
+理由：
+
+- GitHub 实际上传时将 `LightNovel Reader_...exe` 规范化为 `LightNovel.Reader_...exe`，
+  而原 `latest.json` 仍指向带空格 URL，若公开将导致自动更新 404。
+- 签名覆盖安装器字节而不是资产名，因此重命名不需要重新签名，但 URL 必须重新生成。
+
+后果：
+
+- 增加 `test:prepare-updater-release`，固定“原始名带空格 → 输出名与 URL 使用点号”的回归。
+- 首次公开候选升级为 RC5；草稿 Release 只保留 GitHub-safe 的五个资产。
+
+## 2026-08-18：首个公开应用版本统一为 v0.7.0
+
+决策：
+
+1. 不公开既有 `v0.3.1` 草稿候选；首个公开应用版本统一为 `v0.7.0`。
+2. npm、Tauri 与三个第一方 Cargo 包使用同一个三段 SemVer，并由版本一致性门禁阻止漂移。
+3. 桥接协议 `1.0-rc.1` 与插件版本（首个 Gutenberg 为 `0.1.0`）保持独立，不随应用版本强行改号。
+4. 旧 v0.3.1 签名安装器、`.sig` 与 `latest.json` 不得通过改名复用；必须从 v0.7.0 源码重新构建、
+   签署并生成更新清单。插件 zip 只有在字节完全不变且复验签名通过时才能复用，`repository.json` 的版本化 URL
+   仍需重新生成和验收。
+
+理由：
+
+- 当前已经完成路线中标为 v0.7 的插件来源、签名仓库和发布链能力，公开时仍显示 0.3.1 会误导用户。
+- 仓库尚无公开 tag 或 Release，此时统一版本不会破坏既有公开升级承诺。
+- npm、Tauri、Cargo、协议和插件版本混在一起会让安装包、User-Agent、发布文档与故障报告持续漂移。
+
+后果：
+
+- 增加 `check:version` / `test:version`，并接入开发检查、构建与所有分发入口。
+- 旧 v0.3.1 RC5 和草稿 Release 仅保留为历史证据，不再满足发布条件。
+- 正式发布前必须生成新的 v0.7.0 NSIS、updater 签名、`latest.json` 与版本化插件仓库索引，并重新核对远端资产。

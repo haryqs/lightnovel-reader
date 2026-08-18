@@ -37,7 +37,7 @@
 当前最重要的事实：**v0.3-v0.6.5 产品闭环和 v1.0 四阶段架构已落地；当前主线是 v0.7 桌面插件来源收口。
 QuickJS/host API/完整试跑、正式 `source.*` 来源收藏、开放 EPUB 获取、真实离线 Tauri smoke、每域限速与条款门均已落地；
 官方仓库 Ed25519 包验签、正式发布 keyring 与 Gutenberg 公网搜索到获取全链路已通过；
-当前剩余收口是公开统一 GitHub Release 并完成旧版本到 v0.3.1 的真实在线更新。**
+当前剩余收口是重新构建并签署统一的 v0.7.0 GitHub Release 候选，公开后完成真实在线更新。**
 
 ## 总体路线
 
@@ -317,22 +317,19 @@ npm.cmd run tauri dev
 
 ### Git
 
-- 内层仓库：`E:\workspace\game-cooperative-plan\lightnovel-reader`。
-- 外层仓库只作为父目录，不默认提交内层项目。
+- 仓库：`E:\workspace\lightnovel-reader`。
 - commit 信息用中文，写清楚功能。
 
 ## 近期冲刺
 
-当前冲刺目标：**发出 v0.3.1 测试版。**
+当前冲刺目标：**发出首个公开版本 v0.7.0。**
 
 剩余顺序：
 
-1. 合并 [PR #1](https://github.com/haryqs/lightnovel-reader/pull/1) 到 main。
-2. 人工点验原生文件/文件夹选择对话框（约 20 秒）。
-3. `npm.cmd run package:beta` 出便携测试包并发布。
-
-之后进入 v0.4（标注增强 + 性能打磨）。v0.5 实体模型 schema 草案已就绪
-（`docs/resource-library-plan/10_书库实体模型_v0.5_schema草案.md`），迁移框架已就位、可直接采纳。
+1. 审阅并提交 v0.7.0 版本统一、AGPL-3.0-only 许可门与 GitHub Actions 质量门。
+2. 将发布目标同步到远端 `main`，确认源码归档与将要发布的安装资产对应同一提交。
+3. 使用仓库外 updater 私钥重新构建、签署 v0.7.0 NSIS，生成并验收 `latest.json` 与插件仓库资产。
+4. 用新的五资产替换旧 v0.3.1 草稿候选，确认后公开 v0.7.0，并完成真实在线更新验证。
 
 ## 风险清单
 

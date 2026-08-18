@@ -160,10 +160,12 @@ pub fn generate_pairing_secret() -> String {
     use std::collections::hash_map::RandomState;
     use std::hash::{BuildHasher, Hasher};
     let mut hasher = RandomState::new().build_hasher();
-    hasher.write_u64(std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos() as u64);
+    hasher.write_u64(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos() as u64,
+    );
     format!("{:016x}{:016x}", hasher.finish(), hasher.finish())
 }
 
@@ -174,10 +176,12 @@ pub fn generate_library_id() -> String {
     use std::hash::{BuildHasher, Hasher};
     fn rand_hex() -> String {
         let mut h = RandomState::new().build_hasher();
-        h.write_u64(std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_nanos() as u64);
+        h.write_u64(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos() as u64,
+        );
         format!("{:08x}", h.finish() as u32)
     }
     format!(
@@ -213,17 +217,27 @@ mod tests {
     fn progress_newer_wins() {
         let local = make_reading_state(100, "A");
         let remote = make_reading_state(200, "B");
-        assert_eq!(resolve_reading_progress(&local, &remote), ResolveResult::TakeRemote);
+        assert_eq!(
+            resolve_reading_progress(&local, &remote),
+            ResolveResult::TakeRemote
+        );
     }
 
     #[test]
     fn progress_tiebreak_by_device_id() {
         let local = make_reading_state(100, "A");
         let remote = make_reading_state(100, "B");
-        assert_eq!(resolve_reading_progress(&local, &remote), ResolveResult::TakeRemote);
+        assert_eq!(
+            resolve_reading_progress(&local, &remote),
+            ResolveResult::TakeRemote
+        );
     }
 
-    fn make_annotation(updated_at: i64, deleted_at: Option<i64>, device_id: &str) -> SyncableAnnotation {
+    fn make_annotation(
+        updated_at: i64,
+        deleted_at: Option<i64>,
+        device_id: &str,
+    ) -> SyncableAnnotation {
         SyncableAnnotation {
             id: "ann1".into(),
             book_id: "b1".into(),
@@ -247,27 +261,39 @@ mod tests {
     fn annotation_lww_newer_wins() {
         let local = make_annotation(100, None, "A");
         let remote = make_annotation(200, None, "B");
-        assert_eq!(resolve_annotation(&local, &remote), ResolveResult::TakeRemote);
+        assert_eq!(
+            resolve_annotation(&local, &remote),
+            ResolveResult::TakeRemote
+        );
     }
 
     #[test]
     fn annotation_tombstone_beats_older_edit() {
         let local = make_annotation(100, Some(150), "A"); // deleted at 150
-        let remote = make_annotation(120, None, "B");     // edited at 120 < 150
-        assert_eq!(resolve_annotation(&local, &remote), ResolveResult::KeepLocal);
+        let remote = make_annotation(120, None, "B"); // edited at 120 < 150
+        assert_eq!(
+            resolve_annotation(&local, &remote),
+            ResolveResult::KeepLocal
+        );
     }
 
     #[test]
     fn annotation_edit_after_delete_resurrects() {
         let local = make_annotation(100, Some(150), "A"); // deleted at 150
-        let remote = make_annotation(200, None, "B");     // edited at 200 > 150 → resurrect
-        assert_eq!(resolve_annotation(&local, &remote), ResolveResult::TakeRemote);
+        let remote = make_annotation(200, None, "B"); // edited at 200 > 150 → resurrect
+        assert_eq!(
+            resolve_annotation(&local, &remote),
+            ResolveResult::TakeRemote
+        );
     }
 
     #[test]
     fn annotation_both_deleted_keep_local() {
         let local = make_annotation(100, Some(200), "A");
         let remote = make_annotation(150, Some(180), "B");
-        assert_eq!(resolve_annotation(&local, &remote), ResolveResult::KeepLocal);
+        assert_eq!(
+            resolve_annotation(&local, &remote),
+            ResolveResult::KeepLocal
+        );
     }
 }
