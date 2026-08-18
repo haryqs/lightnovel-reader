@@ -3227,3 +3227,34 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
   GitHub 判定 `MERGEABLE / CLEAN`。未修改仓库可见性，也未编辑或公开远端 v0.3.1 草稿 Release。
 - push 与 pull_request 两次 Actions 运行都在启动前失败。GitHub 网页注解明确指向账户近期付款失败或
   Actions spending limit 不足；没有 job 被执行。官方 actionlint 1.7.12 对 `ci.yml` 校验通过，排除 YAML 语法问题。
+
+## 2026-08-18：增加统一 v0.7.0 发布候选验收
+
+完成：
+
+- PR #46 已合并到远端 `main`（`504635b`），仓库已从 Private 切换为 Public；本地后续分支从该提交建立。
+- 新增 `verify-release-candidate.mjs` / `verify:release-candidate`：从 Tauri 配置确定版本/tag，从
+  `plugin_trust.rs` 读取编译内 Ed25519 公钥；核对 GitHub Release URL、点号 NSIS 名、`.sig` 与
+  `latest.json` 签名文本、插件包 SHA-256/大小/签名，以及候选目录精确文件集合。
+- 新增 `test-verify-release-candidate.mjs` / `test:release-candidate`，并接入 GitHub Actions 发布回归。
+- 发布入口、决策、项目记忆和下一步队列同步统一验收命令与资产白名单边界。
+
+验证：
+
+- `npm.cmd run test:release-candidate`：通过，覆盖合法五资产、updater 签名漂移、旧 v0.3.1 tag、
+  插件字节篡改和额外 `updater-private.key` 拒绝。
+- 对仓库外历史候选 `v0.3.1-release-rc5` 运行统一验收：按预期退出 1，明确拦截旧版本、旧 tag URL
+  和旧安装器资产名，证明旧签名产物不能伪装成 v0.7.0 候选。
+- `node --check` 两个新增脚本、`npm.cmd run check:project`、`check:release-trust`、`npm.cmd run build`：通过。
+- `npm.cmd run test:version`、`test:license`、`test:release-trust`、`test:prepare-updater-release`、
+  `test:release-candidate`：通过。
+- `cargo test --workspace --locked`：通过（Tauri 8 passed / 1 个公网测试 ignored，reading-core 149 passed）。
+- `cargo test -p reading-core --features quickjs --locked`：149 passed。
+- `cargo fmt --all -- --check`、官方 actionlint 1.7.12、`git diff --check`：通过。
+
+未验证 / 下一步：
+
+- 本轮提交 `7018990` 已推送并创建 PR #47；push 运行 `32130316608` 与 pull_request 运行
+  `32130322027` 均真实执行全部 Windows job 并全绿，证明 Actions 后台锁已解除。Support #4676102
+  可在 GitHub 回复后关闭。
+- 正式 v0.7.0 签名五资产尚未生成，因此本轮只用临时公私钥和合成资产回归验收逻辑，不声称正式候选已通过。

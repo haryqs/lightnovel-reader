@@ -48,6 +48,7 @@ jobs:
           npm run test:license
           npm run test:release-trust
           npm run test:prepare-updater-release
+          npm run test:release-candidate
 
       - name: Build frontend
         run: npm run build

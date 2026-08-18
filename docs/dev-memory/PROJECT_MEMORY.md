@@ -37,8 +37,10 @@ EPUB 的 `source.acquire` 本地 asset 获取闭环均已落地。官方仓库 E
 `v0.3.1-release-rc5` 曾逐项验收并上传到不公开的 `v0.3.1` 草稿 Release，现只保留为历史候选。
 首个公开应用版本已统一为 `v0.7.0`：npm、Tauri 与三个第一方 Cargo 包同步版本，并由自动检查防止漂移；
 协议 `1.0-rc.1` 与插件 `gutenberg@0.1.0` 继续使用各自独立版本。正式发布前必须从 v0.7.0 源码重新构建、
-签署和验收五资产，不能只重命名旧安装器或清单。GitHub PR #45 已合并到 `main`；发布收口分支另含
-updater 点号资产名修复、AGPL-3.0-only 根许可证/发布门、版本门与 CI，仍待同步到远端发布目标。
+签署和验收五资产，不能只重命名旧安装器或清单。GitHub PR #46 已合并到 `main`，仓库已公开；
+updater 点号资产名修复、AGPL-3.0-only 根许可证/发布门、版本门与 CI 均已进入发布目标。Billing 页面已恢复
+GitHub Free / $0 状态，PR #47 的 push 与 pull_request 两条 Windows CI 已真实执行并全绿，证明 Actions
+runner 后台锁已解除；Support #4676102 可在 GitHub 回复后关闭。
 
 2026-07-21 起，所有正式分发入口增加发布信任门：官方插件强制验签、插件 Ed25519 公钥 keyring 与 Tauri updater
 公钥必须同时配置，缺一即阻断打包；开发构建保持可用。插件包签名和应用更新签名属于两个独立信任域。
@@ -63,6 +65,10 @@ updater 点号资产名修复、AGPL-3.0-only 根许可证/发布门、版本门
 
 近期状态：
 
+- 2026-08-18：新增 `verify:release-candidate` 统一发布候选验收器，从 Tauri 配置和编译内插件 keyring
+  读取公开信任信息，一次核对 release tag/URL、精确资产白名单、updater `.sig` 引用、插件 SHA-256/大小和
+  Ed25519 签名；不读取私钥。回归覆盖合法五资产、签名文本漂移、旧 tag、篡改包和额外密钥文件。PR #47
+  首轮 push / pull_request CI 均全绿，Actions 账单后台锁已恢复。
 - 2026-08-18：首个公开应用版本从未发布的 `v0.3.1` 草稿统一为 `v0.7.0`；npm、Tauri 与三个第一方
   Cargo 包已对齐并增加版本门。新增 Windows GitHub Actions，执行项目/发布门、前端构建、Rust workspace、
   QuickJS 与 rustfmt 检查。v0.7.0 无签名 NSIS 已真实构建成功；正式签名资产仍必须用仓库外私钥重建。
