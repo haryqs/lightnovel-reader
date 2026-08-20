@@ -4,6 +4,12 @@
 
 它的目标是把轻小说相关的发现、索引、收藏、整理、合法获取入口和阅读体验放到同一个平台里。内置阅读器是核心模块，但平台还要管理作品图谱、用户自有书库、远程来源记录、开放资源获取、外部阅读方式和未来插件生态。
 
+## 下载
+
+- [GitHub Release：Light Novel Reader v0.7.0](https://github.com/haryqs/lightnovel-reader/releases/tag/v0.7.0)
+- Windows x64 用户下载 `LightNovel.Reader_0.7.0_x64-setup.exe`；安装器为当前用户安装，不需要管理员权限。
+- 项目仍处于早期公开阶段；使用前建议保留重要 EPUB 与书库数据的独立备份。
+
 ## 平台能力
 
 - **阅读内核**：EPUB 阅读、目录、分页、主题、字号、进度恢复、标注与 Markdown/JSON 导出。
@@ -123,4 +129,4 @@ npm.cmd run tauri build
 
 ## 当前开发线
 
-当前主线已推进到协议 `1.0-rc.1` 冻结候选：Tauri command 与 shell promise 错误已统一为结构化 `BridgeError { code, message, details? }`，并由 `scripts/check-protocol-freeze.mjs` 守住协议版本/错误码/文档一致性。v0.7 桌面插件链路现已具备 manifest/权限/域名白名单、zip 安装、官方仓库 SHA-256 + Ed25519 包验签、QuickJS、`host.http/html/kv/log`、正式 `source.*` 与开放资源 EPUB 获取闭环；首批插件和 updater 公钥、Gutenberg 公网全链路、NSIS 安装/卸载及数据保留均已验证。首个公开应用版本已统一为 `v0.7.0`；npm、Tauri 与三个第一方 Cargo 包由版本一致性门禁防止漂移。旧 `v0.3.1` 草稿 Release 不再作为公开候选，下一步是重新构建并签署 `v0.7.0` 产物、同步远端发布目标，再完成真实在线更新验证。
+当前主线已推进到协议 `1.0-rc.1` 冻结候选：Tauri command 与 shell promise 错误已统一为结构化 `BridgeError { code, message, details? }`，并由 `scripts/check-protocol-freeze.mjs` 守住协议版本/错误码/文档一致性。v0.7 桌面插件链路现已具备 manifest/权限/域名白名单、zip 安装、官方仓库 SHA-256 + Ed25519 包验签、QuickJS、`host.http/html/kv/log`、正式 `source.*` 与开放资源 EPUB 获取闭环；首批插件和 updater 公钥、Gutenberg 公网全链路、NSIS 安装/卸载及数据保留均已验证。首个公开应用版本 `v0.7.0` 已正式发布；npm、Tauri 与三个第一方 Cargo 包由版本一致性门禁防止漂移。公开五资产、`releases/latest` 清单及公开下载的安装器已复验，下一步以 v0.7.0 作为旧版本发布 v0.7.1，完成真实跨版本自动更新闭环。

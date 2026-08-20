@@ -3317,3 +3317,30 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
 - Draft 资产 URL 当前使用 GitHub 内部 `untagged-*` 路径；只有公开后才会落到清单声明的
   `/releases/download/v0.7.0/`，因此当前不能做真实在线更新结论。
 - 发布说明、许可证、目标提交和资产仍需维护者人工审阅并明确同意；本轮未公开 Release、未创建远端 tag。
+
+## 2026-08-21：公开 v0.7.0 并完成公开资产复验
+
+完成：
+
+- 维护者明确同意公开后，将 `v0.7.0` Draft Release 发布为正式、非预发布的 Latest Release：
+  https://github.com/haryqs/lightnovel-reader/releases/tag/v0.7.0 。Release 目标与远端 tag 均固定到
+  `cb75a53bbd37986775a95a45229196d3a46045ad`，公开资产仍严格为五个。
+- 从无需登录的公开 `/releases/download/v0.7.0/` URL 重新下载全部五资产，运行统一发布候选验收并通过；
+  五个文件的名称、字节数与 SHA-256 均和仓库外正式候选一致。
+- 从 `/releases/latest/download/latest.json` 单独下载 Latest 别名清单，其 SHA-256 为
+  `07A060AE909B66E881B6933B77CC3B5436A830D187EAC6307C657302ECBFFF67`，与版本化 `latest.json` 一致。
+- 使用公开下载的 NSIS 再次静默安装并实际启动应用，随后静默卸载；安装、启动、卸载退出状态正常，安装目录
+  已移除，既有 `reader.db` 与 `library.sqlite` 的数量、长度和 SHA-256 均保持不变。
+
+验证：
+
+- `npm.cmd run verify:release-candidate -- --dir <公开下载目录> --tag v0.7.0`：通过。
+- 公开五资产与正式候选逐项 SHA-256：一致；远端 `refs/tags/v0.7.0`：`cb75a53`。
+- 公开安装器：静默安装退出码 0，安装版实际启动成功，静默卸载退出码 0，用户数据保留。
+
+边界 / 下一步：
+
+- v0.7.0 是首次公开前轮换的新 updater 信任根下的第一个公开版本，没有更早的公开同信任根客户端可用于
+  真正的跨版本更新。因此公开下载与安装链已验证，但自动检查、下载、安装、重启的完整 updater 闭环必须
+  在发布 v0.7.1 时从公开 v0.7.0 验证。
+- 旧 v0.3.1 草稿继续只作为历史证据保留，不属于公开候选；本轮未删除它。

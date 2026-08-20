@@ -42,8 +42,10 @@ GitHub PR #46/#47 已合并到 `main`，仓库已公开；
 updater 点号资产名修复、AGPL-3.0-only 根许可证/发布门、版本门与 CI 均已进入发布目标。Billing 页面已恢复
 GitHub Free / $0 状态，PR #47 的 push 与 pull_request 两条 Windows CI 已真实执行并全绿，证明 Actions
 runner 后台锁已解除；Support #4676102 可在 GitHub 回复后关闭。
-新 updater 公钥已通过 PR #48 合并；v0.7.0 Draft Release 目标固定为合并提交 `cb75a53`，五个远端资产的
-名称、大小与 GitHub SHA-256 digest 已和本机正式候选逐项一致。草稿仍未公开，在线更新尚未复验。
+新 updater 公钥已通过 PR #48 合并；v0.7.0 Release 目标固定为合并提交 `cb75a53`。2026-08-21 经维护者
+明确同意后已正式公开为 Latest Release；从公开 URL 重新下载的五个资产名称、大小与 SHA-256 均和本机正式
+候选逐项一致，`releases/latest` 清单也一致。公开安装器的安装、启动、卸载与数据保留复验通过。由于 v0.7.0
+是新 updater 信任根下的首个公开版本，真实跨版本检查、下载、安装和重启必须在 v0.7.1 发布时验证。
 
 2026-07-21 起，所有正式分发入口增加发布信任门：官方插件强制验签、插件 Ed25519 公钥 keyring 与 Tauri updater
 公钥必须同时配置，缺一即阻断打包；开发构建保持可用。插件包签名和应用更新签名属于两个独立信任域。
@@ -67,6 +69,10 @@ runner 后台锁已解除；Support #4676102 可在 GitHub 回复后关闭。
   私钥不进入仓库，`lnr-plugin-2026-01` 公钥已进入编译内 keyring，unsigned 官方条目不再允许。
 
 近期状态：
+
+- 2026-08-21：经维护者明确同意，v0.7.0 已正式公开为 Latest Release，tag 固定到 `cb75a53`。公开五资产
+  下载后再次通过统一候选验收，`releases/latest/download/latest.json` 与版本化清单哈希一致；公开下载的
+  NSIS 安装、启动、卸载和书库数据保留均通过。跨版本 updater 闭环留待 v0.7.1 从公开 v0.7.0 验证。
 
 - 2026-08-20：旧 updater 私钥仍在但密码不可用；仓库无公开 Release/Tag，因此在首次公开前保留旧密钥并
   轮换新 updater 密钥，源码只更新新公钥。新私钥签名构建成功，v0.7.0 五资产通过统一验收；静默安装、
