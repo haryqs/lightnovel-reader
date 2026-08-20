@@ -42,6 +42,8 @@ GitHub PR #46/#47 已合并到 `main`，仓库已公开；
 updater 点号资产名修复、AGPL-3.0-only 根许可证/发布门、版本门与 CI 均已进入发布目标。Billing 页面已恢复
 GitHub Free / $0 状态，PR #47 的 push 与 pull_request 两条 Windows CI 已真实执行并全绿，证明 Actions
 runner 后台锁已解除；Support #4676102 可在 GitHub 回复后关闭。
+新 updater 公钥已通过 PR #48 合并；v0.7.0 Draft Release 目标固定为合并提交 `cb75a53`，五个远端资产的
+名称、大小与 GitHub SHA-256 digest 已和本机正式候选逐项一致。草稿仍未公开，在线更新尚未复验。
 
 2026-07-21 起，所有正式分发入口增加发布信任门：官方插件强制验签、插件 Ed25519 公钥 keyring 与 Tauri updater
 公钥必须同时配置，缺一即阻断打包；开发构建保持可用。插件包签名和应用更新签名属于两个独立信任域。
@@ -68,7 +70,8 @@ runner 后台锁已解除；Support #4676102 可在 GitHub 回复后关闭。
 
 - 2026-08-20：旧 updater 私钥仍在但密码不可用；仓库无公开 Release/Tag，因此在首次公开前保留旧密钥并
   轮换新 updater 密钥，源码只更新新公钥。新私钥签名构建成功，v0.7.0 五资产通过统一验收；静默安装、
-  安装版启动、静默卸载与书库数据保留均通过。仍未创建/公开 v0.7.0 远端 Release，在线更新尚未复验。
+  安装版启动、静默卸载与书库数据保留均通过。PR #48 已合并；v0.7.0 Draft Release 五资产已上传并与
+  本机 SHA-256 逐项匹配，仍未公开，在线更新尚未复验。
 - 2026-08-18：新增 `verify:release-candidate` 统一发布候选验收器，从 Tauri 配置和编译内插件 keyring
   读取公开信任信息，一次核对 release tag/URL、精确资产白名单、updater `.sig` 引用、插件 SHA-256/大小和
   Ed25519 签名；不读取私钥。回归覆盖合法五资产、签名文本漂移、旧 tag、篡改包和额外密钥文件。PR #47
