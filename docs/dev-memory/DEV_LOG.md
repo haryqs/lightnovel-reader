@@ -3258,3 +3258,45 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
   `32130322027` 均真实执行全部 Windows job 并全绿，证明 Actions 后台锁已解除。Support #4676102
   可在 GitHub 回复后关闭。
 - 正式 v0.7.0 签名五资产尚未生成，因此本轮只用临时公私钥和合成资产回归验收逻辑，不声称正式候选已通过。
+
+## 2026-08-20：轮换 updater 密钥并生成 v0.7.0 正式五资产
+
+完成：
+
+- 在仓库外秘密目录定位插件与 updater 两套密钥；两个公钥文件分别与编译内插件 keyring、Tauri updater
+  配置精确匹配，未读取或输出私钥正文。
+- 旧 updater 私钥两次交互构建均在签名阶段明确报密码错误。确认 GitHub 没有公开 Release/Tag 后，保留旧密钥，
+  生成新的带密码 updater 密钥，并将 `tauri.conf.json` 更新为新公钥。
+- 用 `lnr-plugin-2026-01` 重新生成、签署并独立验收 v0.7.0 Gutenberg 仓库；用新 updater 密钥完成正式
+  NSIS 签名构建。
+- 隔离历史 v0.3.1 bundle 后生成 updater 三资产，组装
+  `E:\lightnovel-reader-release-staging\v0.7.0-release` 五资产并通过 `verify:release-candidate`。
+- 正式 NSIS 静默安装退出码 0，安装版成功启动；静默卸载退出码 0，安装目录已移除。卸载前后
+  `reader.db` 与 `library.sqlite` 的数量、长度、SHA-256 完全一致。
+
+验证：
+
+- `npm.cmd run check:project`、`check:release-trust`、`npm.cmd run build`：通过。
+- `npm.cmd run test:version`、`test:license`、`test:release-trust`、`test:prepare-updater-release`、
+  `test:release-candidate`：通过。
+- `cargo test --workspace --locked`：通过（Tauri 8 passed / 1 个公网测试 ignored，reading-core 149 passed）。
+- `cargo test -p reading-core --features quickjs --locked`：149 passed。
+- `cargo fmt --all -- --check`、官方 actionlint 1.7.12、`git diff --check` 与敏感信息 diff 扫描：通过。
+
+候选摘要：
+
+- `LightNovel.Reader_0.7.0_x64-setup.exe`：10,530,672 字节，SHA-256
+  `6BA69BE9FB71E73BFCA9FEA5B1E42DF752B3279177448A4B48EE0419F34021C3`。
+- `LightNovel.Reader_0.7.0_x64-setup.exe.sig`：432 字节，SHA-256
+  `A69FDEAACB574F25841001B55FBAC0F52D963AD439A38F6B53BD586FF6D270BA`。
+- `gutenberg.zip`：1,763 字节，SHA-256
+  `76F715E85E6360C9A8E0F7EC5BFE5FDAAED26B74221388D4DA0D4FC074B0F692`。
+- `latest.json`：754 字节，SHA-256
+  `07A060AE909B66E881B6933B77CC3B5436A830D187EAC6307C657302ECBFFF67`。
+- `repository.json`：1,345 字节，SHA-256
+  `1495B8F66C17A0F8BDA046C2D7CA832D7BDCEE975471A256DC3C87EAB2DDF89D`。
+
+未验证 / 下一步：
+
+- 新 updater 公钥尚未提交、推送和合并，远端草稿不得在源码目标仍为旧公钥时公开。
+- v0.7.0 五资产尚未上传 GitHub Draft Release；远端大小/SHA-256 与公开后的在线更新尚未复验。
