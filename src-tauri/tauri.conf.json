@@ -70,7 +70,7 @@
       "endpoints": [
         "https://github.com/haryqs/lightnovel-reader/releases/latest/download/latest.json"
       ],
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDczNEU5QjE4QUVCQzI1MTMKUldRVEpieXVHSnRPYzl4dHZaM1R1eFpDYTdiUm9jSTgxQ3pPSGxvYmZhVjFSUWh3c2JTWWN5MjUK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEFCNzVBNTFEMjBGM0M4OUMKUldTY3lQTWdIYVYxcTQ1dGs4TUp5cGViSUdtd20rSWZvUVJtZHlMbExPNUx2d1ZEa1IrMEJtcjIK",
       "windows": {
         "installMode": "passive"
       }
