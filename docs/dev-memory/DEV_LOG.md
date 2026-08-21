@@ -3511,3 +3511,32 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
 
 - 同版本 Latest 未触发真实更新详情填充、下载或安装；需要后续版本从公开 v0.7.1 验证完整弹窗内容、进度、
   签名接受/拒绝、安装、重启和用户数据保留。
+
+## 2026-08-21：准备 v0.7.2 源码候选
+
+完成：
+
+- 将 npm、Tauri 与三个第一方 Cargo 包统一升至 `0.7.2`，同步更新 lockfile；协议 `1.0-rc.1`、
+  `gutenberg@0.1.0` 与既有 updater/插件信任根保持不变。
+- 将当前发布命令和任务队列切换到 v0.7.2，明确它目前只有源码候选；README 公开下载入口及 v0.7.1/v0.7.0
+  历史资产、摘要和发布证据保持原样，没有生成签名资产、Draft Release 或 tag。
+- v0.7.2 的目标是从公开安装的 v0.7.1 完成首个应用内全界面更新闭环，覆盖更新详情、真实下载进度、
+  验签安装、重启、失败恢复与用户数据保留。
+
+验证：
+
+- `npm.cmd run check:project`、`npm.cmd run test:version`、`npm.cmd run test:license`、
+  `npm.cmd run test:release-trust`、`npm.cmd run test:prepare-updater-release`、
+  `npm.cmd run test:release-candidate` 与 `npm.cmd run build`：通过，版本门识别 `0.7.2`。
+- `cargo fmt --all -- --check`、`cargo test --workspace --locked`：通过；Tauri 8 passed / 1 个公网测试 ignored，
+  reading-core 149 passed；`cargo test -p reading-core --features quickjs --locked`：149 passed。
+- `npm.cmd run tauri -- build --debug --no-bundle`：通过，生成 v0.7.2 debug 应用；
+  `npm.cmd run smoke:updater`：通过，真实窗口启动、应用内弹窗与进度控件均通过检查，访问公开 v0.7.1
+  Latest 后走“当前已是最新版本”分支。
+
+未验证 / 下一步：
+
+- 合并源码候选后，从固定的 main 提交执行需要维护者交互输入私钥密码的正式签名构建，再生成并公钥验收
+  v0.7.2 五资产候选。
+- 只创建 Draft Release；公开前仍需维护者单独明确同意。发布后从公开安装的 v0.7.1 完成更新详情、下载、
+  验签、安装、重启及用户数据保留复验。
