@@ -3459,3 +3459,30 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
   reading-core 普通与 QuickJS 两轮各 149 passed。
 - 本机没有 actionlint；PR #55 的 GitHub Actions 实测通过：该提交只产生一条 `pull_request` run，v6
   checkout/setup-node 初始化、完整 Windows job 与后置清理均成功，check annotations 为 0，不再出现 Node 20 警告。
+
+## 2026-08-21：补齐 updater 下载进度与并发保护
+
+完成：
+
+- `ReaderBridge.appUpdate.install` 增加可选 `AppUpdateInstallProgress` 回调；Tauri 壳将官方 updater 的
+  `Started/Progress/Finished` 映射为累计字节、可选总字节与下载/安装阶段，安装器字节不进入桥接消息面。
+- 平台壳把重复安装调用合并到同一个 Promise，并阻止检查流程在安装期间关闭 updater resource；单个坏进度
+  监听器不会打断更新。
+- 书库标题栏新增原生 progress 控件：已知长度显示百分比与已下载/总大小，未知长度显示不定进度，下载完成后
+  明确提示验签安装；失败恢复为“重试更新”，UI 级忙状态阻止重复点击。
+- 真实窗口 smoke 增加进度控件存在、初始隐藏、只检查时保持隐藏的断言，并修复冷启动时 `<body>` 尚未创建
+  导致的 WebDriver 探测竞态。
+- 同步桥接协议、发布测试边界、项目记忆、决策与下一步队列；版本保持 `0.7.1`，未生成或公开新 Release。
+
+验证：
+
+- `npm.cmd run build`：通过，含架构、协议、WASM、版本、许可证、TypeScript 与 Vite/PWA 构建。
+- `cargo test --workspace`：通过；Tauri 8 passed / 1 个公网测试 ignored，reading-core 149 passed。
+- `cargo test -p reading-core --features quickjs`：通过，149 passed。
+- `npm.cmd run tauri -- build --debug --no-bundle`：通过，生成 debug 应用。
+- `npm.cmd run smoke:updater`：通过；真实 v0.7.1 窗口访问公开 Latest 后显示“当前已是最新版本”，进度保持隐藏。
+
+未验证 / 下一步：
+
+- 当前公开 Latest 与客户端同为 v0.7.1，未触发真实下载事件、签名接受/拒绝、安装和重启；需以后续维护版本从
+  公开安装的 v0.7.1 完成跨版本闭环及用户数据保留复验。

@@ -5,11 +5,12 @@ export { invoke }
 import { open } from '@tauri-apps/plugin-dialog'
 import { openPath, openUrl } from '@tauri-apps/plugin-opener'
 import { relaunch } from '@tauri-apps/plugin-process'
-import { check, type Update } from '@tauri-apps/plugin-updater'
+import { check, type DownloadEvent, type Update } from '@tauri-apps/plugin-updater'
 import { isBridgeError } from './protocol'
 import type {
   Annotation,
   AppUpdateInfo,
+  AppUpdateInstallProgress,
   BridgeError,
   BookInfo,
   CalibreBook,
@@ -34,6 +35,8 @@ import type {
 } from './protocol'
 
 let pendingAppUpdate: Update | null = null
+let activeAppUpdateInstall: Promise<void> | null = null
+const appUpdateProgressListeners = new Set<(progress: AppUpdateInstallProgress) => void>()
 
 export const isTauriRuntime = () =>
   Boolean((window as any).__TAURI_INTERNALS__)
@@ -75,6 +78,9 @@ async function closePendingAppUpdate(): Promise<void> {
 }
 
 async function checkAppUpdate(): Promise<AppUpdateInfo | null> {
+  if (activeAppUpdateInstall) {
+    throw bridgeError('platformError', '应用更新正在安装，请等待应用重启')
+  }
   await closePendingAppUpdate()
   try {
     const update = await check()
@@ -91,15 +97,41 @@ async function checkAppUpdate(): Promise<AppUpdateInfo | null> {
   }
 }
 
-async function installAppUpdate(): Promise<void> {
+function emitAppUpdateProgress(progress: AppUpdateInstallProgress): void {
+  for (const listener of appUpdateProgressListeners) {
+    try {
+      listener(progress)
+    } catch (err) {
+      console.error('应用更新进度监听器失败', err)
+    }
+  }
+}
+
+async function runAppUpdateInstall(): Promise<void> {
   let update = pendingAppUpdate
+  let downloadedBytes = 0
+  let totalBytes: number | undefined
   try {
     if (!update) {
       update = await check()
       pendingAppUpdate = update
     }
     if (!update) throw bridgeError('notFound', '当前没有可安装的应用更新')
-    await update.downloadAndInstall()
+    const onDownloadEvent = (event: DownloadEvent) => {
+      if (event.event === 'Started') {
+        downloadedBytes = 0
+        totalBytes = event.data.contentLength
+        emitAppUpdateProgress({ stage: 'downloading', downloadedBytes, totalBytes })
+        return
+      }
+      if (event.event === 'Progress') {
+        downloadedBytes += event.data.chunkLength
+        emitAppUpdateProgress({ stage: 'downloading', downloadedBytes, totalBytes })
+        return
+      }
+      emitAppUpdateProgress({ stage: 'installing', downloadedBytes, totalBytes })
+    }
+    await update.downloadAndInstall(onDownloadEvent)
     pendingAppUpdate = null
     await relaunch()
   } catch (err) {
@@ -111,6 +143,20 @@ async function installAppUpdate(): Promise<void> {
       await update.close().catch(() => undefined)
     }
   }
+}
+
+function installAppUpdate(onProgress?: (progress: AppUpdateInstallProgress) => void): Promise<void> {
+  if (onProgress) appUpdateProgressListeners.add(onProgress)
+  if (!activeAppUpdateInstall) {
+    activeAppUpdateInstall = runAppUpdateInstall().finally(() => {
+      activeAppUpdateInstall = null
+      appUpdateProgressListeners.clear()
+    })
+  }
+  const operation = activeAppUpdateInstall
+  return operation.finally(() => {
+    if (onProgress) appUpdateProgressListeners.delete(onProgress)
+  })
 }
 
 export const tauriBridge: ReaderBridge = {

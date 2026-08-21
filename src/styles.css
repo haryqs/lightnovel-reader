@@ -609,6 +609,17 @@ body.statusbar-visible .statusbar,
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.app-update-progress {
+  width: 86px;
+  height: 6px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 999px;
+  accent-color: var(--accent-2);
+}
+.app-update-progress[hidden] {
+  display: none;
+}
 .app-update-controls[data-state="available"] span {
   color: var(--accent-2);
 }

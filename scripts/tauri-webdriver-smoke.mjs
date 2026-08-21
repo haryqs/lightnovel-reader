@@ -250,7 +250,7 @@ async function main() {
         const emptyArt = document.querySelector('.empty-art-frame img')
         return {
           title: document.title,
-          theme: document.body.dataset.theme || '',
+          theme: document.body?.dataset.theme || '',
           hasBrand: !!document.querySelector('.app-brand img'),
           hasAmbientScene: !!ambient,
           hasEmptyArt: !!emptyArt,
@@ -294,7 +294,7 @@ async function main() {
       execute(`
         return {
           title: document.title,
-          theme: document.body.dataset.theme || '',
+          theme: document.body?.dataset.theme || '',
           hasBrand: !!document.querySelector('.app-brand img'),
           hasLibraryButton: !!document.querySelector('#btn-library'),
         }
@@ -318,6 +318,7 @@ async function main() {
         const calibre = document.querySelector('#btn-library-import-calibre')
         const updateControls = document.querySelector('#app-update-controls')
         const updateButton = document.querySelector('#btn-app-update')
+        const updateProgress = document.querySelector('#app-update-progress')
         return {
           libraryVisible: !!view && view.hidden === false,
           hasImportEpub: !!document.querySelector('#btn-library-import-epub'),
@@ -329,6 +330,8 @@ async function main() {
           hasUpdateButton: !!updateButton,
           updateControlsVisible: !!updateControls && updateControls.hidden === false,
           updateButtonLabel: updateButton?.textContent || '',
+          hasUpdateProgress: !!updateProgress,
+          updateProgressHidden: updateProgress?.hidden === true,
           bookCards: document.querySelectorAll('.book-card').length,
           hasEmptyState: !!document.querySelector('.library-empty'),
           hasErrorState: !!document.querySelector('.library-state-error'),
@@ -344,6 +347,8 @@ async function main() {
   assertCheck(!library.sourcePanelOpen, 'secondary source panel should be collapsed by default', library)
   assertCheck(!library.hasErrorState, 'library rendered an error state', library)
   assertCheck(library.hasUpdateButton, 'application update action is missing', library)
+  assertCheck(library.hasUpdateProgress, 'application update progress indicator is missing', library)
+  assertCheck(library.updateProgressHidden, 'application update progress should be hidden before installation', library)
   assertCheck(library.updateControlsVisible, 'application update action must be visible in Tauri', library)
   assertCheck(library.updateButtonLabel === '检查更新', 'unexpected application update label', library)
 
@@ -358,16 +363,19 @@ async function main() {
       'application updater check',
       () => execute(`
         const controls = document.querySelector('#app-update-controls')
+        const progress = document.querySelector('#app-update-progress')
         return {
           state: controls?.dataset.state || '',
           status: document.querySelector('#app-update-status')?.textContent || '',
           buttonLabel: document.querySelector('#btn-app-update')?.textContent || '',
+          progressHidden: progress?.hidden === true,
         }
       `),
       (value) => value.state === 'success' || value.state === 'available' || value.state === 'error',
       30_000,
     )
     assertCheck(updater.state !== 'error', 'application updater check failed', updater)
+    assertCheck(updater.progressHidden, 'updater check must not show install progress', updater)
   }
 
   const closed = await execute(`

@@ -40,6 +40,13 @@ export interface AppUpdateInfo {
   body?: string
 }
 
+/** appUpdate.install 下载/安装阶段进度；安装包字节仍由平台 updater 自己处理。 */
+export interface AppUpdateInstallProgress {
+  stage: 'downloading' | 'installing'
+  downloadedBytes: number
+  totalBytes?: number
+}
+
 /** 运行时判定一个 rejection 是否为结构化 BridgeError（而非裸字符串）。 */
 export function isBridgeError(value: unknown): value is BridgeError {
   return (
@@ -392,7 +399,7 @@ export interface ReaderBridge {
   /** appUpdate.check — 按当前平台配置检查更新；没有更新时返回 null */
   checkAppUpdate(): Promise<AppUpdateInfo | null>
   /** appUpdate.install — 下载并验签安装最近一次检查到的更新，然后重启应用 */
-  installAppUpdate(): Promise<void>
+  installAppUpdate(onProgress?: (progress: AppUpdateInstallProgress) => void): Promise<void>
   /** plugin.selectPackagePath — 选择源插件 zip 安装包，返回本地路径或 null */
   selectPluginPackagePath(): Promise<string | null>
   /** plugin.inspectPackage — 读取 zip manifest/入口并返回安装前确认信息，不执行插件代码 */
