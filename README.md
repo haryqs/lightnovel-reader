@@ -129,4 +129,4 @@ npm.cmd run tauri build
 
 ## 当前开发线
 
-当前主线已推进到协议 `1.0-rc.1` 冻结候选：Tauri command 与 shell promise 错误已统一为结构化 `BridgeError { code, message, details? }`，并由 `scripts/check-protocol-freeze.mjs` 守住协议版本/错误码/文档一致性。v0.7 桌面插件链路现已具备 manifest/权限/域名白名单、zip 安装、官方仓库 SHA-256 + Ed25519 包验签、QuickJS、`host.http/html/kv/log`、正式 `source.*` 与开放资源 EPUB 获取闭环；首批插件和 updater 公钥、Gutenberg 公网全链路、NSIS 安装/卸载及数据保留均已验证。首个带应用内更新入口的 `v0.7.1` 已正式发布；npm、Tauri 与三个第一方 Cargo 包由版本一致性门禁防止漂移。公开五资产、`releases/latest` 清单及公开下载的安装器已复验，下一步以 v0.7.1 作为旧版本完成到后续版本的完整用户界面更新闭环。
+当前主线已推进到协议 `1.0-rc.1` 冻结候选：Tauri command 与 shell promise 错误已统一为结构化 `BridgeError { code, message, details? }`，并由 `scripts/check-protocol-freeze.mjs` 守住协议版本/错误码/文档一致性。v0.7 桌面插件链路现已具备 manifest/权限/域名白名单、zip 安装、官方仓库 SHA-256 + Ed25519 包验签、QuickJS、`host.http/html/kv/log`、正式 `source.*` 与开放资源 EPUB 获取闭环；首批插件和 updater 公钥、Gutenberg 公网全链路、NSIS 安装/卸载及数据保留均已验证。首个带应用内更新入口的 `v0.7.1` 已正式发布，`v0.7.2` 源码候选正在准备；npm、Tauri 与三个第一方 Cargo 包由版本一致性门禁防止漂移。公开五资产、`releases/latest` 清单及公开下载的 v0.7.1 安装器已复验，下一步从 v0.7.1 完成到 v0.7.2 的完整用户界面更新闭环。
