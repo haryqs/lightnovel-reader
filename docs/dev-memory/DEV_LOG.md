@@ -3457,4 +3457,5 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
 - `cargo fmt --all -- --check`、`cargo test --workspace --locked`、
   `cargo test -p reading-core --features quickjs --locked`：通过；Tauri 8 passed / 1 个公网测试 ignored，
   reading-core 普通与 QuickJS 两轮各 149 passed。
-- 本机没有 actionlint；workflow 事件过滤和 v6 action 仍必须由本 PR 的 GitHub Actions 实际验证。
+- 本机没有 actionlint；PR #55 的 GitHub Actions 实测通过：该提交只产生一条 `pull_request` run，v6
+  checkout/setup-node 初始化、完整 Windows job 与后置清理均成功，check annotations 为 0，不再出现 Node 20 警告。
