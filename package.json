@@ -22,6 +22,7 @@
     "dev:note": "node scripts/dev-note.mjs",
     "smoke:fixtures": "powershell -ExecutionPolicy Bypass -File scripts/new-smoke-epubs.ps1",
     "smoke:tauri": "node scripts/tauri-webdriver-smoke.mjs",
+    "smoke:updater": "node scripts/tauri-webdriver-smoke.mjs --check-updater",
     "smoke:p0": "node scripts/tauri-p0-smoke.mjs",
     "smoke:p1": "node scripts/tauri-p1-smoke.mjs",
     "smoke:remote-link": "node scripts/tauri-remote-link-smoke.mjs",
@@ -50,7 +51,9 @@
   "dependencies": {
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-dialog": "^2.7.1",
-    "@tauri-apps/plugin-opener": "^2"
+    "@tauri-apps/plugin-opener": "^2",
+    "@tauri-apps/plugin-process": "^2.3.1",
+    "@tauri-apps/plugin-updater": "^2.10.1"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",

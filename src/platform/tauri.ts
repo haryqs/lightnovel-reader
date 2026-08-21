@@ -4,8 +4,12 @@ import { convertFileSrc, invoke } from '@tauri-apps/api/core'
 export { invoke }
 import { open } from '@tauri-apps/plugin-dialog'
 import { openPath, openUrl } from '@tauri-apps/plugin-opener'
+import { relaunch } from '@tauri-apps/plugin-process'
+import { check, type Update } from '@tauri-apps/plugin-updater'
+import { isBridgeError } from './protocol'
 import type {
   Annotation,
+  AppUpdateInfo,
   BridgeError,
   BookInfo,
   CalibreBook,
@@ -28,6 +32,8 @@ import type {
   ReadingProgress,
   RemoteLibrarySource,
 } from './protocol'
+
+let pendingAppUpdate: Update | null = null
 
 export const isTauriRuntime = () =>
   Boolean((window as any).__TAURI_INTERNALS__)
@@ -59,6 +65,51 @@ async function openLocalPathExternal(path: string): Promise<void> {
     await openPath(path)
   } catch (err) {
     throw bridgeError('platformError', '打开本地文件失败', err instanceof Error ? err.message : err)
+  }
+}
+
+async function closePendingAppUpdate(): Promise<void> {
+  const pending = pendingAppUpdate
+  pendingAppUpdate = null
+  if (pending) await pending.close().catch(() => undefined)
+}
+
+async function checkAppUpdate(): Promise<AppUpdateInfo | null> {
+  await closePendingAppUpdate()
+  try {
+    const update = await check()
+    pendingAppUpdate = update
+    if (!update) return null
+    return {
+      currentVersion: update.currentVersion,
+      version: update.version,
+      date: update.date,
+      body: update.body,
+    }
+  } catch (err) {
+    throw bridgeError('platformError', '检查应用更新失败', err instanceof Error ? err.message : err)
+  }
+}
+
+async function installAppUpdate(): Promise<void> {
+  let update = pendingAppUpdate
+  try {
+    if (!update) {
+      update = await check()
+      pendingAppUpdate = update
+    }
+    if (!update) throw bridgeError('notFound', '当前没有可安装的应用更新')
+    await update.downloadAndInstall()
+    pendingAppUpdate = null
+    await relaunch()
+  } catch (err) {
+    if (pendingAppUpdate === update) pendingAppUpdate = null
+    if (isBridgeError(err)) throw err
+    throw bridgeError('platformError', '下载或安装应用更新失败', err instanceof Error ? err.message : err)
+  } finally {
+    if (update && pendingAppUpdate !== update) {
+      await update.close().catch(() => undefined)
+    }
   }
 }
 
@@ -97,6 +148,8 @@ export const tauriBridge: ReaderBridge = {
   resolveFileUrl: (path) => convertFileSrc(path),
   openExternal: (url) => openUrlExternal(url),
   openPathExternal: (path) => openLocalPathExternal(path),
+  checkAppUpdate,
+  installAppUpdate,
   selectPluginPackagePath: async () => {
     const selected = await open({
       multiple: false,

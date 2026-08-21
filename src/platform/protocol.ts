@@ -32,6 +32,14 @@ export interface BridgeError {
   details?: string
 }
 
+/** appUpdate.check 返回的可用更新摘要；安装包本体不进入桥接消息。 */
+export interface AppUpdateInfo {
+  currentVersion: string
+  version: string
+  date?: string
+  body?: string
+}
+
 /** 运行时判定一个 rejection 是否为结构化 BridgeError（而非裸字符串）。 */
 export function isBridgeError(value: unknown): value is BridgeError {
   return (
@@ -381,6 +389,10 @@ export interface ReaderBridge {
   openExternal(url: string): Promise<void>
   /** shell.openPathExternal - open a local readable asset with the system default app */
   openPathExternal(path: string): Promise<void>
+  /** appUpdate.check — 按当前平台配置检查更新；没有更新时返回 null */
+  checkAppUpdate(): Promise<AppUpdateInfo | null>
+  /** appUpdate.install — 下载并验签安装最近一次检查到的更新，然后重启应用 */
+  installAppUpdate(): Promise<void>
   /** plugin.selectPackagePath — 选择源插件 zip 安装包，返回本地路径或 null */
   selectPluginPackagePath(): Promise<string | null>
   /** plugin.inspectPackage — 读取 zip manifest/入口并返回安装前确认信息，不执行插件代码 */

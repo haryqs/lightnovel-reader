@@ -593,6 +593,28 @@ body.statusbar-visible .statusbar,
   font-size: 12px;
   font-weight: 700;
 }
+.app-update-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.app-update-controls[hidden] {
+  display: none;
+}
+.app-update-controls span {
+  max-width: 220px;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.app-update-controls[data-state="available"] span {
+  color: var(--accent-2);
+}
+.app-update-controls[data-state="error"] span {
+  color: var(--danger, #c23b3b);
+}
 .library-actions {
   display: flex;
   gap: 8px;
