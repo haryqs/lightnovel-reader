@@ -3398,3 +3398,22 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
 - `npm.cmd run tauri -- build --debug --no-bundle`：通过，生成 v0.7.1 debug 应用。
 - `npm.cmd run smoke:updater`：通过；真实 v0.7.1 窗口显示更新入口，访问当前公开 v0.7.0 Latest 清单后
   正确判定当前已是最新版本，未下载或安装。
+
+## 2026-08-21：生成并安装复验 v0.7.1 正式候选
+
+完成：
+
+- PR #52 的 push / pull_request 两条 Windows CI 全绿后合并到 `main`，合并提交为
+  `1929999`；正式签名构建固定使用该提交和现有 updater 信任根。
+- 隔离历史安装器后生成 v0.7.1 updater 三资产；复用字节未变且重新验签通过的 `gutenberg.zip`，重新生成
+  指向 v0.7.1 的插件仓库索引并用 `lnr-plugin-2026-01` 签署。
+- `E:\lightnovel-reader-release-staging\v0.7.1-release` 恰好包含五个公开资产，统一候选验收通过；资产大小与
+  SHA-256 已写入现行发布文档。
+- 正式候选静默安装退出码 0，安装版在真实 Tauri 窗口中启动、显示更新入口并完成清单检查；静默卸载退出码 0，
+  安装目录被清理，既有 `reader.db` 与 `library.sqlite` 的数量、长度和 SHA-256 完全不变。
+
+未验证 / 下一步：
+
+- 尚未创建或公开 v0.7.1 GitHub Release。下一步创建目标为 `1929999` 的草稿、上传五资产并复核远端摘要；
+  公开仍需维护者单独明确同意。
+- 草稿资产尚无公开的版本化下载 URL，不能据此宣称在线 updater 下载、安装或重启闭环通过。
