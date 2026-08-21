@@ -212,6 +212,44 @@
       </section>
     </div>
 
+    <dialog id="app-update-dialog" class="app-update-dialog" aria-labelledby="app-update-dialog-title" aria-describedby="app-update-dialog-description">
+      <div class="app-update-dialog-card">
+        <header class="app-update-dialog-header">
+          <div>
+            <div class="app-update-dialog-kicker">Signed application update</div>
+            <h2 id="app-update-dialog-title">发现新版本</h2>
+          </div>
+          <button id="btn-app-update-dialog-close" class="icon-btn app-update-dialog-close" type="button" aria-label="关闭更新详情">×</button>
+        </header>
+        <div class="app-update-version-flow" aria-label="版本变化">
+          <div class="app-update-version-card">
+            <span>当前版本</span>
+            <strong id="app-update-current-version">—</strong>
+          </div>
+          <span class="app-update-version-arrow" aria-hidden="true">→</span>
+          <div class="app-update-version-card app-update-version-card-target">
+            <span>可用版本</span>
+            <strong id="app-update-target-version">—</strong>
+          </div>
+        </div>
+        <p id="app-update-dialog-description" class="app-update-dialog-description">
+          安装包将从 GitHub Releases 下载，并由应用内置公钥验签；完成后应用会自动重启。
+        </p>
+        <div id="app-update-release-date-row" class="app-update-release-date" hidden>
+          <span>发布日期</span>
+          <time id="app-update-release-date"></time>
+        </div>
+        <section class="app-update-release-notes" aria-labelledby="app-update-release-notes-title">
+          <h3 id="app-update-release-notes-title">更新说明</h3>
+          <div id="app-update-release-notes-body" class="app-update-release-notes-body"></div>
+        </section>
+        <footer class="app-update-dialog-actions">
+          <button id="btn-app-update-later" class="btn" type="button" autofocus>稍后</button>
+          <button id="btn-app-update-install" class="btn btn-primary" type="button">下载并安装</button>
+        </footer>
+      </div>
+    </dialog>
+
     <!-- 底部进度条 -->
     <footer class="statusbar" hidden id="statusbar">
       <button id="btn-prev" class="btn">← 上一页</button>

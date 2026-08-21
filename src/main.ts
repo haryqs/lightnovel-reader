@@ -3,6 +3,7 @@ import {
   bridge,
   hasNativeBridge,
   isBridgeError,
+  type AppUpdateInfo,
   type AppUpdateInstallProgress,
   type InstalledPlugin,
   type LibraryBook,
@@ -580,6 +581,15 @@ const appUpdateControls = $<HTMLElement>('#app-update-controls')
 const appUpdateStatus = $<HTMLElement>('#app-update-status')
 const appUpdateProgress = $<HTMLProgressElement>('#app-update-progress')
 const appUpdateBtn = $<HTMLButtonElement>('#btn-app-update')
+const appUpdateDialog = $<HTMLDialogElement>('#app-update-dialog')
+const appUpdateCurrentVersion = $<HTMLElement>('#app-update-current-version')
+const appUpdateTargetVersion = $<HTMLElement>('#app-update-target-version')
+const appUpdateReleaseDateRow = $<HTMLElement>('#app-update-release-date-row')
+const appUpdateReleaseDate = $<HTMLTimeElement>('#app-update-release-date')
+const appUpdateReleaseNotes = $<HTMLElement>('#app-update-release-notes-body')
+const appUpdateDialogCloseBtn = $<HTMLButtonElement>('#btn-app-update-dialog-close')
+const appUpdateLaterBtn = $<HTMLButtonElement>('#btn-app-update-later')
+const appUpdateInstallBtn = $<HTMLButtonElement>('#btn-app-update-install')
 // OPDS v0.6
 const libraryOpdsPanel = $<HTMLDetailsElement>('#library-opds-panel')
 const libraryOpdsUrlHint = $<HTMLElement>('#library-opds-url-hint')
@@ -673,6 +683,60 @@ function versionLabel(version: string): string {
   return version.startsWith('v') ? version : `v${version}`
 }
 
+function formatUpdateDate(value: string): string {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return new Intl.DateTimeFormat('zh-CN', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  }).format(date)
+}
+
+function confirmAppUpdate(update: AppUpdateInfo): Promise<boolean> {
+  appUpdateCurrentVersion.textContent = versionLabel(update.currentVersion)
+  appUpdateTargetVersion.textContent = versionLabel(update.version)
+
+  const date = update.date?.trim()
+  appUpdateReleaseDateRow.hidden = !date
+  appUpdateReleaseDate.textContent = date ? formatUpdateDate(date) : ''
+  appUpdateReleaseDate.dateTime = date || ''
+
+  const notes = update.body?.trim()
+  appUpdateReleaseNotes.textContent = notes
+    ? notes.slice(0, 4_000)
+    : '此版本未提供单独的更新说明。'
+
+  return new Promise((resolve, reject) => {
+    const onClose = () => {
+      resolve(appUpdateDialog.returnValue === 'install')
+    }
+    appUpdateDialog.addEventListener('close', onClose, { once: true })
+    appUpdateDialog.returnValue = 'later'
+    try {
+      appUpdateDialog.showModal()
+      window.requestAnimationFrame(() => {
+        if (appUpdateDialog.open) appUpdateLaterBtn.focus()
+      })
+    } catch (error) {
+      appUpdateDialog.removeEventListener('close', onClose)
+      reject(error)
+    }
+  })
+}
+
+function closeAppUpdateDialog(action: 'later' | 'install'): void {
+  if (appUpdateDialog.open) appUpdateDialog.close(action)
+}
+
+appUpdateDialogCloseBtn.addEventListener('click', () => closeAppUpdateDialog('later'))
+appUpdateLaterBtn.addEventListener('click', () => closeAppUpdateDialog('later'))
+appUpdateInstallBtn.addEventListener('click', () => closeAppUpdateDialog('install'))
+appUpdateDialog.addEventListener('cancel', (event) => {
+  event.preventDefault()
+  closeAppUpdateDialog('later')
+})
+
 function showAppUpdateProgress(progress: AppUpdateInstallProgress, nextVersion: string): void {
   appUpdateProgress.hidden = false
   appUpdateProgress.dataset.stage = progress.stage
@@ -714,11 +778,7 @@ async function handleAppUpdate() {
 
     const nextVersion = versionLabel(update.version)
     setAppUpdateState('available', `${nextVersion} 可用`, '安装更新')
-    const notes = update.body?.trim()
-    const detail = notes ? `\n\n更新说明：\n${notes.slice(0, 800)}` : ''
-    const confirmed = window.confirm(
-      `发现 Light Novel Reader ${nextVersion}。\n\n下载并安装后，应用会自动重启。${detail}`,
-    )
+    const confirmed = await confirmAppUpdate(update)
     if (!confirmed) return
 
     setAppUpdateState('installing', `准备下载 ${nextVersion}…`, '安装中…', true)

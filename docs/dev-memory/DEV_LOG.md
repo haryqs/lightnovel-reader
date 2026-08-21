@@ -3486,3 +3486,28 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
 
 - 当前公开 Latest 与客户端同为 v0.7.1，未触发真实下载事件、签名接受/拒绝、安装和重启；需以后续维护版本从
   公开安装的 v0.7.1 完成跨版本闭环及用户数据保留复验。
+
+## 2026-08-21：用应用内详情弹窗替换 updater 系统确认框
+
+完成：
+
+- 新增主题化原生 `<dialog>`：展示当前/目标版本、可选发布日期、签名下载说明和可滚动发布说明；Release body
+  只经 `textContent` 显示并限制为 4000 字符，不解析远端 Markdown/HTML。
+- “稍后”默认聚焦，标题栏关闭、稍后按钮和 Escape 均显式执行 `dialog.close('later')`；只有“下载并安装”
+  执行 `dialog.close('install')` 并继续既有 updater 进度链路。
+- 更新真实窗口 smoke：检查弹窗存在且初始关闭，实测打开/ARIA 关联/两个按钮/安全关闭；未来出现新版本时会
+  自动点击“稍后”，核对仍保留“安装更新”状态，绝不触发下载。
+- 同步发布测试边界、项目记忆、决策与下一步队列；应用版本保持 `0.7.1`，未构建签名安装器或公开 Release。
+
+验证：
+
+- `npm.cmd run build`、`npm.cmd run check:project`、`cargo fmt --all -- --check`：通过。
+- `cargo test --workspace --locked`：通过；Tauri 8 passed / 1 个公网测试 ignored，reading-core 149 passed。
+- `cargo test -p reading-core --features quickjs --locked`：通过，149 passed。
+- `npm.cmd run tauri -- build --debug --no-bundle`：通过，生成 debug 应用。
+- `npm.cmd run smoke:updater`：通过；真实 Tauri 窗口弹窗打开/关闭与公开 v0.7.1 Latest 同版本检查均通过。
+
+未验证 / 下一步：
+
+- 同版本 Latest 未触发真实更新详情填充、下载或安装；需要后续版本从公开 v0.7.1 验证完整弹窗内容、进度、
+  签名接受/拒绝、安装、重启和用户数据保留。

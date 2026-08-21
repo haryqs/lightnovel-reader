@@ -626,6 +626,135 @@ body.statusbar-visible .statusbar,
 .app-update-controls[data-state="error"] span {
   color: var(--danger, #c23b3b);
 }
+.app-update-dialog {
+  width: min(560px, calc(100vw - 32px));
+  max-height: min(680px, calc(100vh - 32px));
+  margin: auto;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--border));
+  border-radius: 16px;
+  background: var(--surface);
+  color: var(--fg);
+  box-shadow: 0 28px 80px rgba(15, 23, 42, 0.3);
+}
+.app-update-dialog::backdrop {
+  background: color-mix(in srgb, #111827 58%, transparent);
+  backdrop-filter: blur(5px);
+}
+.app-update-dialog-card {
+  display: flex;
+  max-height: min(680px, calc(100vh - 32px));
+  flex-direction: column;
+}
+.app-update-dialog-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 22px 22px 16px;
+  background:
+    radial-gradient(circle at 95% 0%, color-mix(in srgb, var(--accent-2) 18%, transparent), transparent 45%),
+    linear-gradient(135deg, color-mix(in srgb, var(--accent) 10%, var(--surface)), var(--surface));
+}
+.app-update-dialog-kicker {
+  margin-bottom: 5px;
+  color: var(--accent-2);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.app-update-dialog-header h2 {
+  font-size: 22px;
+  line-height: 1.25;
+}
+.app-update-dialog-close {
+  flex: 0 0 auto;
+  font-size: 20px;
+}
+.app-update-version-flow {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 12px;
+  padding: 18px 22px 12px;
+}
+.app-update-version-card {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 5px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--soft) 54%, var(--surface));
+}
+.app-update-version-card span,
+.app-update-release-date span {
+  color: var(--muted);
+  font-size: 11px;
+}
+.app-update-version-card strong {
+  overflow: hidden;
+  font-size: 17px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.app-update-version-card-target {
+  border-color: color-mix(in srgb, var(--accent) 46%, var(--border));
+  background: color-mix(in srgb, var(--accent) 9%, var(--surface));
+}
+.app-update-version-card-target strong,
+.app-update-version-arrow {
+  color: var(--accent);
+}
+.app-update-version-arrow {
+  font-size: 18px;
+  font-weight: 800;
+}
+.app-update-dialog-description {
+  padding: 0 22px 12px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.app-update-release-date {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 22px 12px;
+  font-size: 12px;
+}
+.app-update-release-notes {
+  min-height: 0;
+  margin: 0 22px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--bg) 62%, var(--surface));
+}
+.app-update-release-notes h3 {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+.app-update-release-notes-body {
+  max-height: 220px;
+  overflow: auto;
+  padding: 12px;
+  color: var(--fg);
+  font-size: 13px;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.app-update-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 18px 22px 22px;
+}
 .library-actions {
   display: flex;
   gap: 8px;
@@ -1496,6 +1625,18 @@ body.statusbar-visible .statusbar,
   .library-header-right {
     width: 100%;
     justify-content: space-between;
+  }
+  .app-update-dialog-header,
+  .app-update-version-flow,
+  .app-update-dialog-description,
+  .app-update-release-date,
+  .app-update-dialog-actions {
+    padding-right: 16px;
+    padding-left: 16px;
+  }
+  .app-update-release-notes {
+    margin-right: 16px;
+    margin-left: 16px;
   }
   .library-opds-url-hint {
     margin: 8px 14px 0;
