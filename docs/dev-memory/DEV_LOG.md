@@ -3540,3 +3540,37 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
   v0.7.2 五资产候选。
 - 只创建 Draft Release；公开前仍需维护者单独明确同意。发布后从公开安装的 v0.7.1 完成更新详情、下载、
   验签、安装、重启及用户数据保留复验。
+
+## 2026-08-21：生成 v0.7.2 签名五资产并创建 Draft Release
+
+完成：
+
+- 维护者在可见终端交互输入 updater 私钥密码，从固定 `main@9c7d36f8f57694ebceaf02915ce1f3462ad171b5`
+  完成正式 NSIS 签名构建；密码未进入聊天、命令参数、日志或仓库。
+- 为 v0.7.2 重新生成 updater 三资产和指向新 tag 的 Gutenberg 正式仓库，插件包重新 Ed25519 签名并独立
+  验签；组装严格五资产目录后，统一验收器核对版本、URL、大小、SHA-256、updater 签名引用与插件签名通过。
+- updater 生成器先按设计拒绝含四个历史安装器的 `target` bundle；将当前 v0.7.2 exe/`.sig` 复制到只含
+  两文件的隔离输入目录后成功生成，没有删除、覆盖或误用任何历史产物。
+- 静默安装候选、对安装版 `reader.exe` 运行真实窗口 updater smoke、静默卸载均成功；安装目录已清理，
+  既有 `reader.db` 与 `library.sqlite` 的数量、长度和 SHA-256 前后不变。
+- 创建目标为上述完整提交的 v0.7.2 Draft Release；远端为 draft、非 prerelease，恰好五个 uploaded 资产，
+  名称、大小与 GitHub digest 均匹配本机候选，公开 `refs/tags/v0.7.2` 不存在。
+- 发现两个密钥备份的文件级 ACL 过度收紧为不可读；只为文档盘中本次所需的 updater/plugin 密钥及公钥授予
+  当前账户读取权限，E 盘第二备份保持封存。补记备份可读性复验与 WebDriver 端口冲突陷阱。
+
+验证：
+
+- `npm.cmd run check:release-trust`、`npm.cmd run check:version`：通过。
+- `npm.cmd run verify:plugin-repository-release`：通过，`gutenberg@0.1.0` 由 `lnr-plugin-2026-01` 验签。
+- `npm.cmd run verify:release-candidate -- --dir E:\lightnovel-reader-release-staging\v0.7.2-release --tag v0.7.2`：
+  通过，五资产摘要记录于 `docs/current-project/发布与测试.md`。
+- 安装版 smoke 使用 `--driver-port 14444 --native-port 19515`：通过；安装/冒烟/卸载退出码均为 0，
+  两份数据库哈希保留。默认 9515 被 FlClashCore 占用的两次尝试在应用启动前失败，不计为产品失败。
+- GitHub Draft 二次核对：target=`9c7d36f8f57694ebceaf02915ce1f3462ad171b5`、draft=true、
+  prerelease=false、assets=5、tag ref 不存在，远端五个 SHA-256 全部匹配。
+
+未验证 / 下一步：
+
+- Draft 尚未公开，公开 Latest 仍为 v0.7.1；必须再次获得维护者明确同意后才能发布 v0.7.2。
+- 发布后从正式安装的 v0.7.1 经应用内入口完成版本详情、真实下载进度、验签、安装、重启和用户数据保留
+  闭环；签名拒绝路径只对本地篡改副本测试，不得替换公开资产。
