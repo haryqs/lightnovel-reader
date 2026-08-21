@@ -3574,3 +3574,23 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
 - Draft 尚未公开，公开 Latest 仍为 v0.7.1；必须再次获得维护者明确同意后才能发布 v0.7.2。
 - 发布后从正式安装的 v0.7.1 经应用内入口完成版本详情、真实下载进度、验签、安装、重启和用户数据保留
   闭环；签名拒绝路径只对本地篡改副本测试，不得替换公开资产。
+
+## 2026-08-22：正式公开 v0.7.2
+
+完成：
+
+- 维护者明确同意后，将 v0.7.2 Draft Release 公开为正式、非预发布的 Latest Release：
+  https://github.com/haryqs/lightnovel-reader/releases/tag/v0.7.2 。
+- 发布后复核 `draft=false`、`prerelease=false`、Latest=`v0.7.2`；远端 tag 精确指向实际构建提交
+  `9c7d36f8f57694ebceaf02915ce1f3462ad171b5`。
+- 远端仍恰好包含五个发布资产，GitHub SHA-256 digest 与发布前正式候选逐项一致。
+
+验证：
+
+- GitHub Release API、Latest API 与 tag ref：通过。
+- 五资产名称、数量与 digest 二次核对：通过。
+
+未验证 / 下一步：
+
+- 尚未从正式安装的 v0.7.1 经应用内入口完成到 v0.7.2 的真实下载、验签、安装、重启和用户数据保留闭环。
+- 签名拒绝路径只对本地篡改副本测试，不得修改或替换公开资产。
