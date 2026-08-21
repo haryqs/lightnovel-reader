@@ -34,6 +34,38 @@ const OPDS_USER_AGENT: &str = concat!(
     " (OPDS client; https://github.com/haryqs/lightnovel-reader)"
 );
 
+#[cfg(target_os = "windows")]
+fn clear_legacy_desktop_pwa_cache(identifier: &str) {
+    const MIGRATION_MARKER: &str = ".desktop-pwa-boundary-v1";
+    let Some(local_app_data) = std::env::var_os("LOCALAPPDATA") else {
+        eprintln!("[startup] skip legacy PWA cache cleanup: LOCALAPPDATA is unavailable");
+        return;
+    };
+    let app_local_data = PathBuf::from(local_app_data).join(identifier);
+    let marker = app_local_data.join(MIGRATION_MARKER);
+    if marker.exists() {
+        return;
+    }
+
+    // 必须在 Builder 创建 WebView2 前执行；否则旧 Service Worker 可能先返回上一版本的前端壳。
+    let webview_profile = app_local_data.join("EBWebView").join("Default");
+    for relative in ["Cache", "Code Cache", "Service Worker"] {
+        let target = webview_profile.join(relative);
+        if target.exists() {
+            if let Err(error) = std::fs::remove_dir_all(&target) {
+                eprintln!("[startup] failed to remove legacy WebView2 cache {target:?}: {error}");
+                return;
+            }
+        }
+    }
+    if std::fs::create_dir_all(&app_local_data).is_ok() {
+        let _ = std::fs::write(marker, env!("CARGO_PKG_VERSION"));
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn clear_legacy_desktop_pwa_cache(_identifier: &str) {}
+
 struct LoadedBook {
     book_id: String,     // 内容哈希；持久化解析缓存的 key
     bytes: Arc<Vec<u8>>, // 解码后的 EPUB 原始字节，供按需解析与图片协议复用
@@ -1895,6 +1927,8 @@ async fn opds_download_epub(
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let context = tauri::generate_context!();
+    clear_legacy_desktop_pwa_cache(&context.config().identifier);
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
@@ -2082,6 +2116,6 @@ pub fn run() {
             sync_commands::sync_push,
             sync_commands::sync_pull,
         ])
-        .run(tauri::generate_context!())
+        .run(context)
         .expect("error while running tauri application");
 }

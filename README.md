@@ -129,4 +129,4 @@ npm.cmd run tauri build
 
 ## 当前开发线
 
-当前主线已推进到协议 `1.0-rc.1` 冻结候选：Tauri command 与 shell promise 错误已统一为结构化 `BridgeError { code, message, details? }`，并由 `scripts/check-protocol-freeze.mjs` 守住协议版本/错误码/文档一致性。v0.7 桌面插件链路现已具备 manifest/权限/域名白名单、zip 安装、官方仓库 SHA-256 + Ed25519 包验签、QuickJS、`host.http/html/kv/log`、正式 `source.*` 与开放资源 EPUB 获取闭环；首批插件和 updater 公钥、Gutenberg 公网全链路、NSIS 安装/卸载及数据保留均已验证。首个带应用内更新入口的 `v0.7.1` 与改进更新详情、进度及失败恢复的 `v0.7.2` 均已正式发布；npm、Tauri 与三个第一方 Cargo 包由版本一致性门禁防止漂移。公开下载入口已切换到 v0.7.2，下一步从公开 v0.7.1 完成到 v0.7.2 的完整用户界面更新闭环。
+当前主线已推进到协议 `1.0-rc.1` 冻结候选：Tauri command 与 shell promise 错误已统一为结构化 `BridgeError { code, message, details? }`，并由 `scripts/check-protocol-freeze.mjs` 守住协议版本/错误码/文档一致性。v0.7 桌面插件链路现已具备 manifest/权限/域名白名单、zip 安装、官方仓库 SHA-256 + Ed25519 包验签、QuickJS、`host.http/html/kv/log`、正式 `source.*` 与开放资源 EPUB 获取闭环；首批插件和 updater 公钥、Gutenberg 公网全链路、NSIS 安装/卸载及数据保留均已验证。首个带应用内更新入口的 `v0.7.1` 与改进更新详情、进度及失败恢复的 `v0.7.2` 均已正式发布，真实 v0.7.1→v0.7.2 应用内更新闭环也已通过。源码开发线现为 v0.7.3，修复桌面端旧 PWA 缓存和多语言 NSIS 被交互提示阻塞的问题；公开下载仍保持 v0.7.2，待 v0.7.3 独立完成签名、验收和明确发布授权后再切换。

@@ -48,6 +48,36 @@ const layoutPaddingValue = $('#layout-padding-value')
 const layoutGutterValue = $('#layout-gutter-value')
 const isTauriRuntime = hasNativeBridge
 
+async function configureServiceWorkerBoundary() {
+  if (!('serviceWorker' in navigator)) return
+
+  if (isTauriRuntime()) {
+    try {
+      const registrations = await navigator.serviceWorker.getRegistrations()
+      await Promise.all(registrations.map((registration) => registration.unregister()))
+      if ('caches' in window) {
+        const cacheNames = await caches.keys()
+        await Promise.all(cacheNames.map((cacheName) => caches.delete(cacheName)))
+      }
+    } catch (error) {
+      console.warn('清理桌面端旧 PWA 缓存失败', error)
+    }
+    return
+  }
+
+  if (!import.meta.env.PROD) return
+
+  const register = () => {
+    void navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch((error) => {
+      console.warn('注册 PWA Service Worker 失败', error)
+    })
+  }
+  if (document.readyState === 'complete') register()
+  else window.addEventListener('load', register, { once: true })
+}
+
+void configureServiceWorkerBoundary()
+
 // 防止程序更新进度条时触发 loadChapter
 let updatingProgress = false
 let statusbarHideTimer: number | null = null

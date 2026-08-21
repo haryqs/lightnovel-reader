@@ -1,6 +1,6 @@
 [package]
 name = "sync-server"
-version = "0.7.2"
+version = "0.7.3"
 edition = "2021"
 description = "自托管同步服务器：WebSocket 实时推送 + REST 增量拉取，用户自己 VPS/NAS 跑"
 license = "AGPL-3.0-only"

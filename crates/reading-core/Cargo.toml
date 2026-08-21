@@ -1,6 +1,6 @@
 [package]
 name = "reading-core"
-version = "0.7.2"
+version = "0.7.3"
 edition = "2021"
 description = "阅读器跨端核心：EPUB 解析、HTML 清洗、标注存储。不依赖任何 UI/平台框架。"
 license = "AGPL-3.0-only"
