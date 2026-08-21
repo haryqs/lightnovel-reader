@@ -74,6 +74,8 @@ runner 后台锁已解除；Support #4676102 可在 GitHub 回复后关闭。
 
 近期状态：
 
+- 2026-08-21：Windows CI 收敛为 PR 一次、合并后 main 一次，取消 PR 分支重复 push job；GitHub 官方
+  checkout/setup-node 升至 v6 以使用 Node 24 action 运行时，项目测试 Node 仍固定为 22。
 - 2026-08-21：经维护者明确同意，v0.7.1 已正式公开为 Latest Release，tag 固定到构建提交 `1929999`。
   从无需登录的公开 URL 下载五资产后统一验收再次通过，Latest 别名清单哈希一致；公开 NSIS 的安装、真实
   窗口启动与更新检查、卸载和两份数据库哈希保留均通过。完整用户界面跨版本闭环留待 v0.7.1→后续版本。

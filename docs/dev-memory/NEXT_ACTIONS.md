@@ -8,6 +8,8 @@
   协议 `1.0-rc.1` 与 `gutenberg@0.1.0` 保持独立版本。
 - 新增 `check:version` / `test:version`，并将版本一致性接入项目检查、生产构建、beta/Web 安装器与正式分发入口。
 - 新增 Windows GitHub Actions 质量门，覆盖 npm 项目门、发布回归、前端构建、Cargo workspace 与 QuickJS 测试。
+- CI 的 branch push 已限制到 `main`，PR 仅运行一套 `pull_request` job；官方 checkout/setup-node 已升级到
+  使用 Node 24 action 运行时的 v6，项目测试 Node 仍固定为 22。
 - 旧 `v0.3.1` 草稿 Release 与 RC5 资产不再是公开候选；签名安装器和 `latest.json` 不能只改名复用。
 - 重复嵌套目录已移到可恢复备份 `C:\Users\41267\Documents\Codex\2026-08-18\n\work\lightnovel-reader-duplicate-backup-20260818`；
   三个内容未变化的 sync 假修改已从工作区状态清除。

@@ -1009,3 +1009,22 @@ Tauri 经 app-wide 每域限速、SSRF/DNS 固定、禁止重定向的同一 HTT
 - `smoke:updater` 在真实 Tauri 窗口验证入口和公开清单检查。
 - 该功能在 v0.7.0 发布后才合并，公开 v0.7.0 二进制没有更新按钮；它只能用于 updater 后端级跨版本验证。
   v0.7.1 是首个带界面入口的版本，完整用户界面下载、安装和重启闭环必须从 v0.7.1 更新到后续版本完成。
+
+## 2026-08-21：PR 与 main 各保留一次 CI
+
+决策：
+
+1. `pull_request` 继续验证所有 PR；`push` 只监听 `main`，不再为同一 PR 分支额外执行一套相同 CI。
+2. GitHub 官方 action 升级到 `actions/checkout@v6` 与 `actions/setup-node@v6`；项目测试运行时仍固定 Node 22。
+3. 保留合并后的 main CI，确保 merge commit 仍经过完整项目门、发布门、前端、Rust workspace 与 QuickJS 测试。
+
+理由：
+
+- 此前每次 PR 推送会同时触发 branch push 与 pull_request，两套 Windows job 内容完全相同，约双倍消耗免费
+  Actions 分钟且不增加覆盖。
+- v4 action 运行时仍基于 Node 20，在 GitHub runner 上持续产生弃用警告；v6 官方 action 已使用 Node 24。
+
+后果：
+
+- 每个 PR 更新只运行一套 Windows CI，合并到 main 后再运行一次；手动 `workflow_dispatch` 保持可用。
+- action 自身的 Node 24 运行时不改变 `setup-node` 安装给项目测试使用的 Node 22。
