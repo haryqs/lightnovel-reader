@@ -26,6 +26,7 @@ tauri = { version = "2", features = ["protocol-asset", "tray-icon"] }
 tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # 元数据连接器的 HTTP 传输（仅壳层用；core 保持无网络）。rustls 避免系统 TLS 差异；

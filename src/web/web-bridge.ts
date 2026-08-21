@@ -215,6 +215,8 @@ export const webBridge: ReaderBridge = {
   resolveFileUrl: (path: string) => path,
   openExternal: async (url: string) => { window.open(url, '_blank', 'noopener') },
   openPathExternal: () => Promise.reject(platformErr('shell')),
+  checkAppUpdate: () => Promise.resolve(null),
+  installAppUpdate: () => Promise.reject(platformErr('appUpdate')),
 
   // -- OPDS --
 

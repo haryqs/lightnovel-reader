@@ -3344,3 +3344,31 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
   真正的跨版本更新。因此公开下载与安装链已验证，但自动检查、下载、安装、重启的完整 updater 闭环必须
   在发布 v0.7.1 时从公开 v0.7.0 验证。
 - 旧 v0.3.1 草稿继续只作为历史证据保留，不属于公开候选；本轮未删除它。
+
+## 2026-08-21：备份发布密钥并接入应用内更新入口
+
+完成：
+
+- 将仓库外六个发布密钥文件分别复制到两个本地卷的独立备份目录，加入恢复说明和 SHA-256 清单；两份备份
+  均逐文件匹配源文件，并将 ACL 收紧为只允许当前 Windows 账户访问。正式 updater 公钥与 Tauri 配置一致。
+- 备份不包含密码明文；当前机器也没有发现密码文件。updater 私钥自身仍为加密格式，维护者必须把密码单独
+  保存到可信密码管理器或离线恢复记录。
+- 新增 `appUpdate.check/install` 桥接与 `AppUpdateInfo` DTO。Tauri 适配层使用官方 updater/process 插件；
+  Web 壳返回无更新，UI 在非 Tauri 环境隐藏。
+- 书库标题栏增加手动更新入口：检查时显示状态，发现更新后展示目标版本/发布说明并请求确认，随后执行
+  下载、签名验证、安装与重启；失败保留可重试状态。旧 `v0.3 Library` 阶段徽标改为“本地优先”，避免与
+  当前应用版本 v0.7.0 混淆。
+- `tauri-webdriver-smoke` 自动选择本机工具目录中最高版本的 EdgeDriver，并新增 `--check-updater` /
+  `smoke:updater`。联网 smoke 会强制拒绝确认，确保只检查清单、不误安装。
+
+验证：
+
+- `npm.cmd run build`：通过；架构、协议、WASM、版本和许可证门均通过。
+- `cargo check --workspace --locked`：通过；Tauri process 插件、权限与壳注册可编译。
+- `npm.cmd run tauri -- build --debug --no-bundle`：通过，生成真实 debug `reader.exe`。
+- `npm.cmd run smoke:updater`：通过；真实 Tauri 窗口更新入口可见，公开 Latest 清单返回当前 v0.7.0 已是最新。
+
+未验证 / 下一步：
+
+- 当前公开 Latest 与应用版本相同，因此没有触发下载、签名接受、安装和重启；必须在 v0.7.1 正式候选就绪后，
+  从已安装的公开 v0.7.0 完成真实跨版本验证。

@@ -1898,6 +1898,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         // 图片协议
         // 既能显示封面/插图，又不把图片 base64 内联进 HTML。

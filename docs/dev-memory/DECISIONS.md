@@ -986,3 +986,25 @@ Tauri 经 app-wide 每域限速、SSRF/DNS 固定、禁止重定向的同一 HTT
 
 - v0.7.0 五资产必须绑定新公钥对应的签名，远端 Release 目标提交也必须包含该公钥。
 - 旧 v0.3.1 草稿与旧 updater 资产继续只作历史证据，不满足发布条件。
+
+## 2026-08-21：桌面更新采用手动确认的 Tauri 官方链路
+
+决策：
+
+1. 桌面端在书库标题栏提供手动“检查更新”，不在启动时静默联网或自动安装。
+2. 更新能力作为新增的 `appUpdate.check/install` 进入 `ReaderBridge`；只有 `src/platform/tauri.ts` 直接调用
+   `@tauri-apps/plugin-updater` 与 `@tauri-apps/plugin-process`，Web 壳返回无更新并隐藏入口。
+3. 发现更新后必须先展示目标版本与发布说明并由用户确认；安装包由 Tauri updater 下载和验签，安装完成后
+   才调用 process relaunch。测试 smoke 永远覆盖确认为拒绝，防止自动化误安装。
+
+理由：
+
+- v0.7.0 已具备签名产物和公开静态清单，但此前没有前端入口调用 updater，无法从应用内形成更新闭环。
+- 手动检查避免每次启动产生隐式联网，也让早期版本用户能在安装前看到版本与说明。
+- 通过平台适配层隔离 Tauri API，保留 Web/PWA 与未来移动壳各自实现更新策略的空间。
+
+后果：
+
+- 新增官方 updater/process JS 依赖、Rust process 插件与最小 `process:allow-restart` 权限。
+- `smoke:updater` 在真实 Tauri 窗口验证入口和公开清单检查；下载、安装、重启必须等 v0.7.1 候选再从公开
+  v0.7.0 完成。

@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, readdirSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
@@ -22,13 +22,24 @@ function hasFlag(name) {
 function defaultNativeDriver() {
   const localAppData = process.env.LOCALAPPDATA
   if (!localAppData) return ''
-  return join(
-    localAppData,
-    'lightnovel-reader-tools',
-    'msedgedriver',
-    '149.0.4022.62',
-    'msedgedriver.exe',
-  )
+  const root = join(localAppData, 'lightnovel-reader-tools', 'msedgedriver')
+  if (!existsSync(root)) return ''
+  const versions = readdirSync(root, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && /^\d+(?:\.\d+){3}$/.test(entry.name))
+    .map((entry) => entry.name)
+    .sort((left, right) => {
+      const a = left.split('.').map(Number)
+      const b = right.split('.').map(Number)
+      for (let i = 0; i < Math.max(a.length, b.length); i += 1) {
+        if ((a[i] || 0) !== (b[i] || 0)) return (b[i] || 0) - (a[i] || 0)
+      }
+      return 0
+    })
+  for (const version of versions) {
+    const candidate = join(root, version, 'msedgedriver.exe')
+    if (existsSync(candidate)) return candidate
+  }
+  return ''
 }
 
 const driverBinary = readOption('--tauri-driver', process.env.TAURI_DRIVER || 'tauri-driver')
@@ -42,6 +53,7 @@ const application = resolve(
 const driverPort = Number(readOption('--driver-port', process.env.TAURI_DRIVER_PORT || '4444'))
 const nativePort = Number(readOption('--native-port', process.env.TAURI_NATIVE_DRIVER_PORT || '9515'))
 const keepOpen = hasFlag('--keep-open')
+const checkUpdater = hasFlag('--check-updater')
 const server = `http://127.0.0.1:${driverPort}`
 
 function failPreflight(message) {
@@ -304,6 +316,8 @@ async function main() {
         const view = document.querySelector('#library-view')
         const sourcePanel = document.querySelector('#library-source-panel')
         const calibre = document.querySelector('#btn-library-import-calibre')
+        const updateControls = document.querySelector('#app-update-controls')
+        const updateButton = document.querySelector('#btn-app-update')
         return {
           libraryVisible: !!view && view.hidden === false,
           hasImportEpub: !!document.querySelector('#btn-library-import-epub'),
@@ -312,6 +326,9 @@ async function main() {
           hasGrid: !!document.querySelector('#library-grid'),
           sourcePanelOpen: sourcePanel?.open === true,
           calibreInsideSourcePanel: !!sourcePanel && !!calibre && sourcePanel.contains(calibre),
+          hasUpdateButton: !!updateButton,
+          updateControlsVisible: !!updateControls && updateControls.hidden === false,
+          updateButtonLabel: updateButton?.textContent || '',
           bookCards: document.querySelectorAll('.book-card').length,
           hasEmptyState: !!document.querySelector('.library-empty'),
           hasErrorState: !!document.querySelector('.library-state-error'),
@@ -326,6 +343,32 @@ async function main() {
   assertCheck(library.calibreInsideSourcePanel, 'Calibre migration must stay under the secondary source panel', library)
   assertCheck(!library.sourcePanelOpen, 'secondary source panel should be collapsed by default', library)
   assertCheck(!library.hasErrorState, 'library rendered an error state', library)
+  assertCheck(library.hasUpdateButton, 'application update action is missing', library)
+  assertCheck(library.updateControlsVisible, 'application update action must be visible in Tauri', library)
+  assertCheck(library.updateButtonLabel === '检查更新', 'unexpected application update label', library)
+
+  let updater = null
+  if (checkUpdater) {
+    await execute(`
+      window.confirm = () => false
+      document.querySelector('#btn-app-update')?.click()
+      return true
+    `)
+    updater = await waitForValue(
+      'application updater check',
+      () => execute(`
+        const controls = document.querySelector('#app-update-controls')
+        return {
+          state: controls?.dataset.state || '',
+          status: document.querySelector('#app-update-status')?.textContent || '',
+          buttonLabel: document.querySelector('#btn-app-update')?.textContent || '',
+        }
+      `),
+      (value) => value.state === 'success' || value.state === 'available' || value.state === 'error',
+      30_000,
+    )
+    assertCheck(updater.state !== 'error', 'application updater check failed', updater)
+  }
 
   const closed = await execute(`
     document.querySelector('#btn-library-close')?.click()
@@ -340,7 +383,7 @@ async function main() {
         application,
         nativeDriver,
         sessionId,
-        checks: { boot, defaultTheme, library, closed },
+        checks: { boot, defaultTheme, library, updater, closed },
         keepOpen,
       },
       null,

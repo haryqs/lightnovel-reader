@@ -575,6 +575,9 @@ const librarySearchInput = $<HTMLInputElement>('#library-search-input')
 const libraryRemoteSourceSelect = $<HTMLSelectElement>('#library-remote-source')
 const libraryReadPreferenceSelect = $<HTMLSelectElement>('#library-read-preference')
 const librarySourcePanel = $<HTMLDetailsElement>('#library-source-panel')
+const appUpdateControls = $<HTMLElement>('#app-update-controls')
+const appUpdateStatus = $<HTMLElement>('#app-update-status')
+const appUpdateBtn = $<HTMLButtonElement>('#btn-app-update')
 // OPDS v0.6
 const libraryOpdsPanel = $<HTMLDetailsElement>('#library-opds-panel')
 const libraryOpdsUrlHint = $<HTMLElement>('#library-opds-url-hint')
@@ -643,8 +646,56 @@ function applyLibraryReadPreference(value: LibraryReadPreference) {
 
 applyLibraryReadPreference(readLibraryReadPreference())
 
+appUpdateControls.hidden = !isTauriRuntime()
+
+function setAppUpdateState(
+  state: 'idle' | 'checking' | 'available' | 'installing' | 'success' | 'error',
+  status: string,
+  buttonLabel: string,
+  disabled = false,
+) {
+  appUpdateControls.dataset.state = state
+  appUpdateStatus.textContent = status
+  appUpdateStatus.title = status
+  appUpdateBtn.textContent = buttonLabel
+  appUpdateBtn.disabled = disabled
+}
+
+function versionLabel(version: string): string {
+  return version.startsWith('v') ? version : `v${version}`
+}
+
+async function handleAppUpdate() {
+  setAppUpdateState('checking', '正在连接更新服务…', '检查中…', true)
+  try {
+    const update = await bridge.checkAppUpdate()
+    if (!update) {
+      setAppUpdateState('success', '当前已是最新版本', '再次检查')
+      return
+    }
+
+    const nextVersion = versionLabel(update.version)
+    setAppUpdateState('available', `${nextVersion} 可用`, '安装更新')
+    const notes = update.body?.trim()
+    const detail = notes ? `\n\n更新说明：\n${notes.slice(0, 800)}` : ''
+    const confirmed = window.confirm(
+      `发现 Light Novel Reader ${nextVersion}。\n\n下载并安装后，应用会自动重启。${detail}`,
+    )
+    if (!confirmed) return
+
+    setAppUpdateState('installing', `正在下载并安装 ${nextVersion}…`, '安装中…', true)
+    await bridge.installAppUpdate()
+    setAppUpdateState('success', '更新已安装，正在重启…', '正在重启…', true)
+  } catch (error) {
+    const message = formatError(error)
+    console.error('应用更新失败', error)
+    setAppUpdateState('error', message, '重试更新')
+  }
+}
+
 $('#btn-library')?.addEventListener('click', openLibrary)
 $('#btn-library-close')?.addEventListener('click', () => { libraryView.hidden = true })
+appUpdateBtn.addEventListener('click', () => void handleAppUpdate())
 $('#btn-library-refresh')?.addEventListener('click', refreshLibraryBooks)
 $('#btn-library-import-epub')?.addEventListener('click', () => libraryImportInput.click())
 $('#btn-library-import-folder')?.addEventListener('click', () => libraryFolderInput.click())
