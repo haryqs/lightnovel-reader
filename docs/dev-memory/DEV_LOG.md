@@ -3441,3 +3441,20 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
 
 - v0.7.1 是首个带应用内更新入口的公开版本；当前验证了公开分发和“当前已是最新版本”分支。完整的检查、
   确认、下载、验签、安装和重启闭环必须从公开 v0.7.1 更新到后续版本完成。
+
+## 2026-08-21：收敛重复 CI 并升级 action 运行时
+
+完成：
+
+- 将 workflow 的 `push` 事件限制到 `main`；PR 分支仅由 `pull_request` 运行完整 Windows CI，避免同一提交
+  同时消耗两套相同 runner 时间。合并后的 main CI 与手动触发保持不变。
+- 按 GitHub 官方当前版本将 `actions/checkout`、`actions/setup-node` 从 v4 升至 v6，消除 action 自身
+  Node 20 弃用警告；项目测试 Node 版本继续固定为 22。
+
+验证 / 下一步：
+
+- `npm.cmd run check:project`、`npm.cmd run build` 与全部版本/许可证/发布信任/候选回归：通过。
+- `cargo fmt --all -- --check`、`cargo test --workspace --locked`、
+  `cargo test -p reading-core --features quickjs --locked`：通过；Tauri 8 passed / 1 个公网测试 ignored，
+  reading-core 普通与 QuickJS 两轮各 149 passed。
+- 本机没有 actionlint；workflow 事件过滤和 v6 action 仍必须由本 PR 的 GitHub Actions 实际验证。
