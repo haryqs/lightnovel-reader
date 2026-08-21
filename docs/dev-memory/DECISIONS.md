@@ -1028,3 +1028,25 @@ Tauri 经 app-wide 每域限速、SSRF/DNS 固定、禁止重定向的同一 HTT
 
 - 每个 PR 更新只运行一套 Windows CI，合并到 main 后再运行一次；手动 `workflow_dispatch` 保持可用。
 - action 自身的 Node 24 运行时不改变 `setup-node` 安装给项目测试使用的 Node 22。
+
+## 2026-08-21：updater 进度保持为壳内可选回调
+
+决策：
+
+1. `appUpdate.install` 增加可选 `AppUpdateInstallProgress` 回调，只报告下载累计字节、可选总字节与
+   `downloading|installing` 阶段；安装器本体继续完全由 Tauri updater 持有。
+2. 同一时刻只允许一个平台安装任务；重复调用复用同一个 Promise，并把进度广播给调用方，检查更新不得关闭
+   正在安装的 updater resource。
+3. UI 在长度已知时显示百分比与字节数，长度未知时显示不定进度与累计字节；失败回到可重试状态，Web 壳仍隐藏入口。
+
+理由：
+
+- 安装器可能下载数十 MB，只有笼统的“安装中”会让用户误判应用卡死或重复点击。
+- Tauri 官方 `downloadAndInstall` 已提供流式事件；映射小型状态回调即可改善体验，不需要扩大 Rust command 或搬运二进制。
+- 平台级单任务保护避免程序化重复调用关闭或并发消费同一个 updater resource。
+
+后果：
+
+- 桥接协议文档同步新增可选回调 DTO，旧壳可以忽略可选参数，现有消息语义保持兼容。
+- 当前 Latest 与开发版本同为 v0.7.1，只验证了控件、检查分支与进度默认隐藏；真实进度、安装和重启必须在
+  v0.7.1→后续版本的跨版本发布测试中验收。

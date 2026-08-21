@@ -3,6 +3,7 @@ import {
   bridge,
   hasNativeBridge,
   isBridgeError,
+  type AppUpdateInstallProgress,
   type InstalledPlugin,
   type LibraryBook,
   type LibrarySourceRecord,
@@ -577,6 +578,7 @@ const libraryReadPreferenceSelect = $<HTMLSelectElement>('#library-read-preferen
 const librarySourcePanel = $<HTMLDetailsElement>('#library-source-panel')
 const appUpdateControls = $<HTMLElement>('#app-update-controls')
 const appUpdateStatus = $<HTMLElement>('#app-update-status')
+const appUpdateProgress = $<HTMLProgressElement>('#app-update-progress')
 const appUpdateBtn = $<HTMLButtonElement>('#btn-app-update')
 // OPDS v0.6
 const libraryOpdsPanel = $<HTMLDetailsElement>('#library-opds-panel')
@@ -622,6 +624,7 @@ let pluginSearchState: {
 let dismissedOpdsUrlHint = ''
 let libraryBooks: LibraryBook[] = []
 let librarySearchTimer: number | null = null
+let appUpdateBusy = false
 type LibraryReadPreference = 'auto' | 'builtin' | 'browser' | 'external'
 const LIBRARY_READ_PREFERENCE_KEY = 'reader.libraryReadPreference'
 const LIBRARY_READ_PREFERENCES = new Set<LibraryReadPreference>(['auto', 'builtin', 'browser', 'external'])
@@ -659,13 +662,48 @@ function setAppUpdateState(
   appUpdateStatus.title = status
   appUpdateBtn.textContent = buttonLabel
   appUpdateBtn.disabled = disabled
+  if (state !== 'installing') {
+    appUpdateProgress.hidden = true
+    appUpdateProgress.removeAttribute('value')
+    delete appUpdateProgress.dataset.stage
+  }
 }
 
 function versionLabel(version: string): string {
   return version.startsWith('v') ? version : `v${version}`
 }
 
+function showAppUpdateProgress(progress: AppUpdateInstallProgress, nextVersion: string): void {
+  appUpdateProgress.hidden = false
+  appUpdateProgress.dataset.stage = progress.stage
+
+  if (progress.stage === 'installing') {
+    appUpdateProgress.max = 100
+    appUpdateProgress.value = 100
+    appUpdateStatus.textContent = `下载完成，正在验签并安装 ${nextVersion}…`
+    appUpdateStatus.title = appUpdateStatus.textContent
+    return
+  }
+
+  const downloadedBytes = Math.max(0, progress.downloadedBytes)
+  const totalBytes = progress.totalBytes && progress.totalBytes > 0
+    ? progress.totalBytes
+    : undefined
+  if (!totalBytes) {
+    appUpdateProgress.removeAttribute('value')
+    appUpdateStatus.textContent = `正在下载 ${nextVersion}… ${formatBytes(downloadedBytes)}`
+  } else {
+    const percent = Math.min(100, Math.round((downloadedBytes / totalBytes) * 100))
+    appUpdateProgress.max = 100
+    appUpdateProgress.value = percent
+    appUpdateStatus.textContent = `正在下载 ${nextVersion}… ${percent}%（${formatBytes(downloadedBytes)} / ${formatBytes(totalBytes)}）`
+  }
+  appUpdateStatus.title = appUpdateStatus.textContent
+}
+
 async function handleAppUpdate() {
+  if (appUpdateBusy) return
+  appUpdateBusy = true
   setAppUpdateState('checking', '正在连接更新服务…', '检查中…', true)
   try {
     const update = await bridge.checkAppUpdate()
@@ -683,13 +721,18 @@ async function handleAppUpdate() {
     )
     if (!confirmed) return
 
-    setAppUpdateState('installing', `正在下载并安装 ${nextVersion}…`, '安装中…', true)
-    await bridge.installAppUpdate()
+    setAppUpdateState('installing', `准备下载 ${nextVersion}…`, '安装中…', true)
+    appUpdateProgress.hidden = false
+    appUpdateProgress.removeAttribute('value')
+    appUpdateProgress.dataset.stage = 'downloading'
+    await bridge.installAppUpdate((progress) => showAppUpdateProgress(progress, nextVersion))
     setAppUpdateState('success', '更新已安装，正在重启…', '正在重启…', true)
   } catch (error) {
     const message = formatError(error)
     console.error('应用更新失败', error)
     setAppUpdateState('error', message, '重试更新')
+  } finally {
+    appUpdateBusy = false
   }
 }
 
