@@ -3418,3 +3418,26 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
   draft=true、prerelease=false、资产数恰好五个，远端名称、大小与 GitHub SHA-256 digest 均匹配本机候选；
   `refs/tags/v0.7.1` 尚不存在。公开仍需维护者单独明确同意。
 - 草稿资产尚无公开的版本化下载 URL，不能据此宣称在线 updater 下载、安装或重启闭环通过。
+
+## 2026-08-21：公开 v0.7.1 并复验公开分发
+
+完成：
+
+- 维护者明确同意后，将 v0.7.1 Draft Release 发布为正式、非预发布的 Latest Release：
+  https://github.com/haryqs/lightnovel-reader/releases/tag/v0.7.1 。Release 与远端 tag 均固定到实际构建提交
+  `1929999be9f602339684433c0597061bb717e6c5`，公开资产恰好五个。
+- 从无需登录的 `/releases/download/v0.7.1/` URL 重新下载五资产，统一候选验收通过；所有名称、大小和
+  SHA-256 与本机正式候选逐项一致。`/releases/latest/download/latest.json` 与版本化清单哈希一致。
+- 使用公开下载的 NSIS 静默安装，安装版真实窗口启动成功，更新入口访问公开 Latest 后正确显示当前已是
+  最新版本；静默卸载成功且安装目录已清理，两份既有数据库数量、长度和 SHA-256 前后完全一致。
+
+验证：
+
+- `npm.cmd run verify:release-candidate -- --dir <公开下载目录> --tag v0.7.1`：通过，五资产摘要与正式候选一致。
+- Latest 别名 `latest.json` SHA-256：`36D41E7E9A6997A1242E4E2B4F7856FA188E4028D357C110D92CCDEE6579D59C`。
+- 公开安装器：安装退出码 0、真实窗口 updater smoke 通过、卸载退出码 0、两个数据文件哈希保留。
+
+边界 / 下一步：
+
+- v0.7.1 是首个带应用内更新入口的公开版本；当前验证了公开分发和“当前已是最新版本”分支。完整的检查、
+  确认、下载、验签、安装和重启闭环必须从公开 v0.7.1 更新到后续版本完成。
