@@ -3370,5 +3370,31 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
 
 未验证 / 下一步：
 
-- 当前公开 Latest 与应用版本相同，因此没有触发下载、签名接受、安装和重启；必须在 v0.7.1 正式候选就绪后，
-  从已安装的公开 v0.7.0 完成真实跨版本验证。
+- 当前公开 Latest 与应用版本相同，因此没有触发下载、签名接受、安装和重启；后续回查确认公开 v0.7.0
+  没有应用内更新按钮，具体分层验证边界见下一条记录。
+
+## 2026-08-21：开始准备 v0.7.1 并校正跨版本验证边界
+
+完成：
+
+- 将 npm、Tauri、`reader`、`reading-core` 与 `sync-server` 统一升至 `0.7.1`，Cargo 锁文件同步更新；
+  协议 `1.0-rc.1` 与 `gutenberg@0.1.0` 继续保持独立版本。
+- 现行发布命令、发版结论模板和开发任务切换到 v0.7.1；v0.7.0 的公开资产哈希与历史记录原样保留。
+- 回查合并历史确认：updater Rust 插件和权限已存在于公开 v0.7.0，但应用内按钮、JS 绑定与重启流程是在
+  v0.7.0 发布后才合并。文档不再要求用户从 v0.7.0 点击一个不存在的入口。
+
+边界 / 下一步：
+
+- v0.7.1 是首个带应用内手动更新入口的版本。v0.7.0→v0.7.1 只能作为底层 updater 链路验证；完整的
+  用户界面检查、确认、下载、验签、安装和重启闭环应在 v0.7.1→后续版本完成。
+- 项目门、构建与测试已通过；仍需合并版本准备提交，再使用仓库外私钥生成并验收 v0.7.1 五资产候选。
+
+验证：
+
+- `npm.cmd run check:project`、`npm.cmd run build` 与版本/许可证/发布信任/updater 生成器/统一候选回归：通过。
+- `cargo fmt --all -- --check`、`cargo test --workspace --locked`、
+  `cargo test -p reading-core --features quickjs --locked`：通过；Tauri 8 passed / 1 个公网测试 ignored，
+  reading-core 普通与 QuickJS 两轮各 149 passed。
+- `npm.cmd run tauri -- build --debug --no-bundle`：通过，生成 v0.7.1 debug 应用。
+- `npm.cmd run smoke:updater`：通过；真实 v0.7.1 窗口显示更新入口，访问当前公开 v0.7.0 Latest 清单后
+  正确判定当前已是最新版本，未下载或安装。
