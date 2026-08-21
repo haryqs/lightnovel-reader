@@ -1006,5 +1006,6 @@ Tauri 经 app-wide 每域限速、SSRF/DNS 固定、禁止重定向的同一 HTT
 后果：
 
 - 新增官方 updater/process JS 依赖、Rust process 插件与最小 `process:allow-restart` 权限。
-- `smoke:updater` 在真实 Tauri 窗口验证入口和公开清单检查；下载、安装、重启必须等 v0.7.1 候选再从公开
-  v0.7.0 完成。
+- `smoke:updater` 在真实 Tauri 窗口验证入口和公开清单检查。
+- 该功能在 v0.7.0 发布后才合并，公开 v0.7.0 二进制没有更新按钮；它只能用于 updater 后端级跨版本验证。
+  v0.7.1 是首个带界面入口的版本，完整用户界面下载、安装和重启闭环必须从 v0.7.1 更新到后续版本完成。
