@@ -1072,3 +1072,26 @@ Tauri 经 app-wide 每域限速、SSRF/DNS 固定、禁止重定向的同一 HTT
 - 更新确认体验与浅色/深色/护眼主题统一，并具备键盘可达和明确的 ARIA 语义。
 - 当前 Latest 与客户端同为 v0.7.1，只验证了弹窗壳和安全取消；真实版本、日期、发布说明填充及安装按钮链路仍需
   v0.7.1→后续版本的跨版本测试验收。
+
+## 2026-08-22：桌面不注册 PWA Service Worker，Windows updater 固定 quiet
+
+决策：
+
+1. PWA Service Worker 只由 Web 生产运行时注册；VitePWA 不再自动注入注册脚本。Windows 在 Tauri Builder
+   创建 WebView2 前执行一次性迁移，只删除 Cache、Code Cache 与 Service Worker；前端再注销历史注册并清理
+   CacheStorage，不触碰 localStorage、IndexedDB 或 SQLite 用户数据。
+2. Windows updater 的 NSIS `installMode` 固定为 `quiet`，并由 `check:release-trust` 阻止回退到 `passive`。
+3. `smoke:updater` 永远只检查和安全取消；真实安装使用需要显式确认、精确应用路径和预期版本的独立 CDP 脚本，
+   禁止 WebDriver 安装 updater。
+
+理由：
+
+- v0.7.1→v0.7.2 实测发现新版可执行文件会被旧 WebView2 Service Worker/HTTP 缓存覆盖为旧前端壳。
+- Tauri 的 passive NSIS 参数仍会触发多语言 Installer Language 对话框，导致应用已退出但安装无人继续。
+- WebDriver 会清理整个测试进程树，可能误杀 updater 后代，不能用于验证真实安装生命周期。
+
+后果：
+
+- 新增源码边界与 dist 产物守卫、quiet 发布信任门及专用跨版本安装 smoke。
+- 公开 v0.7.2 二进制仍带旧 passive 配置，不能替换其公开资产；修复通过 v0.7.3 正常签名发布交付。
+- 真实 v0.7.1→v0.7.2 更新最终通过，两份 SQLite 数据文件哈希保持不变。

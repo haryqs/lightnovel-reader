@@ -1,6 +1,6 @@
 [package]
 name = "reader"
-version = "0.7.2"
+version = "0.7.3"
 description = "轻小说阅读器（Tauri 桌面壳）"
 authors = ["LightNovel Reader contributors"]
 edition = "2021"

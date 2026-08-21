@@ -54,6 +54,8 @@ const driverPort = Number(readOption('--driver-port', process.env.TAURI_DRIVER_P
 const nativePort = Number(readOption('--native-port', process.env.TAURI_NATIVE_DRIVER_PORT || '9515'))
 const keepOpen = hasFlag('--keep-open')
 const checkUpdater = hasFlag('--check-updater')
+const legacyUpdaterUi = hasFlag('--legacy-updater-ui')
+const expectedUpdateVersion = readOption('--expected-update-version', '')
 const server = `http://127.0.0.1:${driverPort}`
 
 function failPreflight(message) {
@@ -75,6 +77,9 @@ if (!existsSync(application)) {
     `Tauri debug app not found: ${application}\n` +
       'Build it first with: npm.cmd run tauri -- build --debug --no-bundle',
   )
+}
+if (hasFlag('--install-updater')) {
+  failPreflight('--install-updater is not supported by WebDriver; use scripts/tauri-updater-install-smoke.mjs')
 }
 
 const stdout = []
@@ -350,42 +355,58 @@ async function main() {
   assertCheck(!library.sourcePanelOpen, 'secondary source panel should be collapsed by default', library)
   assertCheck(!library.hasErrorState, 'library rendered an error state', library)
   assertCheck(library.hasUpdateButton, 'application update action is missing', library)
-  assertCheck(library.hasUpdateProgress, 'application update progress indicator is missing', library)
-  assertCheck(library.updateProgressHidden, 'application update progress should be hidden before installation', library)
-  assertCheck(library.hasUpdateDialog, 'application update details dialog is missing', library)
-  assertCheck(library.updateDialogClosed, 'application update details dialog should be closed initially', library)
+  if (!legacyUpdaterUi) {
+    assertCheck(library.hasUpdateProgress, 'application update progress indicator is missing', library)
+    assertCheck(library.updateProgressHidden, 'application update progress should be hidden before installation', library)
+    assertCheck(library.hasUpdateDialog, 'application update details dialog is missing', library)
+    assertCheck(library.updateDialogClosed, 'application update details dialog should be closed initially', library)
+  }
   assertCheck(library.updateControlsVisible, 'application update action must be visible in Tauri', library)
   assertCheck(library.updateButtonLabel === '检查更新', 'unexpected application update label', library)
 
-  const updateDialogProbe = await execute(`
-    const dialog = document.querySelector('#app-update-dialog')
-    dialog.returnValue = ''
-    dialog.showModal()
-    return {
-      open: dialog.open,
-      labelledBy: dialog.getAttribute('aria-labelledby') || '',
-      describedBy: dialog.getAttribute('aria-describedby') || '',
-      hasLater: !!document.querySelector('#btn-app-update-later'),
-      hasInstall: !!document.querySelector('#btn-app-update-install'),
-      cardTag: dialog.querySelector('.app-update-dialog-card')?.tagName || '',
-      laterType: document.querySelector('#btn-app-update-later')?.type || '',
-    }
-  `)
-  assertCheck(updateDialogProbe.open, 'application update details dialog did not open', updateDialogProbe)
-  assertCheck(updateDialogProbe.labelledBy === 'app-update-dialog-title', 'update dialog label is missing', updateDialogProbe)
-  assertCheck(updateDialogProbe.describedBy === 'app-update-dialog-description', 'update dialog description is missing', updateDialogProbe)
-  assertCheck(updateDialogProbe.hasLater && updateDialogProbe.hasInstall, 'update dialog actions are missing', updateDialogProbe)
-  assertCheck(updateDialogProbe.cardTag === 'DIV', 'update dialog must not rely on form submission', updateDialogProbe)
-  assertCheck(updateDialogProbe.laterType === 'button', 'update dialog later action must be an explicit button', updateDialogProbe)
-  await execute(`document.querySelector('#btn-app-update-later')?.click(); return true`)
-  const updateDialogDismissed = await waitForValue(
-    'dismiss update details dialog',
-    () => execute(`return document.querySelector('#app-update-dialog')?.open === false`),
-    (value) => value === true,
-  )
+  let updateDialogProbe = null
+  let updateDialogDismissed = null
+  if (!legacyUpdaterUi) {
+    updateDialogProbe = await execute(`
+      const dialog = document.querySelector('#app-update-dialog')
+      dialog.returnValue = ''
+      dialog.showModal()
+      return {
+        open: dialog.open,
+        labelledBy: dialog.getAttribute('aria-labelledby') || '',
+        describedBy: dialog.getAttribute('aria-describedby') || '',
+        hasLater: !!document.querySelector('#btn-app-update-later'),
+        hasInstall: !!document.querySelector('#btn-app-update-install'),
+        cardTag: dialog.querySelector('.app-update-dialog-card')?.tagName || '',
+        laterType: document.querySelector('#btn-app-update-later')?.type || '',
+      }
+    `)
+    assertCheck(updateDialogProbe.open, 'application update details dialog did not open', updateDialogProbe)
+    assertCheck(updateDialogProbe.labelledBy === 'app-update-dialog-title', 'update dialog label is missing', updateDialogProbe)
+    assertCheck(updateDialogProbe.describedBy === 'app-update-dialog-description', 'update dialog description is missing', updateDialogProbe)
+    assertCheck(updateDialogProbe.hasLater && updateDialogProbe.hasInstall, 'update dialog actions are missing', updateDialogProbe)
+    assertCheck(updateDialogProbe.cardTag === 'DIV', 'update dialog must not rely on form submission', updateDialogProbe)
+    assertCheck(updateDialogProbe.laterType === 'button', 'update dialog later action must be an explicit button', updateDialogProbe)
+    await execute(`document.querySelector('#btn-app-update-later')?.click(); return true`)
+    updateDialogDismissed = await waitForValue(
+      'dismiss update details dialog',
+      () => execute(`return document.querySelector('#app-update-dialog')?.open === false`),
+      (value) => value === true,
+    )
+  }
 
   let updater = null
   if (checkUpdater) {
+    if (legacyUpdaterUi) {
+      await execute(`
+        window.__updaterConfirmMessage = ''
+        window.confirm = (message) => {
+          window.__updaterConfirmMessage = String(message || '')
+          return false
+        }
+        return true
+      `)
+    }
     await execute(`
       document.querySelector('#btn-app-update')?.click()
       return true
@@ -405,37 +426,59 @@ async function main() {
           currentVersion: document.querySelector('#app-update-current-version')?.textContent || '',
           targetVersion: document.querySelector('#app-update-target-version')?.textContent || '',
           releaseNotes: document.querySelector('#app-update-release-notes-body')?.textContent || '',
+          confirmMessage: window.__updaterConfirmMessage || '',
         }
       `),
       (value) =>
         value.state === 'success' ||
         value.state === 'error' ||
-        (value.state === 'available' && value.dialogOpen),
+        (value.state === 'available' && (legacyUpdaterUi || value.dialogOpen)),
       30_000,
     )
     assertCheck(updater.state !== 'error', 'application updater check failed', updater)
-    assertCheck(updater.progressHidden, 'updater check must not show install progress', updater)
-    if (updater.state === 'available') {
-      assertCheck(updater.dialogOpen, 'available update must open the details dialog', updater)
-      assertCheck(updater.currentVersion.startsWith('v'), 'update dialog current version is missing', updater)
-      assertCheck(updater.targetVersion.startsWith('v'), 'update dialog target version is missing', updater)
-      assertCheck(updater.releaseNotes.trim().length > 0, 'update dialog release notes are missing', updater)
-      await execute(`document.querySelector('#btn-app-update-later')?.click(); return true`)
-      const cancelled = await waitForValue(
-        'cancel application update safely',
-        () => execute(`
-          return {
-            dialogOpen: document.querySelector('#app-update-dialog')?.open === true,
-            state: document.querySelector('#app-update-controls')?.dataset.state || '',
-            buttonLabel: document.querySelector('#btn-app-update')?.textContent || '',
-          }
-        `),
-        (value) => !value.dialogOpen,
-      )
-      assertCheck(cancelled.state === 'available', 'cancelling update must preserve the available state', cancelled)
-      assertCheck(cancelled.buttonLabel === '安装更新', 'cancelling update must keep the install action', cancelled)
-      updater.cancelledSafely = true
+    if (!legacyUpdaterUi) {
+      assertCheck(updater.progressHidden, 'updater check must not show install progress', updater)
     }
+    if (expectedUpdateVersion) {
+      const expectedLabel = expectedUpdateVersion.startsWith('v')
+        ? expectedUpdateVersion
+        : `v${expectedUpdateVersion}`
+      assertCheck(updater.state === 'available', `expected update ${expectedLabel} was not available`, updater)
+      if (legacyUpdaterUi) {
+        assertCheck(updater.status.includes(expectedLabel), 'legacy updater status has the wrong target version', updater)
+        assertCheck(updater.confirmMessage.includes(expectedLabel), 'legacy updater confirmation has the wrong target version', updater)
+        assertCheck(updater.confirmMessage.includes('更新说明'), 'legacy updater confirmation is missing release notes', updater)
+      } else {
+        assertCheck(updater.targetVersion === expectedLabel, 'updater dialog has the wrong target version', updater)
+      }
+    }
+    if (updater.state === 'available') {
+      if (legacyUpdaterUi) {
+        assertCheck(updater.confirmMessage.trim().length > 0, 'legacy updater confirmation was not shown', updater)
+        updater.cancelledSafely = true
+      } else {
+        assertCheck(updater.dialogOpen, 'available update must open the details dialog', updater)
+        assertCheck(updater.currentVersion.startsWith('v'), 'update dialog current version is missing', updater)
+        assertCheck(updater.targetVersion.startsWith('v'), 'update dialog target version is missing', updater)
+        assertCheck(updater.releaseNotes.trim().length > 0, 'update dialog release notes are missing', updater)
+        await execute(`document.querySelector('#btn-app-update-later')?.click(); return true`)
+        const cancelled = await waitForValue(
+          'cancel application update safely',
+          () => execute(`
+            return {
+              dialogOpen: document.querySelector('#app-update-dialog')?.open === true,
+              state: document.querySelector('#app-update-controls')?.dataset.state || '',
+              buttonLabel: document.querySelector('#btn-app-update')?.textContent || '',
+            }
+          `),
+          (value) => !value.dialogOpen,
+        )
+        assertCheck(cancelled.state === 'available', 'cancelling update must preserve the available state', cancelled)
+        assertCheck(cancelled.buttonLabel === '安装更新', 'cancelling update must keep the install action', cancelled)
+        updater.cancelledSafely = true
+      }
+    }
+
   }
 
   const closed = await execute(`
@@ -451,7 +494,15 @@ async function main() {
         application,
         nativeDriver,
         sessionId,
-        checks: { boot, defaultTheme, library, updateDialogProbe, updateDialogDismissed, updater, closed },
+        checks: {
+          boot,
+          defaultTheme,
+          library,
+          updateDialogProbe,
+          updateDialogDismissed,
+          updater,
+          closed,
+        },
         keepOpen,
       },
       null,

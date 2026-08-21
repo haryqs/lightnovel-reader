@@ -18,6 +18,7 @@ export default defineConfig(async () => ({
   },
   plugins: [
     VitePWA({
+      injectRegister: null,
       registerType: "autoUpdate",
       workbox: {
         globPatterns: ["**/*.{js,css,html,wasm,png,svg,ico}"],

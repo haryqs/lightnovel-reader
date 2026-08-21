@@ -19,6 +19,7 @@ function writeFixture({
   requireSignatures,
   updaterPubkey,
   createUpdaterArtifacts = true,
+  updaterInstallMode = 'quiet',
 }) {
   const keySource = keys.map((key) => `
     TrustedPluginKey {
@@ -38,7 +39,7 @@ pub const REQUIRE_OFFICIAL_PLUGIN_SIGNATURES: bool = ${requireSignatures};
     tauriConfigPath,
     `${JSON.stringify({
       bundle: { createUpdaterArtifacts },
-      plugins: { updater: { pubkey: updaterPubkey } },
+      plugins: { updater: { pubkey: updaterPubkey, windows: { installMode: updaterInstallMode } } },
     }, null, 2)}\n`,
     'utf8',
   )
@@ -69,13 +70,19 @@ try {
     requireSignatures: false,
     updaterPubkey: '',
     createUpdaterArtifacts: false,
+    updaterInstallMode: 'passive',
   })
   const unprovisioned = checkReleaseTrust({ pluginTrustPath, tauriConfigPath })
   assertCheck(!unprovisioned.ok, 'unprovisioned release trust fixture should fail', unprovisioned)
-  assertCheck(unprovisioned.errors.length === 4, 'unprovisioned fixture should report all release prerequisites', unprovisioned)
+  assertCheck(unprovisioned.errors.length === 5, 'unprovisioned fixture should report all release prerequisites', unprovisioned)
   assertCheck(
     unprovisioned.errors.some((error) => error.includes('createUpdaterArtifacts')),
     'disabled updater artifacts should be reported',
+    unprovisioned,
+  )
+  assertCheck(
+    unprovisioned.errors.some((error) => error.includes('installMode')),
+    'interactive updater install mode should be reported',
     unprovisioned,
   )
 

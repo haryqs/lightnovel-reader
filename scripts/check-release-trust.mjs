@@ -59,6 +59,10 @@ export function checkReleaseTrust({ pluginTrustPath, tauriConfigPath }) {
   if (createUpdaterArtifacts !== true) {
     errors.push('tauri bundle.createUpdaterArtifacts must be true for release packaging')
   }
+  const updaterInstallMode = tauriConfig?.plugins?.updater?.windows?.installMode
+  if (updaterInstallMode !== 'quiet') {
+    errors.push('tauri updater windows.installMode must be quiet to bypass multilingual NSIS prompts')
+  }
 
   return {
     ok: errors.length === 0,
@@ -66,6 +70,7 @@ export function checkReleaseTrust({ pluginTrustPath, tauriConfigPath }) {
     pluginKeyIds: keys.map((key) => key.keyId),
     updaterPubkeyConfigured: typeof updaterPubkey === 'string' && updaterPubkey.trim().length > 0,
     updaterArtifactsEnabled: createUpdaterArtifacts === true,
+    updaterInstallMode,
   }
 }
 
@@ -89,7 +94,7 @@ function main() {
     return
   }
   console.log(
-    `check-release-trust: OK(pluginKeys=${result.pluginKeyIds.join(',')}, updaterPubkey=configured, updaterArtifacts=enabled)`,
+    `check-release-trust: OK(pluginKeys=${result.pluginKeyIds.join(',')}, updaterPubkey=configured, updaterArtifacts=enabled, updaterInstallMode=${result.updaterInstallMode})`,
   )
 }
 

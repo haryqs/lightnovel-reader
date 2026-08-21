@@ -3594,3 +3594,48 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
 
 - 尚未从正式安装的 v0.7.1 经应用内入口完成到 v0.7.2 的真实下载、验签、安装、重启和用户数据保留闭环。
 - 签名拒绝路径只对本地篡改副本测试，不得修改或替换公开资产。
+
+## 2026-08-22：完成 v0.7.1→v0.7.2 更新闭环并准备 v0.7.3 修复
+
+完成：
+
+- 在外部目录 `E:\lightnovel-reader-release-staging\updater-smoke-backup-20260822-v071-to-v072` 备份应用数据，
+  以公开 v0.7.1 安装器建立旧版本基线，再通过公开 Latest 清单完成检查、发布说明、安全取消、再次确认、
+  下载、签名接受、NSIS 安装、自动重启和 v0.7.2 新详情/进度控件复验。
+- 新增 `scripts/tauri-updater-install-smoke.mjs`，直接启动精确安装路径并通过 WebView2 DevTools 验证真实安装；
+  需要显式确认、当前/目标版本，且可只清旧 Service Worker/HTTP cache。WebDriver smoke 明确拒绝安装参数。
+- 排查发现桌面端曾被 VitePWA 无条件注入的 Service Worker 和 WebView2 HTTP cache 污染。改为仅 Web 生产环境
+  手动注册；Windows 在 Tauri Builder 创建 WebView2 前一次性删除 Cache/Code Cache/Service Worker，前端再注销
+  残留注册并清 CacheStorage；新增源码与 `dist` 双阶段 `check:pwa-boundary`。迁移不碰站点存储或 SQLite。
+- 排查发现 updater 的 `passive` NSIS 会停在多语言 Installer Language 对话框。改为 `quiet`，并扩展
+  `check:release-trust` / 回归测试，确保正式构建不能退回交互模式。
+- 应用、npm 和三个第一方 Cargo 包统一升至 v0.7.3 源码候选。公开 v0.7.2 Release 及五个资产没有修改。
+
+诊断过程：
+
+- WebDriver 初次安装测试会清理 updater 进程树；直接 CDP 测试初次只连接到 `about:blank`；两者均为测试工具
+  生命周期问题。进一步比对 updater 临时文件确认下载内容与公开 v0.7.2 安装器哈希完全一致。
+- 手动观察到安装进程停在 Installer Language，使用同参数接受语言后可正常升级，最终以 quiet 配置完成全自动闭环。
+
+验证：
+
+- `check:pwa-boundary`（源码与构建产物）、`check:release-trust`、`test:release-trust`、`npm.cmd run build`：通过。
+- `npm.cmd run check:project`、`test:version`、`test:prepare-updater-release`、`test:release-candidate`、
+  `cargo fmt --all -- --check`：通过。
+- `cargo test --workspace --locked`：通过，Tauri 8 passed / 1 个公网测试 ignored，reading-core 149 passed；
+  `cargo test -p reading-core --features quickjs --locked`：149 passed。
+- `npm.cmd run tauri -- build --debug --no-bundle`：通过，生成 v0.7.3 debug 应用；对该应用运行
+  `smoke:updater`：真实窗口 UI/详情弹窗/进度控件通过，公开 Latest 检查返回“当前已是最新版本”。
+- Windows 原生迁移实测：启动前旧 Cache/Code Cache/Service Worker 均存在，v0.7.3 启动后迁移标记值为
+  `0.7.3`，三目录均已删除；两份 SQLite 哈希仍与基线一致，且无 reader/driver 残留进程。
+- 真实安装 smoke：initial=`0.7.1`、installed=`0.7.2`，确认发布说明包含更新 UI 改进，重启后详情弹窗、
+  进度控件和更新按钮均存在；随后安全 `smoke:updater` 返回“当前已是最新版本”。
+- `library\library.sqlite`：139264 字节，SHA-256
+  `3E0C2C50ED279042C1AEBF92396FFD8CC4B293CDAC21F405847976E5781153E7`；`reader.db`：24576 字节，SHA-256
+  `F502F6D2F34F9FE175A464767492D16E146FBC69F470A50F8E72B9F55A6A0ED3`，更新前后完全一致。
+- 最终本机安装版为 v0.7.2，且没有残留 reader/tauri-driver/msedgedriver 进程。
+
+未验证 / 下一步：
+
+- v0.7.3 尚未从合并后的固定 main 提交生成签名安装器、严格五资产或 Draft Release；该步骤仍需维护者在可见终端输入 updater 私钥密码。
+- 本地篡改 updater 的签名拒绝路径仍需在不替换公开资产的隔离环境验证。
