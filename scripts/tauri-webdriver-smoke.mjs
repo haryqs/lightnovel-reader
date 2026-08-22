@@ -325,11 +325,21 @@ async function main() {
         const updateButton = document.querySelector('#btn-app-update')
         const updateProgress = document.querySelector('#app-update-progress')
         const updateDialog = document.querySelector('#app-update-dialog')
+        const libraryFilter = document.querySelector('#library-filter')
+        const librarySort = document.querySelector('#library-sort')
+        const resultSummary = document.querySelector('#library-result-summary')
         return {
           libraryVisible: !!view && view.hidden === false,
           hasImportEpub: !!document.querySelector('#btn-library-import-epub'),
           hasImportFolder: !!document.querySelector('#btn-library-import-folder'),
           hasSearch: !!document.querySelector('#library-search-input'),
+          hasLibraryFilter: !!libraryFilter,
+          libraryFilterOptions: Array.from(libraryFilter?.options || []).map((option) => option.value),
+          hasLibrarySort: !!librarySort,
+          librarySortOptions: Array.from(librarySort?.options || []).map((option) => option.value),
+          hasLibraryResultSummary: !!resultSummary,
+          libraryResultSummary: resultSummary?.textContent || '',
+          libraryOrganizeEnabled: libraryFilter?.disabled === false && librarySort?.disabled === false,
           hasGrid: !!document.querySelector('#library-grid'),
           sourcePanelOpen: sourcePanel?.open === true,
           calibreInsideSourcePanel: !!sourcePanel && !!calibre && sourcePanel.contains(calibre),
@@ -345,12 +355,30 @@ async function main() {
           hasErrorState: !!document.querySelector('.library-state-error'),
         }
       `),
-    (value) => value.libraryVisible && value.hasGrid,
+    (value) =>
+      value.libraryVisible &&
+      value.hasGrid &&
+      (value.bookCards > 0 || value.hasEmptyState || value.hasErrorState),
   )
 
   assertCheck(library.hasImportEpub, 'library import EPUB action is missing', library)
   assertCheck(library.hasImportFolder, 'library folder import action is missing', library)
   assertCheck(library.hasSearch, 'library search input is missing', library)
+  assertCheck(library.hasLibraryFilter, 'library filter is missing', library)
+  assertCheck(
+    library.libraryFilterOptions.join(',') === 'all,readable,remote,unread',
+    'library filter options are incomplete',
+    library,
+  )
+  assertCheck(library.hasLibrarySort, 'library sort is missing', library)
+  assertCheck(
+    library.librarySortOptions.join(',') === 'recent,added,title,author',
+    'library sort options are incomplete',
+    library,
+  )
+  assertCheck(library.hasLibraryResultSummary, 'library result summary is missing', library)
+  assertCheck(library.libraryResultSummary.trim().length > 0, 'library result summary is empty', library)
+  assertCheck(library.libraryOrganizeEnabled, 'library organize controls should be enabled for the shelf', library)
   assertCheck(library.calibreInsideSourcePanel, 'Calibre migration must stay under the secondary source panel', library)
   assertCheck(!library.sourcePanelOpen, 'secondary source panel should be collapsed by default', library)
   assertCheck(!library.hasErrorState, 'library rendered an error state', library)
@@ -363,6 +391,30 @@ async function main() {
   }
   assertCheck(library.updateControlsVisible, 'application update action must be visible in Tauri', library)
   assertCheck(library.updateButtonLabel === '检查更新', 'unexpected application update label', library)
+
+  const libraryOrganizeProbe = await execute(`
+    const filter = document.querySelector('#library-filter')
+    const sort = document.querySelector('#library-sort')
+    filter.value = 'unread'
+    filter.dispatchEvent(new Event('change', { bubbles: true }))
+    sort.value = 'title'
+    sort.dispatchEvent(new Event('change', { bubbles: true }))
+    const result = {
+      filterValue: filter.value,
+      sortValue: sort.value,
+      summary: document.querySelector('#library-result-summary')?.textContent || '',
+      hasShelfState: !!document.querySelector('.library-empty, .library-state, .book-card'),
+    }
+    filter.value = 'all'
+    filter.dispatchEvent(new Event('change', { bubbles: true }))
+    sort.value = 'recent'
+    sort.dispatchEvent(new Event('change', { bubbles: true }))
+    return result
+  `)
+  assertCheck(libraryOrganizeProbe.filterValue === 'unread', 'library filter change was not applied', libraryOrganizeProbe)
+  assertCheck(libraryOrganizeProbe.sortValue === 'title', 'library sort change was not applied', libraryOrganizeProbe)
+  assertCheck(libraryOrganizeProbe.summary.trim().length > 0, 'library organize summary disappeared', libraryOrganizeProbe)
+  assertCheck(libraryOrganizeProbe.hasShelfState, 'library organize change cleared the shelf state', libraryOrganizeProbe)
 
   let updateDialogProbe = null
   let updateDialogDismissed = null
@@ -498,6 +550,7 @@ async function main() {
           boot,
           defaultTheme,
           library,
+          libraryOrganizeProbe,
           updateDialogProbe,
           updateDialogDismissed,
           updater,

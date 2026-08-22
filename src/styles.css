@@ -838,12 +838,47 @@ body.statusbar-visible .statusbar,
 }
 .library-search input:focus,
 .library-search select:focus,
+.library-organize select:focus,
 .library-read-preference:focus,
 .library-path input:focus,
 .opds-source-add input:focus {
   outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.library-organize {
+  padding: 9px 20px 0 24px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-shrink: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.library-organize-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.library-organize select {
+  min-width: 104px;
+  padding: 6px 28px 6px 9px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--fg);
+  font: inherit;
+  font-size: 12px;
+}
+.library-organize select:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.library-result-summary {
+  margin-left: auto;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 .library-opds-url-hint {
   margin: 8px 20px 0 24px;
@@ -1646,6 +1681,19 @@ body.statusbar-visible .statusbar,
   .library-opds-url-actions {
     justify-content: flex-end;
     flex-wrap: wrap;
+  }
+  .library-search,
+  .library-organize {
+    padding-right: 14px;
+    padding-left: 14px;
+    flex-wrap: wrap;
+  }
+  .library-organize {
+    gap: 8px 12px;
+  }
+  .library-result-summary {
+    width: 100%;
+    margin-left: 0;
   }
   .library-grid {
     grid-template-columns: repeat(auto-fill, minmax(138px, 1fr));
