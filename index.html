@@ -197,6 +197,27 @@
             <button id="btn-library-search-remote" class="btn" title="按所选来源在线搜索；青空文库是公共版权经典库，不是轻小说主来源">🌐 在线找书</button>
             <button id="btn-library-batch-link" class="btn btn-subtle" title="对当前远程搜索结果逐条确认关联到本地书" disabled>批量关联</button>
           </div>
+          <div class="library-organize" aria-label="书架整理">
+            <label class="library-organize-field">
+              <span>筛选</span>
+              <select id="library-filter">
+                <option value="all">全部</option>
+                <option value="readable">可阅读</option>
+                <option value="remote">远程收藏</option>
+                <option value="unread">本地未读</option>
+              </select>
+            </label>
+            <label class="library-organize-field">
+              <span>排序</span>
+              <select id="library-sort">
+                <option value="recent">最近阅读</option>
+                <option value="added">最近加入</option>
+                <option value="title">书名</option>
+                <option value="author">作者</option>
+              </select>
+            </label>
+            <span id="library-result-summary" class="library-result-summary" role="status" aria-live="polite">0 本</span>
+          </div>
           <div id="library-opds-url-hint" class="library-opds-url-hint" hidden>
             <div class="library-opds-url-copy">
               <strong>检测到 OPDS feed URL</strong>

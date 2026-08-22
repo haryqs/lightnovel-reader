@@ -561,6 +561,80 @@ async function runFirstSession() {
 
   await invoke('library_touch_last_read', { id: vol1Book.id }, 20_000)
 
+  await execute(`document.querySelector('#btn-library')?.click(); return true`)
+  const libraryOrganizeInitial = await waitForValue(
+    'organized shelf with imported books',
+    () => execute(`
+      return {
+        titles: Array.from(document.querySelectorAll('#library-grid .book-card .title')).map((node) => node.textContent || ''),
+        filterValue: document.querySelector('#library-filter')?.value || '',
+        sortValue: document.querySelector('#library-sort')?.value || '',
+        summary: document.querySelector('#library-result-summary')?.textContent || '',
+      }
+    `),
+    (value) => value.titles.length === 2,
+    20_000,
+  )
+  assertCheck(
+    libraryOrganizeInitial.titles[0] === vol1Book.title,
+    'recently read book should sort first',
+    libraryOrganizeInitial,
+  )
+  assertCheck(libraryOrganizeInitial.summary === '2 本', 'unexpected initial shelf summary', libraryOrganizeInitial)
+
+  const libraryOrganizeUnread = await execute(`
+    const filter = document.querySelector('#library-filter')
+    filter.value = 'unread'
+    filter.dispatchEvent(new Event('change', { bubbles: true }))
+    return {
+      titles: Array.from(document.querySelectorAll('#library-grid .book-card .title')).map((node) => node.textContent || ''),
+      summary: document.querySelector('#library-result-summary')?.textContent || '',
+    }
+  `)
+  assertCheck(
+    libraryOrganizeUnread.titles.length === 1 && libraryOrganizeUnread.titles[0] === vol2Book.title,
+    'unread filter should only keep Vol.2',
+    libraryOrganizeUnread,
+  )
+  assertCheck(libraryOrganizeUnread.summary === '显示 1 / 2 本', 'unexpected unread summary', libraryOrganizeUnread)
+
+  const libraryOrganizeRemote = await execute(`
+    const filter = document.querySelector('#library-filter')
+    filter.value = 'remote'
+    filter.dispatchEvent(new Event('change', { bubbles: true }))
+    return {
+      cards: document.querySelectorAll('#library-grid .book-card').length,
+      summary: document.querySelector('#library-result-summary')?.textContent || '',
+      state: document.querySelector('#library-grid .library-state')?.textContent || '',
+    }
+  `)
+  assertCheck(libraryOrganizeRemote.cards === 0, 'remote filter should hide local-only fixtures', libraryOrganizeRemote)
+  assertCheck(libraryOrganizeRemote.summary === '显示 0 / 2 本', 'unexpected remote summary', libraryOrganizeRemote)
+  assertCheck(libraryOrganizeRemote.state.includes('当前筛选下没有书'), 'filtered empty state is missing', libraryOrganizeRemote)
+
+  const libraryOrganizeTitle = await execute(`
+    const filter = document.querySelector('#library-filter')
+    const sort = document.querySelector('#library-sort')
+    filter.value = 'readable'
+    filter.dispatchEvent(new Event('change', { bubbles: true }))
+    sort.value = 'title'
+    sort.dispatchEvent(new Event('change', { bubbles: true }))
+    const result = {
+      titles: Array.from(document.querySelectorAll('#library-grid .book-card .title')).map((node) => node.textContent || ''),
+      summary: document.querySelector('#library-result-summary')?.textContent || '',
+    }
+    filter.value = 'all'
+    filter.dispatchEvent(new Event('change', { bubbles: true }))
+    sort.value = 'recent'
+    sort.dispatchEvent(new Event('change', { bubbles: true }))
+    return result
+  `)
+  assertCheck(
+    libraryOrganizeTitle.titles.join('|') === `${vol1Book.title}|${vol2Book.title}`,
+    'title sorting order is wrong',
+    libraryOrganizeTitle,
+  )
+
   return {
     boot,
     vol1Id: vol1Book.id,
@@ -572,6 +646,12 @@ async function runFirstSession() {
     parseCache,
     inlineImages,
     books,
+    libraryOrganize: {
+      initial: libraryOrganizeInitial,
+      unread: libraryOrganizeUnread,
+      remote: libraryOrganizeRemote,
+      title: libraryOrganizeTitle,
+    },
   }
 }
 
@@ -655,6 +735,7 @@ async function main() {
             chapterSizes: second.parseCache.chapterSizes,
           },
           inlineImages: second.inlineImages,
+          libraryOrganize: first.libraryOrganize,
           openTimingMs: {
             first: Number(first.firstOpenMs.toFixed(2)),
             second: Number(second.secondOpenMs.toFixed(2)),

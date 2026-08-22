@@ -3699,3 +3699,30 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
 下一步：
 
 - 合并本轮测试工具与记录；继续监测公开 v0.7.3，后续修复必须发布新版本，不覆盖既有资产。
+
+## 2026-08-22：新增书架筛选、排序与结果计数
+
+完成：
+
+- `index.html` 新增书架整理栏：全部、可阅读、远程收藏、本地未读四种筛选，以及最近阅读、最近加入、
+  书名、作者四种排序；结果摘要显示总数或“当前/总数”。
+- `src/main.ts` 只使用现有 `LibraryBook` 字段做不可变筛选和中文数字感知排序；筛选为空时保留明确状态，
+  插件在线搜索/详情期间禁用书架整理控件并切换在线摘要，不修改 Rust、存储或冻结协议。
+- `src/styles.css` 增加整理栏桌面与窄窗口布局、键盘焦点和禁用状态。
+- `tauri-webdriver-smoke.mjs` 等待书架真实渲染完成后再验收，并检查整理控件、完整选项与 change 事件。
+- `tauri-p0-smoke.mjs` 在隔离临时书库导入两本真实 EPUB，验证最近阅读排序、本地未读筛选、远程空筛选
+  的 0/2 摘要和书名排序；测试结束自动清理临时数据，不触碰用户书库。
+
+验证：
+
+- `npm.cmd run check:project`、`npm.cmd run build`、`git diff --check`：通过。
+- `cargo test --workspace --locked`：Tauri 8 passed / 1 个公网测试 ignored，reading-core 149 passed。
+- `cargo test -p reading-core --features quickjs --locked`：149 passed。
+- `npm.cmd run tauri -- build --debug --no-bundle`：通过。
+- `smoke:tauri`：真实 WebView2 窗口通过，书架空状态、整理选项、结果摘要和 change 事件均正常。
+- `smoke:p0`：隔离两卷 EPUB 全链路通过，整理结果与预期逐项一致。
+
+未验证 / 下一步：
+
+- 尚未在数百本真实书架上人工观察窄窗口排版；当前排序为前端内存排序，大书架若出现性能反馈再测量优化。
+- 提交 PR 并等待 Windows CI；合并后继续评估数据备份/恢复入口或安全的书架移除语义。

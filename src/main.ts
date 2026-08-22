@@ -604,6 +604,9 @@ const libraryPathInput = $<HTMLInputElement>('#library-path-input')
 const libraryImportInput = $<HTMLInputElement>('#library-import-input')
 const libraryFolderInput = $<HTMLInputElement>('#library-folder-input')
 const librarySearchInput = $<HTMLInputElement>('#library-search-input')
+const libraryFilterSelect = $<HTMLSelectElement>('#library-filter')
+const librarySortSelect = $<HTMLSelectElement>('#library-sort')
+const libraryResultSummary = $<HTMLElement>('#library-result-summary')
 const libraryRemoteSourceSelect = $<HTMLSelectElement>('#library-remote-source')
 const libraryReadPreferenceSelect = $<HTMLSelectElement>('#library-read-preference')
 const librarySourcePanel = $<HTMLDetailsElement>('#library-source-panel')
@@ -837,6 +840,8 @@ libraryReadPreferenceSelect.addEventListener('change', () => {
   applyLibraryReadPreference(libraryReadPreferenceSelect.value as LibraryReadPreference)
   if (!libraryView.hidden) renderLibraryBooks()
 })
+libraryFilterSelect.addEventListener('change', () => renderLibraryBooks())
+librarySortSelect.addEventListener('change', () => renderLibraryBooks())
 libraryImportInput.addEventListener('change', async () => {
   const files = collectEpubFiles(Array.from(libraryImportInput.files || []))
   libraryImportInput.value = ''
@@ -1442,9 +1447,11 @@ async function searchRemoteBooks() {
     return
   }
   if (!isTauriRuntime()) {
+    setLibraryOrganizeSummary('在线来源不可用', false)
     libraryGrid.innerHTML = '<div class="library-state">在线找书需要 Tauri 桌面窗口。<br>请在终端运行：<code>npm run tauri dev</code></div>'
     return
   }
+  libraryFilterSelect.value = 'all'
   const original = librarySearchRemoteBtn.textContent
   librarySearchRemoteBtn.disabled = true
   librarySearchRemoteBtn.textContent = '搜索中…'
@@ -1474,6 +1481,7 @@ function canAcquirePluginSource(source: PluginSourceDescriptor): boolean {
 }
 
 function showPluginSourceGridState(message: string, error = false) {
+  setLibraryOrganizeSummary(error ? '在线来源失败' : '在线来源', false)
   libraryGrid.innerHTML = ''
   const state = document.createElement('div')
   state.className = error ? 'library-state library-state-error' : 'library-state'
@@ -1498,6 +1506,7 @@ function renderPluginSourceResults(
   page: number,
   result: PluginSearchPage,
 ) {
+  setLibraryOrganizeSummary(`${result.results.length} 条在线结果`, false)
   libraryGrid.innerHTML = ''
   updateBatchLinkButton([])
 
@@ -1619,6 +1628,7 @@ async function showPluginSourceBook(source: PluginSourceDescriptor, item: Plugin
 }
 
 function renderPluginSourceBook(source: PluginSourceDescriptor, book: PluginBookDetail) {
+  setLibraryOrganizeSummary('来源详情', false)
   libraryGrid.innerHTML = ''
   updateBatchLinkButton([])
   const panel = document.createElement('section')
@@ -2005,6 +2015,52 @@ function isRemoteLibraryBook(book: LibraryBook): boolean {
   return book.availability === 'remote' || (!book.filePath && !!book.remoteUrl)
 }
 
+type LibraryFilter = 'all' | 'readable' | 'remote' | 'unread'
+type LibrarySort = 'recent' | 'added' | 'title' | 'author'
+
+const libraryBookCollator = new Intl.Collator('zh-CN', {
+  numeric: true,
+  sensitivity: 'base',
+})
+
+function organizeLibraryBooks(books: LibraryBook[]): LibraryBook[] {
+  const filter = libraryFilterSelect.value as LibraryFilter
+  const sort = librarySortSelect.value as LibrarySort
+  const visible = books.filter((book) => {
+    switch (filter) {
+      case 'readable':
+        return isLocalReadableBook(book)
+      case 'remote':
+        return isRemoteLibraryBook(book)
+      case 'unread':
+        return isLocalReadableBook(book) && !book.lastReadAt
+      default:
+        return true
+    }
+  })
+
+  return visible.sort((left, right) => {
+    if (sort === 'title') {
+      return libraryBookCollator.compare(left.title || '', right.title || '')
+        || libraryBookCollator.compare(left.author || '', right.author || '')
+    }
+    if (sort === 'author') {
+      return libraryBookCollator.compare(left.author || '', right.author || '')
+        || libraryBookCollator.compare(left.title || '', right.title || '')
+    }
+    const leftTime = sort === 'added' ? left.addedAt : (left.lastReadAt || left.addedAt)
+    const rightTime = sort === 'added' ? right.addedAt : (right.lastReadAt || right.addedAt)
+    return rightTime - leftTime
+      || libraryBookCollator.compare(left.title || '', right.title || '')
+  })
+}
+
+function setLibraryOrganizeSummary(text: string, enabled = true) {
+  libraryFilterSelect.disabled = !enabled
+  librarySortSelect.disabled = !enabled
+  libraryResultSummary.textContent = text
+}
+
 function updateBatchLinkButton(books = libraryBooks) {
   const remoteCount = books.filter(isRemoteLibraryBook).length
   libraryBatchLinkBtn.disabled = remoteCount === 0
@@ -2036,11 +2092,16 @@ interface LibraryReadAction {
 }
 
 function renderLibraryBooks() {
-  const books = libraryBooks
+  const books = organizeLibraryBooks(libraryBooks)
+  setLibraryOrganizeSummary(books.length === libraryBooks.length
+    ? `${books.length} 本`
+    : `显示 ${books.length} / ${libraryBooks.length} 本`)
   updateBatchLinkButton(books)
 
   if (books.length === 0) {
-    if (librarySearchInput.value.trim()) {
+    if (libraryBooks.length > 0) {
+      libraryGrid.innerHTML = '<div class="library-state">当前筛选下没有书，换个筛选条件试试。</div>'
+    } else if (librarySearchInput.value.trim()) {
       libraryGrid.innerHTML = '<div class="library-state">没有匹配的书</div>'
     } else {
       renderLibraryEmptyState()
