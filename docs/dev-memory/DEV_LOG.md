@@ -3639,3 +3639,36 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
 
 - v0.7.3 尚未从合并后的固定 main 提交生成签名安装器、严格五资产或 Draft Release；该步骤仍需维护者在可见终端输入 updater 私钥密码。
 - 本地篡改 updater 的签名拒绝路径仍需在不替换公开资产的隔离环境验证。
+
+## 2026-08-22：生成 v0.7.3 签名五资产并创建 Draft Release
+
+完成：
+
+- v0.7.3 updater/PWA 修复通过 PR #61 合并到 `main@60c0868fa4d60c131ad431798dc9ac7981308816`；
+  PR 与合并后 main 的 Windows CI 均通过项目门、发布门、前端、Rust workspace 与 QuickJS。
+- 维护者在可见终端输入 updater 私钥密码，从上述固定提交生成 v0.7.3 NSIS 与 `.sig`；密码未进入命令、
+  聊天、日志或仓库。隔离历史 bundle 后生成 updater 三资产，Gutenberg 包重新生成 v0.7.3 URL 索引并签名验收。
+- 组装 `E:\lightnovel-reader-release-staging\v0.7.3-release` 严格五资产并通过统一验收；私钥、密码和 unsigned 索引未进入候选目录。
+- 候选静默安装、安装版真实窗口、更新入口、首次缓存迁移、静默卸载、数据保留和静默重装均通过；本机当前安装版为 v0.7.3。
+- 创建目标为构建提交的 v0.7.3 Draft Release（id `374854333`）；远端恰好五资产，名称、大小和 digest 均匹配，公开 tag 不存在。
+
+候选摘要：
+
+- NSIS：10,537,755 字节，SHA-256 `6E37E0150957422359FF83D254ED568DE8BC285A0649979EA39FBDE1733DE55B`。
+- updater `.sig`：432 字节，SHA-256 `ABF05159C56132A1D154ADC9AD0F3C3C6E47E3DE44BAF09EFA054139F59EF2B7`。
+- `gutenberg.zip`：1,763 字节，SHA-256 `76F715E85E6360C9A8E0F7EC5BFE5FDAAED26B74221388D4DA0D4FC074B0F692`。
+- `latest.json`：771 字节，SHA-256 `A2B20E8705F01A451D77418C6765F95D3FB48C99CC7555BE8D5D0A0A48F2FAB7`。
+- `repository.json`：1,286 字节，SHA-256 `9BDEFEBF7BC8403E445C5404CF39D8325D06AA9FC8A4C0FA37944A9C20C58E0E`。
+
+验证：
+
+- `verify:plugin-repository-release` 与 `verify:release-candidate -- --dir ...\v0.7.3-release --tag v0.7.3`：通过。
+- 安装/卸载/重装退出码均为 0；安装版 `smoke:updater` 通过，迁移标记为 0.7.3，三类旧缓存不存在。
+- `reader.db` SHA-256 `F502F6D2F34F9FE175A464767492D16E146FBC69F470A50F8E72B9F55A6A0ED3`；
+  `library.sqlite` SHA-256 `3E0C2C50ED279042C1AEBF92396FFD8CC4B293CDAC21F405847976E5781153E7`，全程不变。
+- Draft 远端状态、目标、五资产名称/大小/digest：匹配本机候选。
+
+未验证 / 下一步：
+
+- Draft 尚未公开，公开 Latest 仍为 v0.7.2；只有维护者再次明确同意后才能发布 v0.7.3。
+- 发布后必须从正式安装的 v0.7.2 完成应用内 quiet 更新、重启与数据保留复验。
