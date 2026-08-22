@@ -27,7 +27,7 @@ function defaultNativeDriver() {
     localAppData,
     'lightnovel-reader-tools',
     'msedgedriver',
-    '149.0.4022.62',
+    '151.0.4129.0',
     'msedgedriver.exe',
   )
 }
@@ -51,7 +51,8 @@ const appDataDir = customAppDataDir
   : mkdtempSync(join(tmpdir(), 'lightnovel-reader-p0-smoke-'))
 const autoAppDataDir = !customAppDataDir
 const keepOpen = hasFlag('--keep-open')
-const keepData = hasFlag('--keep-data') || !autoAppDataDir
+const keepGeneratedData = hasFlag('--keep-data')
+const keepData = keepGeneratedData || !autoAppDataDir
 const skipFixtures = hasFlag('--skip-fixtures')
 const server = `http://127.0.0.1:${driverPort}`
 
@@ -118,6 +119,7 @@ for (const fixture of [vol1, folderVol1Copy, folderVol2]) {
   }
 }
 mkdirSync(appDataDir, { recursive: true })
+const backupRoot = mkdtempSync(join(tmpdir(), 'lightnovel-reader-backup-smoke-'))
 
 const stdout = []
 const stderr = []
@@ -451,11 +453,17 @@ async function cleanup() {
     }
   }
 
+  const tmpRoot = resolve(tmpdir())
   if (!keepData && autoAppDataDir) {
-    const tmpRoot = resolve(tmpdir())
     const resolved = resolve(appDataDir)
     if (resolved.startsWith(`${tmpRoot}${sep}`)) {
       rmSync(resolved, { recursive: true, force: true })
+    }
+  }
+  if (!keepGeneratedData) {
+    const resolvedBackupRoot = resolve(backupRoot)
+    if (resolvedBackupRoot.startsWith(`${tmpRoot}${sep}`)) {
+      rmSync(resolvedBackupRoot, { recursive: true, force: true })
     }
   }
 }
@@ -635,6 +643,38 @@ async function runFirstSession() {
     libraryOrganizeTitle,
   )
 
+  const backup = await invoke(
+    'export_user_data_backup',
+    { destinationParent: backupRoot },
+    30_000,
+  )
+  const backupPath = resolve(backup.path)
+  assertCheck(
+    backupPath.startsWith(`${resolve(backupRoot)}${sep}`),
+    'backup path escaped the selected destination',
+    backup,
+  )
+  assertCheck(existsSync(join(backupPath, 'reader.db')), 'backup storage database is missing', backup)
+  assertCheck(
+    existsSync(join(backupPath, 'library', 'library.sqlite')),
+    'backup library database is missing',
+    backup,
+  )
+  assertCheck(!existsSync(join(backupPath, 'cache')), 'backup should exclude parser cache', backup)
+  assertCheck(!existsSync(join(backupPath, 'sync.json')), 'backup should exclude sync credentials', backup)
+  const backupManifest = JSON.parse(readFileSync(join(backupPath, 'manifest.json'), 'utf8'))
+  assertCheck(backupManifest.schemaVersion === 1, 'unexpected backup schema version', backupManifest)
+  assertCheck(
+    backupManifest.files.length === backup.fileCount && backup.fileCount >= 4,
+    'backup file count does not match manifest',
+    { backup, backupManifest },
+  )
+  assertCheck(
+    backupManifest.files.some((file) => file.path.endsWith('.epub')),
+    'backup manifest does not include imported EPUB assets',
+    backupManifest,
+  )
+
   return {
     boot,
     vol1Id: vol1Book.id,
@@ -646,6 +686,7 @@ async function runFirstSession() {
     parseCache,
     inlineImages,
     books,
+    backup,
     libraryOrganize: {
       initial: libraryOrganizeInitial,
       unread: libraryOrganizeUnread,
@@ -736,6 +777,7 @@ async function main() {
           },
           inlineImages: second.inlineImages,
           libraryOrganize: first.libraryOrganize,
+          backup: first.backup,
           openTimingMs: {
             first: Number(first.firstOpenMs.toFixed(2)),
             second: Number(second.secondOpenMs.toFixed(2)),

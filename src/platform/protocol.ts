@@ -345,6 +345,14 @@ export interface PluginSourceDescriptor {
   capabilities: PluginCapability[]
 }
 
+/** userData.exportBackup 返回的完整用户数据备份摘要；取消目录选择时方法返回 null。 */
+export interface UserDataBackupResult {
+  path: string
+  createdAt: number
+  fileCount: number
+  totalBytes: number
+}
+
 // ---- 桥接接口:每个方法对应协议里的一条消息 ----
 
 export interface ReaderBridge {
@@ -400,6 +408,8 @@ export interface ReaderBridge {
   checkAppUpdate(): Promise<AppUpdateInfo | null>
   /** appUpdate.install — 下载并验签安装最近一次检查到的更新，然后重启应用 */
   installAppUpdate(onProgress?: (progress: AppUpdateInstallProgress) => void): Promise<void>
+  /** userData.exportBackup — 选择目标目录并导出带 SHA-256 清单的一致性用户数据快照 */
+  exportUserDataBackup(): Promise<UserDataBackupResult | null>
   /** plugin.selectPackagePath — 选择源插件 zip 安装包，返回本地路径或 null */
   selectPluginPackagePath(): Promise<string | null>
   /** plugin.inspectPackage — 读取 zip manifest/入口并返回安装前确认信息，不执行插件代码 */

@@ -6,8 +6,8 @@
 
 ## 下载
 
-- [GitHub Release：Light Novel Reader v0.7.2](https://github.com/haryqs/lightnovel-reader/releases/tag/v0.7.2)
-- Windows x64 用户下载 `LightNovel.Reader_0.7.2_x64-setup.exe`；安装器为当前用户安装，不需要管理员权限。
+- [GitHub Release：Light Novel Reader v0.7.3](https://github.com/haryqs/lightnovel-reader/releases/tag/v0.7.3)
+- Windows x64 用户下载 `LightNovel.Reader_0.7.3_x64-setup.exe`；安装器为当前用户安装，不需要管理员权限。
 - 项目仍处于早期公开阶段；使用前建议保留重要 EPUB 与书库数据的独立备份。
 
 ## 平台能力
@@ -21,6 +21,7 @@
 - **远程条目整理**：远程 metadata 条目可人工关联到本地资产，保留阅读进度和标注锚点。
 - **可控插件来源**：`plugin-sdk` 已有 manifest/schema/host API/官方仓库索引契约；`reading-core` 提供 manifest/权限/域名/zip/host API 策略门、QuickJS 运行时和官方包 Ed25519 验签。启用插件可作为正式在线来源执行分页搜索、书籍/章节读取，并由用户显式收藏为远程来源记录；收藏不自动下载正文，只有声明 `acquire` 的公共版权/开放授权插件可经宿主复核后把 EPUB 缓存为本地 asset。
 - **可信分发与更新**：便携测试包、Web 下载器、Tauri NSIS，以及桌面端手动检查、签名下载、安装和重启入口。
+- **可校验数据备份**：桌面书库可一键导出 SQLite 一致性快照、EPUB/封面与插件数据，并附逐文件 SHA-256 清单；缓存和同步令牌不进入备份。
 
 ## 合规边界
 
@@ -129,4 +130,4 @@ npm.cmd run tauri build
 
 ## 当前开发线
 
-当前主线已推进到协议 `1.0-rc.1` 冻结候选：Tauri command 与 shell promise 错误已统一为结构化 `BridgeError { code, message, details? }`，并由 `scripts/check-protocol-freeze.mjs` 守住协议版本/错误码/文档一致性。v0.7 桌面插件链路现已具备 manifest/权限/域名白名单、zip 安装、官方仓库 SHA-256 + Ed25519 包验签、QuickJS、`host.http/html/kv/log`、正式 `source.*` 与开放资源 EPUB 获取闭环；首批插件和 updater 公钥、Gutenberg 公网全链路、NSIS 安装/卸载及数据保留均已验证。首个带应用内更新入口的 `v0.7.1` 与改进更新详情、进度及失败恢复的 `v0.7.2` 均已正式发布，真实 v0.7.1→v0.7.2 应用内更新闭环也已通过。v0.7.3 修复桌面端旧 PWA 缓存和多语言 NSIS 被交互提示阻塞的问题，签名五资产已经验收并上传 Draft；公开下载仍保持 v0.7.2，只有在维护者另行明确授权后才会公开 v0.7.3。
+当前主线已推进到协议 `1.0-rc.1` 冻结候选：Tauri command 与 shell promise 错误已统一为结构化 `BridgeError { code, message, details? }`，并由 `scripts/check-protocol-freeze.mjs` 守住协议版本/错误码/文档一致性。v0.7 桌面插件链路现已具备 manifest/权限/域名白名单、zip 安装、官方仓库 SHA-256 + Ed25519 包验签、QuickJS、`host.http/html/kv/log`、正式 `source.*` 与开放资源 EPUB 获取闭环；首批插件和 updater 公钥、Gutenberg 公网全链路、NSIS 安装/卸载及数据保留均已验证。v0.7.3 已正式公开，真实 v0.7.1→v0.7.2 与 v0.7.2→v0.7.3 应用内更新闭环均已通过；当前继续补齐书架整理与用户数据安全等可独立交付的桌面体验。

@@ -325,6 +325,9 @@ async function main() {
         const updateButton = document.querySelector('#btn-app-update')
         const updateProgress = document.querySelector('#app-update-progress')
         const updateDialog = document.querySelector('#app-update-dialog')
+        const backupControls = document.querySelector('#library-backup-controls')
+        const backupButton = document.querySelector('#btn-library-backup')
+        const backupStatus = document.querySelector('#library-backup-status')
         const libraryFilter = document.querySelector('#library-filter')
         const librarySort = document.querySelector('#library-sort')
         const resultSummary = document.querySelector('#library-result-summary')
@@ -350,6 +353,10 @@ async function main() {
           updateProgressHidden: updateProgress?.hidden === true,
           hasUpdateDialog: !!updateDialog,
           updateDialogClosed: updateDialog?.open === false,
+          backupControlsVisible: !!backupControls && backupControls.hidden === false,
+          backupButtonLabel: backupButton?.textContent || '',
+          backupButtonEnabled: backupButton?.disabled === false,
+          hasBackupStatus: !!backupStatus,
           bookCards: document.querySelectorAll('.book-card').length,
           hasEmptyState: !!document.querySelector('.library-empty'),
           hasErrorState: !!document.querySelector('.library-state-error'),
@@ -391,6 +398,10 @@ async function main() {
   }
   assertCheck(library.updateControlsVisible, 'application update action must be visible in Tauri', library)
   assertCheck(library.updateButtonLabel === '检查更新', 'unexpected application update label', library)
+  assertCheck(library.backupControlsVisible, 'user data backup action must be visible in Tauri', library)
+  assertCheck(library.backupButtonLabel === '备份数据', 'unexpected user data backup label', library)
+  assertCheck(library.backupButtonEnabled, 'user data backup action should be enabled initially', library)
+  assertCheck(library.hasBackupStatus, 'user data backup status region is missing', library)
 
   const libraryOrganizeProbe = await execute(`
     const filter = document.querySelector('#library-filter')

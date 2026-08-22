@@ -13,7 +13,7 @@ use reading_core::plugin_host::{
 };
 use reading_core::plugin_manifest::{PluginCapability, PluginLegalKind};
 use reading_core::{
-    compute_book_id, library, parse_cache, plugin_repository, plugin_source, plugin_store,
+    backup, compute_book_id, library, parse_cache, plugin_repository, plugin_source, plugin_store,
     rusqlite, storage,
 };
 use tauri::Emitter;
@@ -169,6 +169,33 @@ fn now_ms() -> i64 {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as i64
+}
+
+#[tauri::command]
+fn export_user_data_backup(
+    state: tauri::State<AppState>,
+    app_data_dir: tauri::State<PathBuf>,
+    destination_parent: String,
+) -> Result<backup::UserDataBackupResult, BridgeError> {
+    if destination_parent.trim().is_empty() {
+        return Err(BridgeError::invalid_argument("备份目标目录不能为空"));
+    }
+    let storage_db = state
+        .db
+        .lock()
+        .map_err(|error| BridgeError::storage(error.to_string()))?;
+    let library_db = state
+        .library_db
+        .lock()
+        .map_err(|error| BridgeError::storage(error.to_string()))?;
+    backup::export_user_data_backup(
+        &storage_db,
+        &library_db,
+        &app_data_dir,
+        Path::new(&destination_parent),
+        env!("CARGO_PKG_VERSION"),
+    )
+    .map_err(BridgeError::storage)
 }
 
 const AOZORA_CATALOG_MAX_AGE: Duration = Duration::from_secs(7 * 24 * 60 * 60);
@@ -2109,6 +2136,7 @@ pub fn run() {
             opds_search_feed,
             opds_ingest_entries,
             opds_download_epub,
+            export_user_data_backup,
             sync_commands::sync_status,
             sync_commands::sync_pair,
             sync_commands::sync_pair_join,

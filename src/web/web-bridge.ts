@@ -217,6 +217,7 @@ export const webBridge: ReaderBridge = {
   openPathExternal: () => Promise.reject(platformErr('shell')),
   checkAppUpdate: () => Promise.resolve(null),
   installAppUpdate: () => Promise.reject(platformErr('appUpdate')),
+  exportUserDataBackup: () => Promise.reject(platformErr('userData')),
 
   // -- OPDS --
 

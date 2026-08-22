@@ -5,6 +5,8 @@
 //! 消息搬运，业务逻辑一律写在本 crate 内。
 
 #[cfg(feature = "native")]
+pub mod backup;
+#[cfg(feature = "native")]
 pub mod connectors;
 pub mod epub_parser;
 pub mod html_sanitizer;
