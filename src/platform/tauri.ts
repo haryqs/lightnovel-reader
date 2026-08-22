@@ -32,6 +32,7 @@ import type {
   ReaderBridge,
   ReadingProgress,
   RemoteLibrarySource,
+  UserDataBackupResult,
 } from './protocol'
 
 let pendingAppUpdate: Update | null = null
@@ -196,6 +197,22 @@ export const tauriBridge: ReaderBridge = {
   openPathExternal: (path) => openLocalPathExternal(path),
   checkAppUpdate,
   installAppUpdate,
+  exportUserDataBackup: async () => {
+    let selected: string | string[] | null
+    try {
+      selected = await open({
+        directory: true,
+        multiple: false,
+        title: '选择备份保存位置',
+      })
+    } catch (err) {
+      throw bridgeError('platformError', '打开备份目录选择器失败', err instanceof Error ? err.message : err)
+    }
+    if (typeof selected !== 'string') return null
+    return invoke<UserDataBackupResult>('export_user_data_backup', {
+      destinationParent: selected,
+    })
+  },
   selectPluginPackagePath: async () => {
     const selected = await open({
       multiple: false,

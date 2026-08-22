@@ -607,6 +607,9 @@ const librarySearchInput = $<HTMLInputElement>('#library-search-input')
 const libraryFilterSelect = $<HTMLSelectElement>('#library-filter')
 const librarySortSelect = $<HTMLSelectElement>('#library-sort')
 const libraryResultSummary = $<HTMLElement>('#library-result-summary')
+const libraryBackupControls = $<HTMLElement>('#library-backup-controls')
+const libraryBackupButton = $<HTMLButtonElement>('#btn-library-backup')
+const libraryBackupStatus = $<HTMLElement>('#library-backup-status')
 const libraryRemoteSourceSelect = $<HTMLSelectElement>('#library-remote-source')
 const libraryReadPreferenceSelect = $<HTMLSelectElement>('#library-read-preference')
 const librarySourcePanel = $<HTMLDetailsElement>('#library-source-panel')
@@ -668,6 +671,7 @@ let dismissedOpdsUrlHint = ''
 let libraryBooks: LibraryBook[] = []
 let librarySearchTimer: number | null = null
 let appUpdateBusy = false
+let libraryBackupBusy = false
 type LibraryReadPreference = 'auto' | 'builtin' | 'browser' | 'external'
 const LIBRARY_READ_PREFERENCE_KEY = 'reader.libraryReadPreference'
 const LIBRARY_READ_PREFERENCES = new Set<LibraryReadPreference>(['auto', 'builtin', 'browser', 'external'])
@@ -693,6 +697,38 @@ function applyLibraryReadPreference(value: LibraryReadPreference) {
 applyLibraryReadPreference(readLibraryReadPreference())
 
 appUpdateControls.hidden = !isTauriRuntime()
+libraryBackupControls.hidden = !isTauriRuntime()
+
+async function exportUserDataBackup() {
+  if (libraryBackupBusy) return
+  libraryBackupBusy = true
+  libraryBackupControls.dataset.state = 'working'
+  libraryBackupButton.disabled = true
+  libraryBackupButton.textContent = '备份中…'
+  libraryBackupStatus.textContent = '请选择保存位置'
+  libraryBackupStatus.title = ''
+  try {
+    const result = await bridge.exportUserDataBackup()
+    if (!result) {
+      libraryBackupControls.dataset.state = 'idle'
+      libraryBackupStatus.textContent = '已取消'
+      return
+    }
+    const summary = `已备份 ${result.fileCount} 个文件 · ${formatBytes(result.totalBytes)}`
+    libraryBackupControls.dataset.state = 'success'
+    libraryBackupStatus.textContent = summary
+    libraryBackupStatus.title = result.path
+  } catch (error) {
+    const message = `备份失败：${formatError(error)}`
+    libraryBackupControls.dataset.state = 'error'
+    libraryBackupStatus.textContent = message
+    libraryBackupStatus.title = message
+  } finally {
+    libraryBackupBusy = false
+    libraryBackupButton.disabled = false
+    libraryBackupButton.textContent = '备份数据'
+  }
+}
 
 function setAppUpdateState(
   state: 'idle' | 'checking' | 'available' | 'installing' | 'success' | 'error',
@@ -833,6 +869,7 @@ $('#btn-library')?.addEventListener('click', openLibrary)
 $('#btn-library-close')?.addEventListener('click', () => { libraryView.hidden = true })
 appUpdateBtn.addEventListener('click', () => void handleAppUpdate())
 $('#btn-library-refresh')?.addEventListener('click', refreshLibraryBooks)
+libraryBackupButton.addEventListener('click', () => void exportUserDataBackup())
 $('#btn-library-import-epub')?.addEventListener('click', () => libraryImportInput.click())
 $('#btn-library-import-folder')?.addEventListener('click', () => libraryFolderInput.click())
 $('#btn-library-import-calibre')?.addEventListener('click', importCalibreLibrary)

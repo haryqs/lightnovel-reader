@@ -3726,3 +3726,32 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
 
 - 尚未在数百本真实书架上人工观察窄窗口排版；当前排序为前端内存排序，大书架若出现性能反馈再测量优化。
 - 提交 PR 并等待 Windows CI；合并后继续评估数据备份/恢复入口或安全的书架移除语义。
+
+## 2026-08-22：新增可校验的一键用户数据备份
+
+完成：
+
+- `reading-core::backup` 新增 schema v1 备份：从持锁连接以 `VACUUM INTO` 生成 `reader.db` 与
+  `library.sqlite` 一致性快照，复制书库资产、封面和插件数据，写入逐文件大小与 SHA-256 清单。
+- 备份使用同级 `.partial` 临时目录，复核全部载荷后才完成命名；拒绝 app data 内目标，失败只清理本次临时目录。
+- 明确排除可重建缓存、SQLite WAL/SHM 和含同步 token 的 `sync.json`；当前不实现会覆盖数据的恢复。
+- 以 additive `userData.exportBackup` 同步 Rust command、ReaderBridge、Tauri/Web 壳与协议文档；桌面书库新增
+  “备份数据”按钮和取消、成功、失败状态，Web/PWA 隐藏入口。
+- P0 smoke 更新到本机当前 EdgeDriver 151，并从真实 Tauri 命令检查数据库、EPUB 资产、manifest 和排除项。
+- README 的公开下载入口与当前开发状态从旧 v0.7.2/Draft 文案修正为已公开 v0.7.3。
+
+验证：
+
+- `cargo test -p reading-core backup`：3 passed，覆盖完整导出、目标越界拒绝与失败清理。
+- `cargo check -p reader`、`npx.cmd tsc --noEmit`、`npm.cmd run build`：通过。
+- `cargo test --workspace --locked`：Tauri 8 passed / 1 个公网测试 ignored，reading-core 152 passed；
+  `cargo test -p reading-core --features quickjs --locked`：152 passed。
+- `npm.cmd run tauri -- build --debug --no-bundle`：通过。
+- `npm.cmd run smoke:tauri`：真实 WebView2 全绿，备份按钮可见、初始可用且状态区存在。
+- `npm.cmd run smoke:p0`：真实 WebView2 全绿；备份包含 8 个载荷文件、331270 字节，两数据库/EPUB/清单存在，
+  缓存与同步凭据不存在，第二会话进度/标注恢复继续通过。
+
+未验证 / 下一步：
+
+- 原生 Windows 目录选择器尚未人工点击；P0 直接调用同一 Rust command，不覆盖选择器交互。
+- 下一步先设计只读恢复校验与冲突预览；没有二次确认、回滚与版本策略前不实现覆盖式恢复。

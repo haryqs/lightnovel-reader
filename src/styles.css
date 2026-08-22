@@ -767,6 +767,26 @@ body.statusbar-visible .statusbar,
   flex-shrink: 0;
   flex-wrap: wrap;
 }
+.library-backup-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.library-backup-controls span {
+  max-width: min(42vw, 460px);
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.library-backup-controls[data-state='success'] span {
+  color: var(--accent);
+}
+.library-backup-controls[data-state='error'] span {
+  color: var(--error);
+}
 .library-source-panel {
   flex-shrink: 0;
   border-bottom: 1px solid var(--border);
