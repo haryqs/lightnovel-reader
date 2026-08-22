@@ -3668,7 +3668,34 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
   `library.sqlite` SHA-256 `3E0C2C50ED279042C1AEBF92396FFD8CC4B293CDAC21F405847976E5781153E7`，全程不变。
 - Draft 远端状态、目标、五资产名称/大小/digest：匹配本机候选。
 
-未验证 / 下一步：
+后续状态：
 
-- Draft 尚未公开，公开 Latest 仍为 v0.7.2；只有维护者再次明确同意后才能发布 v0.7.3。
-- 发布后必须从正式安装的 v0.7.2 完成应用内 quiet 更新、重启与数据保留复验。
+- Draft 已在维护者明确同意后公开；发布后跨版本复验见下一条日志。
+
+## 2026-08-22：正式公开 v0.7.3 并完成 v0.7.2→v0.7.3 在线更新闭环
+
+完成：
+
+- 经维护者明确同意，将 release id `374854333` 的 v0.7.3 Draft 公开为正式、非预发布的 Latest Release；
+  远端 tag 解析后精确指向构建提交 `60c0868fa4d60c131ad431798dc9ac7981308816`。
+- 从公开 Release 重新下载严格五资产并运行统一验收；名称、字节与 SHA-256 均匹配本机候选，
+  `/releases/latest/download/latest.json` 与版本化 `latest.json` 哈希一致。
+- 在仓库外完整备份 `%APPDATA%\com.lightnovel.reader`，静默卸载本机 v0.7.3 并安装官方 v0.7.2；
+  两份数据库哈希保持基线值。
+- 扩展 `tauri-updater-install-smoke.mjs`，自动识别历史 `window.confirm` 与当前更新详情 `<dialog>`；当前界面
+  会核对起止版本、发布说明和操作按钮，先点击“稍后”证明安全取消，再重新打开并明确点击下载与安装。
+- 正式 v0.7.2 经公开更新清单升级至 v0.7.3，完成下载、updater 签名接受、quiet 安装与自动重启；没有出现
+  Installer Language，重启后更新详情/进度/入口均存在，同版本 `smoke:updater` 返回“当前已是最新版本”。
+
+验证：
+
+- `verify:release-candidate -- --dir ...\v0.7.3-public-download --tag v0.7.3`：通过，assets=5。
+- 真实安装 smoke：initial=`0.7.2`、installed=`0.7.3`、confirmationUi=`dialog`、
+  legacyInstallerLanguagePid=`null`；更新前后 Service Worker 注册与 CacheStorage 均为空。
+- `reader.db`：24576 字节，SHA-256 `F502F6D2F34F9FE175A464767492D16E146FBC69F470A50F8E72B9F55A6A0ED3`；
+  `library.sqlite`：139264 字节，SHA-256 `3E0C2C50ED279042C1AEBF92396FFD8CC4B293CDAC21F405847976E5781153E7`，全程不变。
+- 最终安装版为 v0.7.3，桌面迁移标记值为 `0.7.3`，无 reader/tauri-driver/msedgedriver 残留进程。
+
+下一步：
+
+- 合并本轮测试工具与记录；继续监测公开 v0.7.3，后续修复必须发布新版本，不覆盖既有资产。

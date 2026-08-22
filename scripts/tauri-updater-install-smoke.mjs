@@ -246,6 +246,7 @@ let serviceWorkerBefore = null
 let serviceWorkerRecovery = null
 let serviceWorkerAfterUpdate = null
 let legacyInstallerLanguagePid = null
+let confirmationUi = ''
 
 const currentWebViewArgs = process.env.WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS || ''
 if (currentWebViewArgs.includes('--remote-debugging-port')) {
@@ -322,8 +323,16 @@ try {
       status: document.querySelector('#app-update-status')?.textContent || '',
       buttonLabel: document.querySelector('#btn-app-update')?.textContent || '',
       confirmMessage: window.__updaterConfirmMessage || '',
+      dialogOpen: document.querySelector('#app-update-dialog')?.open === true,
+      dialogCurrentVersion: document.querySelector('#app-update-current-version')?.textContent || '',
+      dialogTargetVersion: document.querySelector('#app-update-target-version')?.textContent || '',
+      dialogReleaseNotes: document.querySelector('#app-update-release-notes-body')?.textContent || '',
+      hasLaterButton: !!document.querySelector('#btn-app-update-later'),
+      hasInstallButton: !!document.querySelector('#btn-app-update-install'),
     }))()`),
-    (value) => value?.state === 'available' || value?.state === 'error',
+    (value) =>
+      value?.state === 'error' ||
+      (value?.state === 'available' && (!!value.confirmMessage || value.dialogOpen)),
     30_000,
   )
   if (available.state === 'error') fail(`updater check failed: ${available.status}`)
@@ -331,19 +340,71 @@ try {
     ? expectedUpdateVersion
     : `v${expectedUpdateVersion}`
   if (!available.status.includes(expectedLabel)) fail(`wrong updater target: ${JSON.stringify(available)}`)
-  if (!available.confirmMessage.includes(expectedLabel) || !available.confirmMessage.includes('更新说明')) {
-    fail(`updater confirmation is incomplete: ${JSON.stringify(available)}`)
+  if (available.dialogOpen) {
+    confirmationUi = 'dialog'
+    const expectedCurrentLabel = expectedCurrentVersion.startsWith('v')
+      ? expectedCurrentVersion
+      : `v${expectedCurrentVersion}`
+    if (
+      available.dialogCurrentVersion !== expectedCurrentLabel ||
+      available.dialogTargetVersion !== expectedLabel ||
+      !available.dialogReleaseNotes.trim() ||
+      !available.hasLaterButton ||
+      !available.hasInstallButton
+    ) {
+      fail(`updater dialog is incomplete: ${JSON.stringify(available)}`)
+    }
+    await cdp.evaluate(`(() => {
+      document.querySelector('#btn-app-update-later')?.click()
+      return true
+    })()`)
+    await waitForValue(
+      'safe updater cancellation',
+      () => cdp.evaluate(`(() => ({
+        dialogOpen: document.querySelector('#app-update-dialog')?.open === true,
+        state: document.querySelector('#app-update-controls')?.dataset.state || '',
+        buttonDisabled: document.querySelector('#btn-app-update')?.disabled === true,
+      }))()`),
+      (value) => value?.dialogOpen === false && value?.state === 'available' && value?.buttonDisabled === false,
+      10_000,
+    )
+    await delay(250)
+  } else {
+    confirmationUi = 'window-confirm'
+    if (!available.confirmMessage.includes(expectedLabel) || !available.confirmMessage.includes('更新说明')) {
+      fail(`updater confirmation is incomplete: ${JSON.stringify(available)}`)
+    }
   }
 
-  await cdp.evaluate(`(() => {
-    window.__updaterConfirmMessage = ''
-    window.confirm = (message) => {
-      window.__updaterConfirmMessage = String(message || '')
+  if (confirmationUi === 'dialog') {
+    await cdp.evaluate(`(() => {
+      document.querySelector('#btn-app-update')?.click()
       return true
-    }
-    document.querySelector('#btn-app-update')?.click()
-    return true
-  })()`)
+    })()`)
+    await waitForValue(
+      'reopened updater dialog',
+      () => cdp.evaluate(`(() => ({
+        open: document.querySelector('#app-update-dialog')?.open === true,
+        targetVersion: document.querySelector('#app-update-target-version')?.textContent || '',
+      }))()`),
+      (value) => value?.open === true && value?.targetVersion === expectedLabel,
+      30_000,
+    )
+    await cdp.evaluate(`(() => {
+      document.querySelector('#btn-app-update-install')?.click()
+      return true
+    })()`)
+  } else {
+    await cdp.evaluate(`(() => {
+      window.__updaterConfirmMessage = ''
+      window.confirm = (message) => {
+        window.__updaterConfirmMessage = String(message || '')
+        return true
+      }
+      document.querySelector('#btn-app-update')?.click()
+      return true
+    })()`)
+  }
 
   await waitForValue(
     'old application exit',
@@ -420,6 +481,7 @@ try {
     serviceWorkerRecovery,
     serviceWorkerAfterUpdate,
     legacyInstallerLanguagePid,
+    confirmationUi,
     relaunchedUi,
   }, null, 2))
   console.log('tauri-updater-install-smoke: OK')
