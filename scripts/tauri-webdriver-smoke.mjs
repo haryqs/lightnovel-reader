@@ -477,7 +477,9 @@ async function main() {
       labelledBy: dialog.getAttribute('aria-labelledby') || '',
       describedBy: dialog.getAttribute('aria-describedby') || '',
       summaryItems: dialog.querySelectorAll('.backup-inspection-summary > div').length,
-      hasReadOnlyCopy: (document.querySelector('#backup-inspection-dialog-description')?.textContent || '').includes('不会修改当前数据'),
+      hasReadOnlyCopy: (document.querySelector('#backup-inspection-dialog-description')?.textContent || '').includes('不会修改数据'),
+      hasRestorePlanStatus: !!document.querySelector('#backup-restore-plan-status'),
+      title: document.querySelector('#backup-inspection-dialog-title')?.textContent || '',
       closeType: document.querySelector('#btn-backup-inspection-close')?.type || '',
     }
   `)
@@ -486,6 +488,8 @@ async function main() {
   assertCheck(backupInspectionDialogProbe.describedBy === 'backup-inspection-dialog-description', 'backup inspection dialog description is missing', backupInspectionDialogProbe)
   assertCheck(backupInspectionDialogProbe.summaryItems === 8, 'backup inspection summary is incomplete', backupInspectionDialogProbe)
   assertCheck(backupInspectionDialogProbe.hasReadOnlyCopy, 'backup inspection safety copy is missing', backupInspectionDialogProbe)
+  assertCheck(backupInspectionDialogProbe.hasRestorePlanStatus, 'restore plan status is missing', backupInspectionDialogProbe)
+  assertCheck(backupInspectionDialogProbe.title === '备份校验与恢复计划', 'restore plan title is wrong', backupInspectionDialogProbe)
   assertCheck(backupInspectionDialogProbe.closeType === 'button', 'backup inspection close action must be explicit', backupInspectionDialogProbe)
   await execute(`document.querySelector('#btn-backup-inspection-close')?.click(); return true`)
   await waitForValue(

@@ -3789,3 +3789,32 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
 
 - 提交 PR，等待 PR/main Windows CI；CI 全绿后合并回 `main`。
 - 发下一版前由维护者人工点击保存与校验两个 Windows 目录选择器；恢复事务仍待冲突、回滚、版本迁移和二次确认设计。
+
+## 2026-08-23：新增只读恢复事务计划
+
+完成：
+
+- `reading-core::backup` 新增 `plan_user_data_restore` / `UserDataRestorePlan`：重新完整校验备份后，只读统计
+  当前书库、阅读进度、标注、插件和 EPUB，与备份摘要形成明确的整体替换计划。
+- 计划按当前书库/插件普通文件字节和两份 SQLite `page_count * page_size` 估算外部回滚点大小；固定要求
+  恢复前备份与应用重启，拒绝 app data 内恢复来源，较新版本备份返回明确阻断原因。
+- 新增 additive `userData.planRestore`，Tauri 壳只负责目录选择和持锁调用；Web 壳明确拒绝。书库“校验备份”
+  现在直接生成计划，弹窗按“当前 → 备份”展示五类计数、替换载荷、回滚估算与阻断状态，仍只有关闭按钮。
+- P0 增加正式计划命令断言；真实窗口 smoke 增加计划标题、状态区、安全说明和关闭结构检查。
+
+验证：
+
+- `cargo test -p reading-core backup --locked`：10 passed。
+- `npm.cmd run check:project`、`npm.cmd run build`、`cargo check --workspace`、`git diff --check` 与两份 smoke
+  脚本 `node --check`：通过。
+- `cargo test --workspace --locked`：Tauri 8 passed / 1 个公网测试 ignored，reading-core 159 passed；
+  `cargo test -p reading-core --features quickjs --locked`：159 passed。
+- `npm.cmd run tauri -- build --debug --no-bundle`：通过。
+- `npm.cmd run smoke:tauri`：真实 WebView2 全绿，计划标题、只读安全说明、状态区、八项摘要与关闭动作通过。
+- `npm.cmd run smoke:p0`：隔离两卷 EPUB 全链路通过；计划显示当前/备份均为 2 本、1 条进度、1 个标注、
+  2 个 EPUB，替换 8 个文件，回滚估算 331270 字节，要求预备份/重启且版本兼容、无阻断原因。
+
+未验证 / 下一步：
+
+- 提交 PR，等待 PR/main Windows CI 全绿后合并。
+- 当前没有恢复执行器或按钮；外部回滚目录、退出连接后的 staging/替换/复核/回滚和二次确认仍待后续实现。
