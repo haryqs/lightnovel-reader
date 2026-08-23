@@ -327,7 +327,9 @@ async function main() {
         const updateDialog = document.querySelector('#app-update-dialog')
         const backupControls = document.querySelector('#library-backup-controls')
         const backupButton = document.querySelector('#btn-library-backup')
+        const backupInspectButton = document.querySelector('#btn-library-backup-inspect')
         const backupStatus = document.querySelector('#library-backup-status')
+        const backupInspectionDialog = document.querySelector('#backup-inspection-dialog')
         const libraryFilter = document.querySelector('#library-filter')
         const librarySort = document.querySelector('#library-sort')
         const resultSummary = document.querySelector('#library-result-summary')
@@ -356,6 +358,10 @@ async function main() {
           backupControlsVisible: !!backupControls && backupControls.hidden === false,
           backupButtonLabel: backupButton?.textContent || '',
           backupButtonEnabled: backupButton?.disabled === false,
+          backupInspectButtonLabel: backupInspectButton?.textContent || '',
+          backupInspectButtonEnabled: backupInspectButton?.disabled === false,
+          hasBackupInspectionDialog: !!backupInspectionDialog,
+          backupInspectionDialogClosed: backupInspectionDialog?.open === false,
           hasBackupStatus: !!backupStatus,
           bookCards: document.querySelectorAll('.book-card').length,
           hasEmptyState: !!document.querySelector('.library-empty'),
@@ -401,6 +407,10 @@ async function main() {
   assertCheck(library.backupControlsVisible, 'user data backup action must be visible in Tauri', library)
   assertCheck(library.backupButtonLabel === '备份数据', 'unexpected user data backup label', library)
   assertCheck(library.backupButtonEnabled, 'user data backup action should be enabled initially', library)
+  assertCheck(library.backupInspectButtonLabel === '校验备份', 'unexpected backup inspection label', library)
+  assertCheck(library.backupInspectButtonEnabled, 'backup inspection action should be enabled initially', library)
+  assertCheck(library.hasBackupInspectionDialog, 'backup inspection dialog is missing', library)
+  assertCheck(library.backupInspectionDialogClosed, 'backup inspection dialog should be closed initially', library)
   assertCheck(library.hasBackupStatus, 'user data backup status region is missing', library)
 
   const libraryOrganizeProbe = await execute(`
@@ -457,6 +467,32 @@ async function main() {
       (value) => value === true,
     )
   }
+
+  const backupInspectionDialogProbe = await execute(`
+    const dialog = document.querySelector('#backup-inspection-dialog')
+    dialog.returnValue = ''
+    dialog.showModal()
+    return {
+      open: dialog.open,
+      labelledBy: dialog.getAttribute('aria-labelledby') || '',
+      describedBy: dialog.getAttribute('aria-describedby') || '',
+      summaryItems: dialog.querySelectorAll('.backup-inspection-summary > div').length,
+      hasReadOnlyCopy: (document.querySelector('#backup-inspection-dialog-description')?.textContent || '').includes('不会修改当前数据'),
+      closeType: document.querySelector('#btn-backup-inspection-close')?.type || '',
+    }
+  `)
+  assertCheck(backupInspectionDialogProbe.open, 'backup inspection dialog did not open', backupInspectionDialogProbe)
+  assertCheck(backupInspectionDialogProbe.labelledBy === 'backup-inspection-dialog-title', 'backup inspection dialog label is missing', backupInspectionDialogProbe)
+  assertCheck(backupInspectionDialogProbe.describedBy === 'backup-inspection-dialog-description', 'backup inspection dialog description is missing', backupInspectionDialogProbe)
+  assertCheck(backupInspectionDialogProbe.summaryItems === 8, 'backup inspection summary is incomplete', backupInspectionDialogProbe)
+  assertCheck(backupInspectionDialogProbe.hasReadOnlyCopy, 'backup inspection safety copy is missing', backupInspectionDialogProbe)
+  assertCheck(backupInspectionDialogProbe.closeType === 'button', 'backup inspection close action must be explicit', backupInspectionDialogProbe)
+  await execute(`document.querySelector('#btn-backup-inspection-close')?.click(); return true`)
+  await waitForValue(
+    'dismiss backup inspection dialog',
+    () => execute(`return document.querySelector('#backup-inspection-dialog')?.open === false`),
+    (value) => value === true,
+  )
 
   let updater = null
   if (checkUpdater) {
@@ -564,6 +600,7 @@ async function main() {
           libraryOrganizeProbe,
           updateDialogProbe,
           updateDialogDismissed,
+          backupInspectionDialogProbe,
           updater,
           closed,
         },

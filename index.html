@@ -143,6 +143,7 @@
             <button id="btn-library-refresh" class="btn">刷新书架</button>
             <div id="library-backup-controls" class="library-backup-controls">
               <button id="btn-library-backup" class="btn" type="button">备份数据</button>
+              <button id="btn-library-backup-inspect" class="btn" type="button">校验备份</button>
               <span id="library-backup-status" role="status" aria-live="polite"></span>
             </div>
             <input id="library-import-input" type="file" accept=".epub" multiple hidden />
@@ -271,6 +272,39 @@
         <footer class="app-update-dialog-actions">
           <button id="btn-app-update-later" class="btn" type="button" autofocus>稍后</button>
           <button id="btn-app-update-install" class="btn btn-primary" type="button">下载并安装</button>
+        </footer>
+      </div>
+    </dialog>
+
+    <dialog id="backup-inspection-dialog" class="app-update-dialog backup-inspection-dialog" aria-labelledby="backup-inspection-dialog-title" aria-describedby="backup-inspection-dialog-description">
+      <div class="app-update-dialog-card">
+        <header class="app-update-dialog-header">
+          <div>
+            <div class="app-update-dialog-kicker">Read-only backup inspection</div>
+            <h2 id="backup-inspection-dialog-title">备份校验通过</h2>
+          </div>
+          <button id="btn-backup-inspection-dialog-close" class="icon-btn app-update-dialog-close" type="button" aria-label="关闭备份预览">×</button>
+        </header>
+        <p id="backup-inspection-dialog-description" class="app-update-dialog-description">
+          已只读核验清单、逐文件 SHA-256 与两份 SQLite 数据库；此预览不会修改当前数据，恢复功能尚未开放。
+        </p>
+        <dl class="backup-inspection-summary">
+          <div><dt>来源版本</dt><dd id="backup-inspection-version">—</dd></div>
+          <div><dt>创建时间</dt><dd id="backup-inspection-created-at">—</dd></div>
+          <div><dt>书籍</dt><dd id="backup-inspection-books">0</dd></div>
+          <div><dt>阅读进度</dt><dd id="backup-inspection-progress">0</dd></div>
+          <div><dt>标注</dt><dd id="backup-inspection-annotations">0</dd></div>
+          <div><dt>源插件</dt><dd id="backup-inspection-plugins">0</dd></div>
+          <div><dt>EPUB 文件</dt><dd id="backup-inspection-epubs">0</dd></div>
+          <div><dt>载荷</dt><dd id="backup-inspection-payload">—</dd></div>
+        </dl>
+        <div class="backup-inspection-path">
+          <span>备份目录</span>
+          <code id="backup-inspection-path">—</code>
+        </div>
+        <ul id="backup-inspection-warnings" class="backup-inspection-warnings" hidden></ul>
+        <footer class="app-update-dialog-actions">
+          <button id="btn-backup-inspection-close" class="btn btn-primary" type="button" autofocus>关闭</button>
         </footer>
       </div>
     </dialog>
