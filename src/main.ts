@@ -20,7 +20,7 @@ import {
   type PluginSearchResult,
   type PluginSourceDescriptor,
   type RemoteLibrarySource,
-  type UserDataBackupInspection,
+  type UserDataRestorePlan,
 } from './platform'
 import type { ThemeName } from './themes'
 
@@ -751,23 +751,30 @@ function formatBackupDate(createdAt: number): string {
   }).format(date)
 }
 
-function showBackupInspection(result: UserDataBackupInspection) {
+function showBackupInspection(plan: UserDataRestorePlan) {
+  const result = plan.backup
   $('#backup-inspection-version').textContent = `${versionLabel(result.sourceAppVersion)} · schema v${result.schemaVersion}`
   $('#backup-inspection-created-at').textContent = formatBackupDate(result.createdAt)
-  $('#backup-inspection-books').textContent = String(result.libraryBookCount)
-  $('#backup-inspection-progress').textContent = String(result.readingProgressCount)
-  $('#backup-inspection-annotations').textContent = String(result.annotationCount)
-  $('#backup-inspection-plugins').textContent = String(result.pluginCount)
-  $('#backup-inspection-epubs').textContent = String(result.epubFileCount)
-  $('#backup-inspection-payload').textContent = `${result.fileCount} 个文件 · ${formatBytes(result.totalBytes)}`
+  $('#backup-inspection-books').textContent = `${plan.currentLibraryBookCount} → ${result.libraryBookCount}`
+  $('#backup-inspection-progress').textContent = `${plan.currentReadingProgressCount} → ${result.readingProgressCount}`
+  $('#backup-inspection-annotations').textContent = `${plan.currentAnnotationCount} → ${result.annotationCount}`
+  $('#backup-inspection-plugins').textContent = `${plan.currentPluginCount} → ${result.pluginCount}`
+  $('#backup-inspection-epubs').textContent = `${plan.currentEpubFileCount} → ${result.epubFileCount}`
+  $('#backup-inspection-payload').textContent = `${plan.replacementFileCount} 个文件 · ${formatBytes(result.totalBytes)}`
   $('#backup-inspection-path').textContent = result.path
+  const planStatus = $('#backup-restore-plan-status')
+  planStatus.dataset.state = plan.versionCompatible ? 'compatible' : 'blocked'
+  planStatus.textContent = plan.versionCompatible
+    ? `版本兼容检查通过。正式恢复仍需先创建约 ${formatBytes(plan.rollbackEstimatedBytes)} 的外部回滚点，并重启应用。`
+    : `恢复计划已阻断：${plan.blockedReasons.join('；')}`
   const warnings = $('#backup-inspection-warnings')
-  warnings.replaceChildren(...result.warnings.map((warning) => {
+  const messages = [...result.warnings, ...plan.warnings]
+  warnings.replaceChildren(...messages.map((warning) => {
     const item = document.createElement('li')
     item.textContent = warning
     return item
   }))
-  warnings.hidden = result.warnings.length === 0
+  warnings.hidden = messages.length === 0
   backupInspectionDialog.showModal()
 }
 
@@ -778,16 +785,19 @@ async function inspectUserDataBackup() {
   libraryBackupStatus.textContent = '请选择备份目录'
   libraryBackupStatus.title = ''
   try {
-    const result = await bridge.inspectUserDataBackup()
-    if (!result) {
+    const plan = await bridge.planUserDataRestore()
+    if (!plan) {
       libraryBackupControls.dataset.state = 'idle'
       libraryBackupStatus.textContent = '已取消校验'
       return
     }
+    const result = plan.backup
     libraryBackupControls.dataset.state = 'success'
-    libraryBackupStatus.textContent = `校验通过 · ${result.libraryBookCount} 本书 · ${result.annotationCount} 个标注`
+    libraryBackupStatus.textContent = plan.versionCompatible
+      ? `校验通过 · ${result.libraryBookCount} 本书 · ${result.annotationCount} 个标注`
+      : '校验通过，但恢复计划已阻断'
     libraryBackupStatus.title = result.path
-    showBackupInspection(result)
+    showBackupInspection(plan)
   } catch (error) {
     const message = `校验失败：${formatError(error)}`
     libraryBackupControls.dataset.state = 'error'

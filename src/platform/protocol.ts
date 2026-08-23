@@ -370,6 +370,23 @@ export interface UserDataBackupInspection {
   warnings: string[]
 }
 
+/** userData.planRestore 返回的只读整体替换计划；不会执行恢复。 */
+export interface UserDataRestorePlan {
+  backup: UserDataBackupInspection
+  currentLibraryBookCount: number
+  currentReadingProgressCount: number
+  currentAnnotationCount: number
+  currentPluginCount: number
+  currentEpubFileCount: number
+  rollbackEstimatedBytes: number
+  replacementFileCount: number
+  requiresRestart: boolean
+  requiresPreRestoreBackup: boolean
+  versionCompatible: boolean
+  blockedReasons: string[]
+  warnings: string[]
+}
+
 // ---- 桥接接口:每个方法对应协议里的一条消息 ----
 
 export interface ReaderBridge {
@@ -429,6 +446,8 @@ export interface ReaderBridge {
   exportUserDataBackup(): Promise<UserDataBackupResult | null>
   /** userData.inspectBackup — 选择既有备份目录并只读校验清单、载荷与数据库，返回内容预览 */
   inspectUserDataBackup(): Promise<UserDataBackupInspection | null>
+  /** userData.planRestore — 选择备份并只读比较当前数据，返回整体替换/回滚/重启计划 */
+  planUserDataRestore(): Promise<UserDataRestorePlan | null>
   /** plugin.selectPackagePath — 选择源插件 zip 安装包，返回本地路径或 null */
   selectPluginPackagePath(): Promise<string | null>
   /** plugin.inspectPackage — 读取 zip manifest/入口并返回安装前确认信息，不执行插件代码 */

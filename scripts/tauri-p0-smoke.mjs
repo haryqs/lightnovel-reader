@@ -691,6 +691,22 @@ async function runFirstSession() {
   assertCheck(backupInspection.annotationCount >= 1, 'backup inspection annotation count is missing', backupInspection)
   assertCheck(backupInspection.epubFileCount >= 2, 'backup inspection EPUB count is incomplete', backupInspection)
   assertCheck(backupInspection.newerThanCurrentApp === false, 'current backup should not be newer', backupInspection)
+  const restorePlan = await invoke(
+    'plan_user_data_restore',
+    { backupDir: backupPath },
+    30_000,
+  )
+  assertCheck(restorePlan.backup.path === backup.path, 'restore plan backup path mismatch', restorePlan)
+  assertCheck(restorePlan.currentLibraryBookCount === 2, 'restore plan current book count mismatch', restorePlan)
+  assertCheck(restorePlan.currentReadingProgressCount >= 1, 'restore plan current progress is missing', restorePlan)
+  assertCheck(restorePlan.currentAnnotationCount >= 1, 'restore plan current annotations are missing', restorePlan)
+  assertCheck(restorePlan.currentEpubFileCount >= 2, 'restore plan current EPUB count is incomplete', restorePlan)
+  assertCheck(restorePlan.rollbackEstimatedBytes > 0, 'restore plan rollback estimate is missing', restorePlan)
+  assertCheck(restorePlan.replacementFileCount === backup.fileCount, 'restore plan replacement count mismatch', restorePlan)
+  assertCheck(restorePlan.requiresRestart === true, 'restore plan must require restart', restorePlan)
+  assertCheck(restorePlan.requiresPreRestoreBackup === true, 'restore plan must require rollback backup', restorePlan)
+  assertCheck(restorePlan.versionCompatible === true, 'current-version backup should be compatible', restorePlan)
+  assertCheck(restorePlan.blockedReasons.length === 0, 'current-version restore plan should not be blocked', restorePlan)
 
   return {
     boot,
@@ -705,6 +721,7 @@ async function runFirstSession() {
     books,
     backup,
     backupInspection,
+    restorePlan,
     libraryOrganize: {
       initial: libraryOrganizeInitial,
       unread: libraryOrganizeUnread,
@@ -797,6 +814,7 @@ async function main() {
           libraryOrganize: first.libraryOrganize,
           backup: first.backup,
           backupInspection: first.backupInspection,
+          restorePlan: first.restorePlan,
           openTimingMs: {
             first: Number(first.firstOpenMs.toFixed(2)),
             second: Number(second.secondOpenMs.toFixed(2)),

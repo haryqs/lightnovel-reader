@@ -34,6 +34,7 @@ import type {
   RemoteLibrarySource,
   UserDataBackupResult,
   UserDataBackupInspection,
+  UserDataRestorePlan,
 } from './protocol'
 
 let pendingAppUpdate: Update | null = null
@@ -227,6 +228,22 @@ export const tauriBridge: ReaderBridge = {
     }
     if (typeof selected !== 'string') return null
     return invoke<UserDataBackupInspection>('inspect_user_data_backup', {
+      backupDir: selected,
+    })
+  },
+  planUserDataRestore: async () => {
+    let selected: string | string[] | null
+    try {
+      selected = await open({
+        directory: true,
+        multiple: false,
+        title: '选择要分析恢复计划的备份目录',
+      })
+    } catch (err) {
+      throw bridgeError('platformError', '打开备份目录选择器失败', err instanceof Error ? err.message : err)
+    }
+    if (typeof selected !== 'string') return null
+    return invoke<UserDataRestorePlan>('plan_user_data_restore', {
       backupDir: selected,
     })
   },

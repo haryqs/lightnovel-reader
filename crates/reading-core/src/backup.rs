@@ -62,6 +62,102 @@ pub struct UserDataBackupInspection {
     pub warnings: Vec<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct UserDataRestorePlan {
+    pub backup: UserDataBackupInspection,
+    pub current_library_book_count: u64,
+    pub current_reading_progress_count: u64,
+    pub current_annotation_count: u64,
+    pub current_plugin_count: usize,
+    pub current_epub_file_count: usize,
+    pub rollback_estimated_bytes: u64,
+    pub replacement_file_count: usize,
+    pub requires_restart: bool,
+    pub requires_pre_restore_backup: bool,
+    pub version_compatible: bool,
+    pub blocked_reasons: Vec<String>,
+    pub warnings: Vec<String>,
+}
+
+/// 只读生成恢复事务计划。该计划比较当前数据与已验证备份，不执行复制或覆盖。
+pub fn plan_user_data_restore(
+    storage_db: &Connection,
+    library_db: &Connection,
+    app_data_dir: &Path,
+    backup_dir: &Path,
+    current_app_version: &str,
+) -> Result<UserDataRestorePlan, String> {
+    let backup_metadata =
+        fs::symlink_metadata(backup_dir).map_err(|error| format!("读取备份目录失败: {error}"))?;
+    if backup_metadata.file_type().is_symlink() {
+        return Err("恢复来源不能是符号链接".into());
+    }
+    let app_data_dir = app_data_dir
+        .canonicalize()
+        .map_err(|error| format!("无法解析应用数据目录: {error}"))?;
+    let backup_dir = backup_dir
+        .canonicalize()
+        .map_err(|error| format!("无法解析备份目录: {error}"))?;
+    if path_is_within(&backup_dir, &app_data_dir) {
+        return Err("恢复来源不能位于应用数据目录内部".into());
+    }
+    let backup = inspect_user_data_backup(&backup_dir, current_app_version)?;
+
+    let current_library_book_count = if table_exists(library_db, "edition")? {
+        table_count(library_db, "edition")?
+    } else {
+        table_count(library_db, "books")?
+    };
+    let current_reading_progress_count = table_count(storage_db, "reading_state")?;
+    let current_annotation_count = table_count(storage_db, "annotations")?;
+    let current_files = collect_current_backup_payload_files(&app_data_dir)?;
+    let current_plugin_count = plugin_count_from_paths(&current_files);
+    let current_epub_file_count = epub_count_from_paths(&current_files);
+    let file_bytes = current_files.iter().try_fold(0_u64, |total, relative| {
+        let size = fs::metadata(app_data_dir.join(Path::new(relative)))
+            .map_err(|error| format!("读取当前数据文件信息失败 {relative}: {error}"))?
+            .len();
+        total
+            .checked_add(size)
+            .ok_or_else(|| "当前数据文件总大小溢出".to_string())
+    })?;
+    let storage_snapshot_bytes = sqlite_snapshot_estimate(storage_db)?;
+    let library_snapshot_bytes = sqlite_snapshot_estimate(library_db)?;
+    let rollback_estimated_bytes = file_bytes
+        .checked_add(storage_snapshot_bytes)
+        .and_then(|total| total.checked_add(library_snapshot_bytes))
+        .ok_or_else(|| "回滚点预计大小溢出".to_string())?;
+
+    let mut blocked_reasons = Vec::new();
+    if backup.newer_than_current_app {
+        blocked_reasons.push(format!(
+            "备份来自较新的应用版本 v{}，当前 v{} 不允许进入恢复事务",
+            backup.source_app_version, current_app_version
+        ));
+    }
+    let warnings = vec![
+        "恢复将整体替换当前阅读进度、标注、书库资产与插件数据，不执行自动合并".into(),
+        "正式恢复前必须在外部目录创建当前数据回滚备份，并在关闭活动数据库连接后重启应用".into(),
+    ];
+
+    Ok(UserDataRestorePlan {
+        replacement_file_count: backup.file_count,
+        version_compatible: blocked_reasons.is_empty(),
+        backup,
+        current_library_book_count,
+        current_reading_progress_count,
+        current_annotation_count,
+        current_plugin_count,
+        current_epub_file_count,
+        rollback_estimated_bytes,
+        requires_restart: true,
+        requires_pre_restore_backup: true,
+        blocked_reasons,
+        warnings,
+    })
+}
+
 /// 只读检查备份目录，验证清单、文件集合、摘要与 SQLite 完整性，并返回内容预览。
 /// 此函数不得创建、修改、移动或删除备份及当前应用数据。
 pub fn inspect_user_data_backup(
@@ -126,23 +222,13 @@ pub fn inspect_user_data_backup(
     let reading_progress_count = table_count(&reader, "reading_state")?;
     let annotation_count = table_count(&reader, "annotations")?;
 
-    let plugin_ids = manifest
+    let manifest_paths = manifest
         .files
         .iter()
-        .filter_map(|file| {
-            let parts = file.path.split('/').collect::<Vec<_>>();
-            (parts.len() == 4
-                && parts[0] == "plugins"
-                && parts[1] == "sources"
-                && matches!(parts[3], "install.json" | "manifest.json"))
-            .then(|| parts[2].to_string())
-        })
+        .map(|file| file.path.clone())
         .collect::<BTreeSet<_>>();
-    let epub_file_count = manifest
-        .files
-        .iter()
-        .filter(|file| file.path.to_ascii_lowercase().ends_with(".epub"))
-        .count();
+    let plugin_count = plugin_count_from_paths(&manifest_paths);
+    let epub_file_count = epub_count_from_paths(&manifest_paths);
     let total_bytes = manifest.files.iter().try_fold(0_u64, |total, file| {
         total
             .checked_add(file.size)
@@ -176,7 +262,7 @@ pub fn inspect_user_data_backup(
         library_book_count,
         reading_progress_count,
         annotation_count,
-        plugin_count: plugin_ids.len(),
+        plugin_count,
         epub_file_count,
         newer_than_current_app,
         warnings,
@@ -212,6 +298,59 @@ fn validate_manifest(manifest: &BackupManifest) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+fn collect_current_backup_payload_files(app_data_dir: &Path) -> Result<BTreeSet<String>, String> {
+    let library_dir = app_data_dir.join("library");
+    if !library_dir.is_dir() {
+        return Err("当前书库目录不存在，无法规划可靠回滚点".into());
+    }
+    let mut files = collect_payload_files(app_data_dir, &library_dir)?;
+    files.retain(|path| {
+        !matches!(
+            path.rsplit('/').next(),
+            Some("library.sqlite" | "library.sqlite-wal" | "library.sqlite-shm")
+        )
+    });
+    let plugins_dir = app_data_dir.join("plugins");
+    if plugins_dir.is_dir() {
+        files.extend(collect_payload_files(app_data_dir, &plugins_dir)?);
+    }
+    Ok(files)
+}
+
+fn plugin_count_from_paths(paths: &BTreeSet<String>) -> usize {
+    paths
+        .iter()
+        .filter_map(|path| {
+            let parts = path.split('/').collect::<Vec<_>>();
+            (parts.len() == 4
+                && parts[0] == "plugins"
+                && parts[1] == "sources"
+                && matches!(parts[3], "install.json" | "manifest.json"))
+            .then(|| parts[2].to_string())
+        })
+        .collect::<BTreeSet<_>>()
+        .len()
+}
+
+fn epub_count_from_paths(paths: &BTreeSet<String>) -> usize {
+    paths
+        .iter()
+        .filter(|path| path.to_ascii_lowercase().ends_with(".epub"))
+        .count()
+}
+
+fn sqlite_snapshot_estimate(connection: &Connection) -> Result<u64, String> {
+    let page_count: u64 = connection
+        .query_row("PRAGMA page_count", [], |row| row.get(0))
+        .map_err(|error| format!("读取 SQLite page_count 失败: {error}"))?;
+    let page_size: u64 = connection
+        .query_row("PRAGMA page_size", [], |row| row.get(0))
+        .map_err(|error| format!("读取 SQLite page_size 失败: {error}"))?;
+    page_count
+        .checked_mul(page_size)
+        .ok_or_else(|| "SQLite 快照预计大小溢出".into())
 }
 
 fn validate_payload_path(path: &str) -> Result<(), String> {
@@ -913,5 +1052,65 @@ mod tests {
         assert!(inspection.newer_than_current_app);
         assert_eq!(inspection.warnings.len(), 1);
         assert!(inspection.warnings[0].contains("较新的应用版本"));
+    }
+
+    #[test]
+    fn plans_full_replacement_and_required_rollback_without_writing() {
+        let (source, storage, library) = fixture();
+        let destination = TestDir::new("restore-plan");
+        let exported =
+            export_user_data_backup(&storage, &library, &source.0, &destination.0, "0.7.3")
+                .unwrap();
+        let backup = PathBuf::from(&exported.path);
+        let manifest_before = fs::read(backup.join("manifest.json")).unwrap();
+
+        let plan = plan_user_data_restore(&storage, &library, &source.0, &backup, "0.7.3").unwrap();
+
+        assert_eq!(plan.current_library_book_count, 1);
+        assert_eq!(plan.current_reading_progress_count, 1);
+        assert_eq!(plan.current_annotation_count, 1);
+        assert_eq!(plan.current_plugin_count, 1);
+        assert_eq!(plan.current_epub_file_count, 1);
+        assert_eq!(plan.replacement_file_count, exported.file_count);
+        assert!(plan.rollback_estimated_bytes > 0);
+        assert!(plan.requires_restart);
+        assert!(plan.requires_pre_restore_backup);
+        assert!(plan.version_compatible);
+        assert!(plan.blocked_reasons.is_empty());
+        assert_eq!(plan.warnings.len(), 2);
+        assert_eq!(
+            fs::read(backup.join("manifest.json")).unwrap(),
+            manifest_before
+        );
+    }
+
+    #[test]
+    fn restore_plan_blocks_newer_backup_and_app_data_source() {
+        let (source, storage, library) = fixture();
+        let destination = TestDir::new("restore-plan-newer");
+        let exported =
+            export_user_data_backup(&storage, &library, &source.0, &destination.0, "9.0.0")
+                .unwrap();
+        let plan = plan_user_data_restore(
+            &storage,
+            &library,
+            &source.0,
+            Path::new(&exported.path),
+            "0.7.3",
+        )
+        .unwrap();
+        assert!(!plan.version_compatible);
+        assert_eq!(plan.blocked_reasons.len(), 1);
+        assert!(plan.blocked_reasons[0].contains("较新的应用版本"));
+
+        let error = plan_user_data_restore(
+            &storage,
+            &library,
+            &source.0,
+            &source.0.join("library"),
+            "0.7.3",
+        )
+        .unwrap_err();
+        assert!(error.contains("不能位于应用数据目录内部"));
     }
 }
