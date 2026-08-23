@@ -674,6 +674,23 @@ async function runFirstSession() {
     'backup manifest does not include imported EPUB assets',
     backupManifest,
   )
+  const backupInspection = await invoke(
+    'inspect_user_data_backup',
+    { backupDir: backupPath },
+    30_000,
+  )
+  assertCheck(backupInspection.path === backup.path, 'backup inspection path mismatch', { backup, backupInspection })
+  assertCheck(backupInspection.schemaVersion === 1, 'backup inspection schema mismatch', backupInspection)
+  assertCheck(
+    backupInspection.fileCount === backup.fileCount && backupInspection.totalBytes === backup.totalBytes,
+    'backup inspection payload summary mismatch',
+    { backup, backupInspection },
+  )
+  assertCheck(backupInspection.libraryBookCount === 2, 'backup inspection book count mismatch', backupInspection)
+  assertCheck(backupInspection.readingProgressCount >= 1, 'backup inspection progress count is missing', backupInspection)
+  assertCheck(backupInspection.annotationCount >= 1, 'backup inspection annotation count is missing', backupInspection)
+  assertCheck(backupInspection.epubFileCount >= 2, 'backup inspection EPUB count is incomplete', backupInspection)
+  assertCheck(backupInspection.newerThanCurrentApp === false, 'current backup should not be newer', backupInspection)
 
   return {
     boot,
@@ -687,6 +704,7 @@ async function runFirstSession() {
     inlineImages,
     books,
     backup,
+    backupInspection,
     libraryOrganize: {
       initial: libraryOrganizeInitial,
       unread: libraryOrganizeUnread,
@@ -778,6 +796,7 @@ async function main() {
           inlineImages: second.inlineImages,
           libraryOrganize: first.libraryOrganize,
           backup: first.backup,
+          backupInspection: first.backupInspection,
           openTimingMs: {
             first: Number(first.firstOpenMs.toFixed(2)),
             second: Number(second.secondOpenMs.toFixed(2)),

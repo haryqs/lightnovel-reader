@@ -787,6 +787,59 @@ body.statusbar-visible .statusbar,
 .library-backup-controls[data-state='error'] span {
   color: var(--error);
 }
+.backup-inspection-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0 22px 14px;
+}
+.backup-inspection-summary > div {
+  min-width: 0;
+  padding: 11px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--soft) 54%, var(--surface));
+}
+.backup-inspection-summary dt,
+.backup-inspection-path span {
+  color: var(--muted);
+  font-size: 11px;
+}
+.backup-inspection-summary dd {
+  margin: 4px 0 0;
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.backup-inspection-path {
+  display: flex;
+  min-width: 0;
+  margin: 0 22px;
+  padding: 11px 12px;
+  flex-direction: column;
+  gap: 5px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.backup-inspection-path code {
+  overflow: hidden;
+  color: var(--fg);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.backup-inspection-warnings {
+  margin: 12px 22px 0;
+  padding: 10px 12px 10px 30px;
+  border: 1px solid color-mix(in srgb, var(--danger, #c23b3b) 36%, var(--border));
+  border-radius: 10px;
+  color: var(--danger, #c23b3b);
+  font-size: 12px;
+  line-height: 1.55;
+}
 .library-source-panel {
   flex-shrink: 0;
   border-bottom: 1px solid var(--border);
@@ -1690,6 +1743,16 @@ body.statusbar-visible .statusbar,
     padding-left: 16px;
   }
   .app-update-release-notes {
+    margin-right: 16px;
+    margin-left: 16px;
+  }
+  .backup-inspection-summary {
+    grid-template-columns: 1fr;
+    margin-right: 16px;
+    margin-left: 16px;
+  }
+  .backup-inspection-path,
+  .backup-inspection-warnings {
     margin-right: 16px;
     margin-left: 16px;
   }

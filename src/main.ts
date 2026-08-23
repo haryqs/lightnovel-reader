@@ -20,6 +20,7 @@ import {
   type PluginSearchResult,
   type PluginSourceDescriptor,
   type RemoteLibrarySource,
+  type UserDataBackupInspection,
 } from './platform'
 import type { ThemeName } from './themes'
 
@@ -609,7 +610,11 @@ const librarySortSelect = $<HTMLSelectElement>('#library-sort')
 const libraryResultSummary = $<HTMLElement>('#library-result-summary')
 const libraryBackupControls = $<HTMLElement>('#library-backup-controls')
 const libraryBackupButton = $<HTMLButtonElement>('#btn-library-backup')
+const libraryBackupInspectButton = $<HTMLButtonElement>('#btn-library-backup-inspect')
 const libraryBackupStatus = $<HTMLElement>('#library-backup-status')
+const backupInspectionDialog = $<HTMLDialogElement>('#backup-inspection-dialog')
+const backupInspectionDialogCloseButton = $<HTMLButtonElement>('#btn-backup-inspection-dialog-close')
+const backupInspectionCloseButton = $<HTMLButtonElement>('#btn-backup-inspection-close')
 const libraryRemoteSourceSelect = $<HTMLSelectElement>('#library-remote-source')
 const libraryReadPreferenceSelect = $<HTMLSelectElement>('#library-read-preference')
 const librarySourcePanel = $<HTMLDetailsElement>('#library-source-panel')
@@ -699,12 +704,18 @@ applyLibraryReadPreference(readLibraryReadPreference())
 appUpdateControls.hidden = !isTauriRuntime()
 libraryBackupControls.hidden = !isTauriRuntime()
 
+function setLibraryBackupBusy(busy: boolean, action: 'export' | 'inspect') {
+  libraryBackupBusy = busy
+  libraryBackupButton.disabled = busy
+  libraryBackupInspectButton.disabled = busy
+  libraryBackupButton.textContent = busy && action === 'export' ? '备份中…' : '备份数据'
+  libraryBackupInspectButton.textContent = busy && action === 'inspect' ? '校验中…' : '校验备份'
+}
+
 async function exportUserDataBackup() {
   if (libraryBackupBusy) return
-  libraryBackupBusy = true
+  setLibraryBackupBusy(true, 'export')
   libraryBackupControls.dataset.state = 'working'
-  libraryBackupButton.disabled = true
-  libraryBackupButton.textContent = '备份中…'
   libraryBackupStatus.textContent = '请选择保存位置'
   libraryBackupStatus.title = ''
   try {
@@ -724,9 +735,66 @@ async function exportUserDataBackup() {
     libraryBackupStatus.textContent = message
     libraryBackupStatus.title = message
   } finally {
-    libraryBackupBusy = false
-    libraryBackupButton.disabled = false
-    libraryBackupButton.textContent = '备份数据'
+    setLibraryBackupBusy(false, 'export')
+  }
+}
+
+function formatBackupDate(createdAt: number): string {
+  const date = new Date(createdAt)
+  if (Number.isNaN(date.getTime())) return String(createdAt)
+  return new Intl.DateTimeFormat('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date)
+}
+
+function showBackupInspection(result: UserDataBackupInspection) {
+  $('#backup-inspection-version').textContent = `${versionLabel(result.sourceAppVersion)} · schema v${result.schemaVersion}`
+  $('#backup-inspection-created-at').textContent = formatBackupDate(result.createdAt)
+  $('#backup-inspection-books').textContent = String(result.libraryBookCount)
+  $('#backup-inspection-progress').textContent = String(result.readingProgressCount)
+  $('#backup-inspection-annotations').textContent = String(result.annotationCount)
+  $('#backup-inspection-plugins').textContent = String(result.pluginCount)
+  $('#backup-inspection-epubs').textContent = String(result.epubFileCount)
+  $('#backup-inspection-payload').textContent = `${result.fileCount} 个文件 · ${formatBytes(result.totalBytes)}`
+  $('#backup-inspection-path').textContent = result.path
+  const warnings = $('#backup-inspection-warnings')
+  warnings.replaceChildren(...result.warnings.map((warning) => {
+    const item = document.createElement('li')
+    item.textContent = warning
+    return item
+  }))
+  warnings.hidden = result.warnings.length === 0
+  backupInspectionDialog.showModal()
+}
+
+async function inspectUserDataBackup() {
+  if (libraryBackupBusy) return
+  setLibraryBackupBusy(true, 'inspect')
+  libraryBackupControls.dataset.state = 'working'
+  libraryBackupStatus.textContent = '请选择备份目录'
+  libraryBackupStatus.title = ''
+  try {
+    const result = await bridge.inspectUserDataBackup()
+    if (!result) {
+      libraryBackupControls.dataset.state = 'idle'
+      libraryBackupStatus.textContent = '已取消校验'
+      return
+    }
+    libraryBackupControls.dataset.state = 'success'
+    libraryBackupStatus.textContent = `校验通过 · ${result.libraryBookCount} 本书 · ${result.annotationCount} 个标注`
+    libraryBackupStatus.title = result.path
+    showBackupInspection(result)
+  } catch (error) {
+    const message = `校验失败：${formatError(error)}`
+    libraryBackupControls.dataset.state = 'error'
+    libraryBackupStatus.textContent = message
+    libraryBackupStatus.title = message
+  } finally {
+    setLibraryBackupBusy(false, 'inspect')
   }
 }
 
@@ -870,6 +938,13 @@ $('#btn-library-close')?.addEventListener('click', () => { libraryView.hidden = 
 appUpdateBtn.addEventListener('click', () => void handleAppUpdate())
 $('#btn-library-refresh')?.addEventListener('click', refreshLibraryBooks)
 libraryBackupButton.addEventListener('click', () => void exportUserDataBackup())
+libraryBackupInspectButton.addEventListener('click', () => void inspectUserDataBackup())
+backupInspectionDialogCloseButton.addEventListener('click', () => backupInspectionDialog.close())
+backupInspectionCloseButton.addEventListener('click', () => backupInspectionDialog.close())
+backupInspectionDialog.addEventListener('cancel', (event) => {
+  event.preventDefault()
+  backupInspectionDialog.close()
+})
 $('#btn-library-import-epub')?.addEventListener('click', () => libraryImportInput.click())
 $('#btn-library-import-folder')?.addEventListener('click', () => libraryFolderInput.click())
 $('#btn-library-import-calibre')?.addEventListener('click', importCalibreLibrary)

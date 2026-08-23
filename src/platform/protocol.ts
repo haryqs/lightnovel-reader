@@ -353,6 +353,23 @@ export interface UserDataBackupResult {
   totalBytes: number
 }
 
+/** userData.inspectBackup 返回的只读校验与内容预览；取消目录选择时方法返回 null。 */
+export interface UserDataBackupInspection {
+  path: string
+  schemaVersion: number
+  sourceAppVersion: string
+  createdAt: number
+  fileCount: number
+  totalBytes: number
+  libraryBookCount: number
+  readingProgressCount: number
+  annotationCount: number
+  pluginCount: number
+  epubFileCount: number
+  newerThanCurrentApp: boolean
+  warnings: string[]
+}
+
 // ---- 桥接接口:每个方法对应协议里的一条消息 ----
 
 export interface ReaderBridge {
@@ -410,6 +427,8 @@ export interface ReaderBridge {
   installAppUpdate(onProgress?: (progress: AppUpdateInstallProgress) => void): Promise<void>
   /** userData.exportBackup — 选择目标目录并导出带 SHA-256 清单的一致性用户数据快照 */
   exportUserDataBackup(): Promise<UserDataBackupResult | null>
+  /** userData.inspectBackup — 选择既有备份目录并只读校验清单、载荷与数据库，返回内容预览 */
+  inspectUserDataBackup(): Promise<UserDataBackupInspection | null>
   /** plugin.selectPackagePath — 选择源插件 zip 安装包，返回本地路径或 null */
   selectPluginPackagePath(): Promise<string | null>
   /** plugin.inspectPackage — 读取 zip manifest/入口并返回安装前确认信息，不执行插件代码 */

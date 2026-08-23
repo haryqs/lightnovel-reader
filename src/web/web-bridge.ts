@@ -218,6 +218,7 @@ export const webBridge: ReaderBridge = {
   checkAppUpdate: () => Promise.resolve(null),
   installAppUpdate: () => Promise.reject(platformErr('appUpdate')),
   exportUserDataBackup: () => Promise.reject(platformErr('userData')),
+  inspectUserDataBackup: () => Promise.reject(platformErr('userData')),
 
   // -- OPDS --
 

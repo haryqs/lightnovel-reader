@@ -3755,3 +3755,37 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
 
 - 原生 Windows 目录选择器尚未人工点击；P0 直接调用同一 Rust command，不覆盖选择器交互。
 - 下一步先设计只读恢复校验与冲突预览；没有二次确认、回滚与版本策略前不实现覆盖式恢复。
+
+## 2026-08-23：新增备份只读校验与内容预览
+
+完成：
+
+- `reading-core::backup` 新增 `inspect_user_data_backup` 与 `UserDataBackupInspection`：限制清单大小/文件数，
+  校验 schema、必要数据库、便携相对路径、重复项和 SHA-256 格式，并要求清单载荷与实际普通文件精确相等。
+- 校验拒绝符号链接、路径穿越、额外/缺失文件、缓存、同步凭据和 WAL/SHM；逐文件核对大小与 SHA-256 后，
+  以只读 SQLite 连接执行两份 `PRAGMA quick_check`，统计书籍、阅读进度、标注、插件和 EPUB 数量。
+- 来源版本高于当前应用时保留只读预览并返回显式警告；无法解析版本时也提示谨慎处理。校验过程不创建、
+  修改、移动或删除备份及当前用户数据。
+- 新增 additive `userData.inspectBackup`，同步 Rust command、ReaderBridge、Tauri/Web 壳与协议文档；桌面书库
+  新增“校验备份”按钮和只读详情 `<dialog>`，仅有关闭操作，明确恢复功能尚未开放。
+- P0 增加导出后直接校验和内容计数断言；真实窗口 smoke 增加入口、ARIA、八项摘要、安全说明及弹窗关闭检查，
+  不自动操作 Windows 原生目录选择器。
+
+验证：
+
+- `cargo test -p reading-core backup`：8 passed，覆盖导出、只读预览、哈希漂移、额外载荷、不安全路径、
+  摘要匹配但数据库损坏、缺失必要 reader schema、较新来源版本警告、目标越界和失败清理。
+- `npm.cmd run check:project`、`npm.cmd run build`、`cargo check --workspace`、`git diff --check` 与两份 smoke
+  脚本 `node --check`：通过；本地 Web 页面确认桌面入口隐藏、弹窗八项摘要结构存在且控制台无错误。
+- `cargo test --workspace --locked`：Tauri 8 passed / 1 个公网测试 ignored，reading-core 157 passed；
+  `cargo test -p reading-core --features quickjs --locked`：157 passed。
+- `npm.cmd run tauri -- build --debug --no-bundle`：通过。
+- `npm.cmd run smoke:tauri`：真实 WebView2 全绿，校验入口可见且初始可用；只读弹窗 ARIA、八项摘要、
+  安全说明和关闭动作通过。
+- `npm.cmd run smoke:p0`：隔离两卷 EPUB 全链路通过；导出 8 个载荷文件/331270 字节后，正式校验命令
+  返回 2 本书、至少 1 条进度/标注、至少 2 个 EPUB，载荷摘要与导出结果一致，且判断不是较新版本。
+
+未验证 / 下一步：
+
+- 提交 PR，等待 PR/main Windows CI；CI 全绿后合并回 `main`。
+- 发下一版前由维护者人工点击保存与校验两个 Windows 目录选择器；恢复事务仍待冲突、回滚、版本迁移和二次确认设计。

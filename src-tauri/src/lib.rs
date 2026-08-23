@@ -198,6 +198,17 @@ fn export_user_data_backup(
     .map_err(BridgeError::storage)
 }
 
+#[tauri::command]
+fn inspect_user_data_backup(
+    backup_dir: String,
+) -> Result<backup::UserDataBackupInspection, BridgeError> {
+    if backup_dir.trim().is_empty() {
+        return Err(BridgeError::invalid_argument("备份目录不能为空"));
+    }
+    backup::inspect_user_data_backup(Path::new(&backup_dir), env!("CARGO_PKG_VERSION"))
+        .map_err(BridgeError::parse)
+}
+
 const AOZORA_CATALOG_MAX_AGE: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 const AOZORA_SEARCH_LIMIT: usize = 40;
 const NAROU_SEARCH_LIMIT: usize = 40;
@@ -2137,6 +2148,7 @@ pub fn run() {
             opds_ingest_entries,
             opds_download_epub,
             export_user_data_backup,
+            inspect_user_data_backup,
             sync_commands::sync_status,
             sync_commands::sync_pair,
             sync_commands::sync_pair_join,
