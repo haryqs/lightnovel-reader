@@ -3818,3 +3818,33 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
 
 - 提交 PR，等待 PR/main Windows CI 全绿后合并。
 - 当前没有恢复执行器或按钮；外部回滚目录、退出连接后的 staging/替换/复核/回滚和二次确认仍待后续实现。
+
+## 2026-08-24：新增恢复前外部回滚点与准备凭据
+
+完成：
+
+- `reading-core::backup` 新增 `prepare_user_data_restore` / `UserDataRestorePreparation`：先拒绝不兼容来源，
+  再将当前两份 SQLite、书库资产和插件数据导出到用户选择的外部目录，完整复核回滚备份后重新校验恢复来源。
+- 准备凭据通过临时文件、`sync_all` 和原子重命名写入，记录来源/回滚 manifest SHA-256、计划、回滚摘要、
+  重启要求与收据路径；固定 `restoreExecuted=false`，本轮不会关闭连接、替换当前数据或安排启动期恢复。
+- 回滚父目录必须是既有普通目录，禁止符号链接及位于恢复来源内部；准备后复核失败时只清理由本次调用新建的
+  精确回滚目录，不触碰恢复来源、当前数据或用户已有目录。
+- 新增 additive `userData.prepareRestore`，Tauri 壳只负责外部目录选择、数据库持锁和错误映射；Web 壳明确拒绝。
+  恢复计划弹窗仅在兼容计划就绪时启用“创建外部回滚点（不恢复）”，成功后显示回滚摘要和准备凭据位置。
+- 桥接协议、本地书库设计、发布测试、README、项目记忆、决策记录与下一步任务同步更新；下一切片仍需磁盘空间
+  预检、明确二次确认和启动期 staging/替换/复核/失败回滚，完成故障注入前不开放真实恢复。
+
+验证：
+
+- `cargo test -p reading-core backup --locked`：12 passed，新增外部回滚点/准备凭据和阻断来源/嵌套目录覆盖。
+- `cargo test --workspace --locked`：Tauri 8 passed / 1 个公网测试 ignored，reading-core 161 passed；
+  `cargo test -p reading-core --features quickjs --locked`：161 passed。
+- `npm.cmd run check:project`、`npm.cmd run build`、`cargo check --workspace --locked`、`cargo fmt --all`、
+  `git diff --check` 与 smoke 脚本语法检查：通过。
+- `npm.cmd run smoke:p0`：真实 Tauri 命令生成独立外部回滚备份与 JSON 准备凭据；两份 manifest 哈希均为
+  64 位，目录/收据存在，`requiresRestart=true`、`restoreExecuted=false`，阅读进度和标注跨会话保持。
+
+未验证 / 下一步：
+
+- 发下一版前人工点击三个 Windows 原生目录选择器；当前自动化不操作系统目录选择窗口。
+- 当前没有恢复执行器或执行按钮，也没有磁盘空间预检、二次确认、启动期事务和故障注入覆盖。

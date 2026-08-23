@@ -20,6 +20,7 @@ import {
   type PluginSearchResult,
   type PluginSourceDescriptor,
   type RemoteLibrarySource,
+  type UserDataRestorePreparation,
   type UserDataRestorePlan,
 } from './platform'
 import type { ThemeName } from './themes'
@@ -615,6 +616,7 @@ const libraryBackupStatus = $<HTMLElement>('#library-backup-status')
 const backupInspectionDialog = $<HTMLDialogElement>('#backup-inspection-dialog')
 const backupInspectionDialogCloseButton = $<HTMLButtonElement>('#btn-backup-inspection-dialog-close')
 const backupInspectionCloseButton = $<HTMLButtonElement>('#btn-backup-inspection-close')
+const backupRestorePrepareButton = $<HTMLButtonElement>('#btn-backup-restore-prepare')
 const libraryRemoteSourceSelect = $<HTMLSelectElement>('#library-remote-source')
 const libraryReadPreferenceSelect = $<HTMLSelectElement>('#library-read-preference')
 const librarySourcePanel = $<HTMLDetailsElement>('#library-source-panel')
@@ -677,6 +679,8 @@ let libraryBooks: LibraryBook[] = []
 let librarySearchTimer: number | null = null
 let appUpdateBusy = false
 let libraryBackupBusy = false
+let pendingRestorePlan: UserDataRestorePlan | null = null
+let restorePreparation: UserDataRestorePreparation | null = null
 type LibraryReadPreference = 'auto' | 'builtin' | 'browser' | 'external'
 const LIBRARY_READ_PREFERENCE_KEY = 'reader.libraryReadPreference'
 const LIBRARY_READ_PREFERENCES = new Set<LibraryReadPreference>(['auto', 'builtin', 'browser', 'external'])
@@ -704,12 +708,18 @@ applyLibraryReadPreference(readLibraryReadPreference())
 appUpdateControls.hidden = !isTauriRuntime()
 libraryBackupControls.hidden = !isTauriRuntime()
 
-function setLibraryBackupBusy(busy: boolean, action: 'export' | 'inspect') {
+function setLibraryBackupBusy(busy: boolean, action: 'export' | 'inspect' | 'prepare') {
   libraryBackupBusy = busy
   libraryBackupButton.disabled = busy
   libraryBackupInspectButton.disabled = busy
+  backupRestorePrepareButton.disabled = busy || !pendingRestorePlan?.versionCompatible || restorePreparation !== null
   libraryBackupButton.textContent = busy && action === 'export' ? '备份中…' : '备份数据'
   libraryBackupInspectButton.textContent = busy && action === 'inspect' ? '校验中…' : '校验备份'
+  backupRestorePrepareButton.textContent = restorePreparation
+    ? '外部回滚点已就绪'
+    : busy && action === 'prepare'
+      ? '正在创建并复核…'
+      : '创建外部回滚点（不恢复）'
 }
 
 async function exportUserDataBackup() {
@@ -752,6 +762,8 @@ function formatBackupDate(createdAt: number): string {
 }
 
 function showBackupInspection(plan: UserDataRestorePlan) {
+  pendingRestorePlan = plan
+  restorePreparation = null
   const result = plan.backup
   $('#backup-inspection-version').textContent = `${versionLabel(result.sourceAppVersion)} · schema v${result.schemaVersion}`
   $('#backup-inspection-created-at').textContent = formatBackupDate(result.createdAt)
@@ -764,6 +776,7 @@ function showBackupInspection(plan: UserDataRestorePlan) {
   $('#backup-inspection-path').textContent = result.path
   const planStatus = $('#backup-restore-plan-status')
   planStatus.dataset.state = plan.versionCompatible ? 'compatible' : 'blocked'
+  planStatus.title = ''
   planStatus.textContent = plan.versionCompatible
     ? `版本兼容检查通过。正式恢复仍需先创建约 ${formatBytes(plan.rollbackEstimatedBytes)} 的外部回滚点，并重启应用。`
     : `恢复计划已阻断：${plan.blockedReasons.join('；')}`
@@ -775,7 +788,41 @@ function showBackupInspection(plan: UserDataRestorePlan) {
     return item
   }))
   warnings.hidden = messages.length === 0
+  setLibraryBackupBusy(false, 'inspect')
   backupInspectionDialog.showModal()
+}
+
+async function prepareUserDataRestore() {
+  const plan = pendingRestorePlan
+  if (libraryBackupBusy || !plan?.versionCompatible || restorePreparation) return
+  setLibraryBackupBusy(true, 'prepare')
+  const planStatus = $('#backup-restore-plan-status')
+  planStatus.dataset.state = 'compatible'
+  planStatus.textContent = '请选择应用数据目录之外的保存位置；正在创建当前数据回滚点。'
+  try {
+    const result = await bridge.prepareUserDataRestore(plan.backup.path)
+    if (!result) {
+      planStatus.textContent = `已取消。版本兼容检查通过；正式恢复仍需约 ${formatBytes(plan.rollbackEstimatedBytes)} 的外部回滚点。`
+      return
+    }
+    restorePreparation = result
+    planStatus.dataset.state = 'compatible'
+    planStatus.textContent = `外部回滚点已创建并复核：${formatBytes(result.rollbackBackup.totalBytes)}。准备凭据已保存；当前数据尚未恢复或替换。`
+    planStatus.title = `${result.rollbackBackup.path}\n${result.receiptPath}`
+    libraryBackupControls.dataset.state = 'success'
+    libraryBackupStatus.textContent = '恢复准备完成 · 尚未执行恢复'
+    libraryBackupStatus.title = result.receiptPath
+  } catch (error) {
+    const message = `恢复准备失败：${formatError(error)}`
+    planStatus.dataset.state = 'blocked'
+    planStatus.textContent = message
+    planStatus.title = message
+    libraryBackupControls.dataset.state = 'error'
+    libraryBackupStatus.textContent = message
+    libraryBackupStatus.title = message
+  } finally {
+    setLibraryBackupBusy(false, 'prepare')
+  }
 }
 
 async function inspectUserDataBackup() {
@@ -951,6 +998,7 @@ libraryBackupButton.addEventListener('click', () => void exportUserDataBackup())
 libraryBackupInspectButton.addEventListener('click', () => void inspectUserDataBackup())
 backupInspectionDialogCloseButton.addEventListener('click', () => backupInspectionDialog.close())
 backupInspectionCloseButton.addEventListener('click', () => backupInspectionDialog.close())
+backupRestorePrepareButton.addEventListener('click', () => void prepareUserDataRestore())
 backupInspectionDialog.addEventListener('cancel', (event) => {
   event.preventDefault()
   backupInspectionDialog.close()

@@ -220,6 +220,7 @@ export const webBridge: ReaderBridge = {
   exportUserDataBackup: () => Promise.reject(platformErr('userData')),
   inspectUserDataBackup: () => Promise.reject(platformErr('userData')),
   planUserDataRestore: () => Promise.reject(platformErr('userData')),
+  prepareUserDataRestore: () => Promise.reject(platformErr('userData')),
 
   // -- OPDS --
 

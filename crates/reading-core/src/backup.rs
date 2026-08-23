@@ -8,12 +8,13 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
 use std::fs;
-use std::io::Read;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub const BACKUP_SCHEMA_VERSION: u32 = 1;
 const BACKUP_PREFIX: &str = "lightnovel-reader-backup-v1";
+const RESTORE_PREPARATION_PREFIX: &str = "lightnovel-reader-restore-preparation-v1";
 const MAX_MANIFEST_BYTES: u64 = 8 * 1024 * 1024;
 const MAX_BACKUP_FILES: usize = 200_000;
 
@@ -78,6 +79,20 @@ pub struct UserDataRestorePlan {
     pub version_compatible: bool,
     pub blocked_reasons: Vec<String>,
     pub warnings: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct UserDataRestorePreparation {
+    pub schema_version: u32,
+    pub prepared_at: i64,
+    pub plan: UserDataRestorePlan,
+    pub rollback_backup: UserDataBackupInspection,
+    pub source_manifest_sha256: String,
+    pub rollback_manifest_sha256: String,
+    pub receipt_path: String,
+    pub requires_restart: bool,
+    pub restore_executed: bool,
 }
 
 /// 只读生成恢复事务计划。该计划比较当前数据与已验证备份，不执行复制或覆盖。
@@ -156,6 +171,132 @@ pub fn plan_user_data_restore(
         blocked_reasons,
         warnings,
     })
+}
+
+/// 创建并复核当前数据的外部回滚点，再写入可审计的准备凭据。
+/// 此函数不会关闭数据库、替换应用数据或安排下次启动恢复。
+pub fn prepare_user_data_restore(
+    storage_db: &Connection,
+    library_db: &Connection,
+    app_data_dir: &Path,
+    source_backup_dir: &Path,
+    rollback_parent: &Path,
+    current_app_version: &str,
+) -> Result<UserDataRestorePreparation, String> {
+    let initial_plan = plan_user_data_restore(
+        storage_db,
+        library_db,
+        app_data_dir,
+        source_backup_dir,
+        current_app_version,
+    )?;
+    ensure_restore_plan_is_compatible(&initial_plan)?;
+
+    let source_backup_dir = PathBuf::from(&initial_plan.backup.path)
+        .canonicalize()
+        .map_err(|error| format!("无法重新解析恢复来源目录: {error}"))?;
+    let rollback_metadata = fs::symlink_metadata(rollback_parent)
+        .map_err(|error| format!("读取回滚点目标目录失败: {error}"))?;
+    if rollback_metadata.file_type().is_symlink() || !rollback_metadata.is_dir() {
+        return Err("回滚点目标必须是普通文件夹，不能是符号链接".into());
+    }
+    let rollback_parent = rollback_parent
+        .canonicalize()
+        .map_err(|error| format!("无法解析回滚点目标目录: {error}"))?;
+    if path_is_within(&rollback_parent, &source_backup_dir) {
+        return Err("回滚点目标不能位于恢复来源目录内部".into());
+    }
+
+    let rollback_result = export_user_data_backup(
+        storage_db,
+        library_db,
+        app_data_dir,
+        &rollback_parent,
+        current_app_version,
+    )?;
+    let rollback_dir = PathBuf::from(&rollback_result.path);
+    let prepared = (|| {
+        let rollback_backup = inspect_user_data_backup(&rollback_dir, current_app_version)?;
+        if rollback_backup.newer_than_current_app {
+            return Err("新建回滚点的版本校验异常".into());
+        }
+
+        // 回滚点创建可能耗时；写凭据前再次完整校验恢复来源并刷新事务计划。
+        let plan = plan_user_data_restore(
+            storage_db,
+            library_db,
+            app_data_dir,
+            &source_backup_dir,
+            current_app_version,
+        )?;
+        ensure_restore_plan_is_compatible(&plan)?;
+
+        let prepared_at = now_ms();
+        let (partial_receipt, final_receipt) =
+            unique_restore_preparation_paths(&rollback_parent, prepared_at);
+        let preparation = UserDataRestorePreparation {
+            schema_version: 1,
+            prepared_at,
+            source_manifest_sha256: sha256_file(&source_backup_dir.join("manifest.json"))?,
+            rollback_manifest_sha256: sha256_file(&rollback_dir.join("manifest.json"))?,
+            receipt_path: display_path(&final_receipt),
+            plan,
+            rollback_backup,
+            requires_restart: true,
+            restore_executed: false,
+        };
+        write_restore_preparation_receipt(&partial_receipt, &final_receipt, &preparation)?;
+        Ok(preparation)
+    })();
+
+    match prepared {
+        Ok(preparation) => Ok(preparation),
+        Err(error) => {
+            let _ = fs::remove_dir_all(&rollback_dir);
+            Err(error)
+        }
+    }
+}
+
+fn ensure_restore_plan_is_compatible(plan: &UserDataRestorePlan) -> Result<(), String> {
+    if plan.version_compatible && plan.blocked_reasons.is_empty() {
+        return Ok(());
+    }
+    let reasons = if plan.blocked_reasons.is_empty() {
+        "恢复计划未通过版本兼容检查".to_string()
+    } else {
+        plan.blocked_reasons.join("；")
+    };
+    Err(format!("恢复准备已阻断: {reasons}"))
+}
+
+fn write_restore_preparation_receipt(
+    partial_path: &Path,
+    final_path: &Path,
+    preparation: &UserDataRestorePreparation,
+) -> Result<(), String> {
+    let mut json = serde_json::to_vec_pretty(preparation)
+        .map_err(|error| format!("序列化恢复准备凭据失败: {error}"))?;
+    json.push(b'\n');
+    let result = (|| {
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(partial_path)
+            .map_err(|error| format!("创建恢复准备临时凭据失败: {error}"))?;
+        file.write_all(&json)
+            .map_err(|error| format!("写入恢复准备凭据失败: {error}"))?;
+        file.sync_all()
+            .map_err(|error| format!("同步恢复准备凭据失败: {error}"))?;
+        drop(file);
+        fs::rename(partial_path, final_path)
+            .map_err(|error| format!("完成恢复准备凭据失败: {error}"))?;
+        Ok(())
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(partial_path);
+    }
+    result
 }
 
 /// 只读检查备份目录，验证清单、文件集合、摘要与 SQLite 完整性，并返回内容预览。
@@ -739,6 +880,25 @@ fn unique_backup_paths(destination_parent: &Path, created_at: i64) -> (PathBuf, 
     unreachable!("u32 backup suffix space exhausted")
 }
 
+fn unique_restore_preparation_paths(
+    destination_parent: &Path,
+    prepared_at: i64,
+) -> (PathBuf, PathBuf) {
+    for suffix in 0_u32.. {
+        let name = if suffix == 0 {
+            format!("{RESTORE_PREPARATION_PREFIX}-{prepared_at}.json")
+        } else {
+            format!("{RESTORE_PREPARATION_PREFIX}-{prepared_at}-{suffix}.json")
+        };
+        let final_path = destination_parent.join(&name);
+        let partial_path = destination_parent.join(format!(".{name}.partial"));
+        if !final_path.exists() && !partial_path.exists() {
+            return (partial_path, final_path);
+        }
+    }
+    unreachable!("u32 restore preparation suffix space exhausted")
+}
+
 fn now_ms() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -1112,5 +1272,89 @@ mod tests {
         )
         .unwrap_err();
         assert!(error.contains("不能位于应用数据目录内部"));
+    }
+
+    #[test]
+    fn prepares_verified_external_rollback_and_receipt_without_restoring() {
+        let (source, storage, library) = fixture();
+        let source_parent = TestDir::new("prepare-source");
+        let exported =
+            export_user_data_backup(&storage, &library, &source.0, &source_parent.0, "0.7.3")
+                .unwrap();
+        let source_backup = PathBuf::from(&exported.path);
+
+        storage
+            .execute("INSERT INTO reading_state VALUES (?1)", params!["book-2"])
+            .unwrap();
+        fs::write(
+            source.0.join("library/objects/book-2.epub"),
+            b"new-current-data",
+        )
+        .unwrap();
+        let rollback_parent = TestDir::new("prepare-rollback");
+
+        let preparation = prepare_user_data_restore(
+            &storage,
+            &library,
+            &source.0,
+            &source_backup,
+            &rollback_parent.0,
+            "0.7.3",
+        )
+        .unwrap();
+
+        assert_eq!(preparation.schema_version, 1);
+        assert!(preparation.requires_restart);
+        assert!(!preparation.restore_executed);
+        assert_eq!(preparation.plan.backup.path, exported.path);
+        assert_eq!(preparation.plan.backup.reading_progress_count, 1);
+        assert_eq!(preparation.rollback_backup.reading_progress_count, 2);
+        assert_eq!(preparation.plan.backup.epub_file_count, 1);
+        assert_eq!(preparation.rollback_backup.epub_file_count, 2);
+        assert_eq!(preparation.source_manifest_sha256.len(), 64);
+        assert_eq!(preparation.rollback_manifest_sha256.len(), 64);
+        assert!(Path::new(&preparation.rollback_backup.path).is_dir());
+        let receipt: UserDataRestorePreparation =
+            serde_json::from_slice(&fs::read(&preparation.receipt_path).unwrap()).unwrap();
+        assert_eq!(receipt, preparation);
+        assert_eq!(table_count(&storage, "reading_state").unwrap(), 2);
+        assert!(source.0.join("library/objects/book-2.epub").is_file());
+    }
+
+    #[test]
+    fn preparation_rejects_blocked_source_and_nested_rollback_target() {
+        let (source, storage, library) = fixture();
+        let source_parent = TestDir::new("prepare-blocked-source");
+        let exported =
+            export_user_data_backup(&storage, &library, &source.0, &source_parent.0, "9.0.0")
+                .unwrap();
+        let rollback_parent = TestDir::new("prepare-blocked-rollback");
+        let error = prepare_user_data_restore(
+            &storage,
+            &library,
+            &source.0,
+            Path::new(&exported.path),
+            &rollback_parent.0,
+            "0.7.3",
+        )
+        .unwrap_err();
+        assert!(error.contains("恢复准备已阻断"));
+        assert_eq!(fs::read_dir(&rollback_parent.0).unwrap().count(), 0);
+
+        let compatible_parent = TestDir::new("prepare-nested-source");
+        let compatible =
+            export_user_data_backup(&storage, &library, &source.0, &compatible_parent.0, "0.7.3")
+                .unwrap();
+        let compatible_path = PathBuf::from(&compatible.path);
+        let error = prepare_user_data_restore(
+            &storage,
+            &library,
+            &source.0,
+            &compatible_path,
+            &compatible_path,
+            "0.7.3",
+        )
+        .unwrap_err();
+        assert!(error.contains("不能位于恢复来源目录内部"));
     }
 }
