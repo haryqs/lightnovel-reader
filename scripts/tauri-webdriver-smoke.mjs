@@ -478,6 +478,7 @@ async function main() {
       describedBy: dialog.getAttribute('aria-describedby') || '',
       summaryItems: dialog.querySelectorAll('.backup-inspection-summary > div').length,
       hasReadOnlyCopy: (document.querySelector('#backup-inspection-dialog-description')?.textContent || '').includes('不会替换当前数据'),
+      hasPreflightCopy: (document.querySelector('#backup-inspection-dialog-description')?.textContent || '').includes('磁盘空间'),
       hasRestorePlanStatus: !!document.querySelector('#backup-restore-plan-status'),
       prepareLabel: document.querySelector('#btn-backup-restore-prepare')?.textContent || '',
       prepareType: document.querySelector('#btn-backup-restore-prepare')?.type || '',
@@ -491,6 +492,7 @@ async function main() {
   assertCheck(backupInspectionDialogProbe.describedBy === 'backup-inspection-dialog-description', 'backup inspection dialog description is missing', backupInspectionDialogProbe)
   assertCheck(backupInspectionDialogProbe.summaryItems === 8, 'backup inspection summary is incomplete', backupInspectionDialogProbe)
   assertCheck(backupInspectionDialogProbe.hasReadOnlyCopy, 'backup inspection safety copy is missing', backupInspectionDialogProbe)
+  assertCheck(backupInspectionDialogProbe.hasPreflightCopy, 'restore preflight safety copy is missing', backupInspectionDialogProbe)
   assertCheck(backupInspectionDialogProbe.hasRestorePlanStatus, 'restore plan status is missing', backupInspectionDialogProbe)
   assertCheck(backupInspectionDialogProbe.prepareLabel.includes('不恢复'), 'restore preparation safety label is missing', backupInspectionDialogProbe)
   assertCheck(backupInspectionDialogProbe.prepareType === 'button', 'restore preparation must be an explicit button', backupInspectionDialogProbe)

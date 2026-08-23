@@ -36,6 +36,7 @@ import type {
   UserDataBackupInspection,
   UserDataRestorePlan,
   UserDataRestorePreparation,
+  UserDataRestorePreflight,
 } from './protocol'
 
 let pendingAppUpdate: Update | null = null
@@ -265,6 +266,8 @@ export const tauriBridge: ReaderBridge = {
       rollbackParent: selected,
     })
   },
+  preflightUserDataRestore: (receiptPath) =>
+    invoke<UserDataRestorePreflight>('preflight_user_data_restore', { receiptPath }),
   selectPluginPackagePath: async () => {
     const selected = await open({
       multiple: false,

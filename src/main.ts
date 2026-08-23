@@ -21,6 +21,7 @@ import {
   type PluginSourceDescriptor,
   type RemoteLibrarySource,
   type UserDataRestorePreparation,
+  type UserDataRestorePreflight,
   type UserDataRestorePlan,
 } from './platform'
 import type { ThemeName } from './themes'
@@ -708,18 +709,20 @@ applyLibraryReadPreference(readLibraryReadPreference())
 appUpdateControls.hidden = !isTauriRuntime()
 libraryBackupControls.hidden = !isTauriRuntime()
 
-function setLibraryBackupBusy(busy: boolean, action: 'export' | 'inspect' | 'prepare') {
+function setLibraryBackupBusy(busy: boolean, action: 'export' | 'inspect' | 'prepare' | 'preflight') {
   libraryBackupBusy = busy
   libraryBackupButton.disabled = busy
   libraryBackupInspectButton.disabled = busy
-  backupRestorePrepareButton.disabled = busy || !pendingRestorePlan?.versionCompatible || restorePreparation !== null
+  backupRestorePrepareButton.disabled = busy || !pendingRestorePlan?.versionCompatible
   libraryBackupButton.textContent = busy && action === 'export' ? '备份中…' : '备份数据'
   libraryBackupInspectButton.textContent = busy && action === 'inspect' ? '校验中…' : '校验备份'
-  backupRestorePrepareButton.textContent = restorePreparation
-    ? '外部回滚点已就绪'
-    : busy && action === 'prepare'
+  backupRestorePrepareButton.textContent = busy && action === 'prepare'
       ? '正在创建并复核…'
-      : '创建外部回滚点（不恢复）'
+      : busy && action === 'preflight'
+        ? '正在重新复核…'
+        : restorePreparation
+          ? '重新复核准备状态（不恢复）'
+          : '创建外部回滚点（不恢复）'
 }
 
 async function exportUserDataBackup() {
@@ -792,9 +795,44 @@ function showBackupInspection(plan: UserDataRestorePlan) {
   backupInspectionDialog.showModal()
 }
 
+function showRestorePreflight(result: UserDataRestorePreflight) {
+  const planStatus = $('#backup-restore-plan-status')
+  if (result.preflightPassed) {
+    planStatus.dataset.state = 'compatible'
+    planStatus.textContent = `准备状态复核通过：目标卷可用 ${formatBytes(result.targetAvailableBytes)}，staging 与安全余量共需 ${formatBytes(result.requiredTotalBytes)}。恢复仍未授权，执行前必须刷新回滚点。`
+    libraryBackupControls.dataset.state = 'success'
+    libraryBackupStatus.textContent = '恢复预检通过 · 尚未授权或执行恢复'
+  } else {
+    planStatus.dataset.state = 'blocked'
+    planStatus.textContent = `外部回滚点已保留，但预检阻断：${result.blockedReasons.join('；')}`
+    libraryBackupControls.dataset.state = 'error'
+    libraryBackupStatus.textContent = '恢复预检阻断 · 尚未执行恢复'
+  }
+  planStatus.title = `${result.rollbackBackup.path}\n${result.receiptPath}`
+  libraryBackupStatus.title = result.receiptPath
+}
+
 async function prepareUserDataRestore() {
   const plan = pendingRestorePlan
-  if (libraryBackupBusy || !plan?.versionCompatible || restorePreparation) return
+  if (libraryBackupBusy || !plan?.versionCompatible) return
+  if (restorePreparation) {
+    setLibraryBackupBusy(true, 'preflight')
+    try {
+      showRestorePreflight(await bridge.preflightUserDataRestore(restorePreparation.receiptPath))
+    } catch (error) {
+      const message = `准备状态复核失败：${formatError(error)}`
+      const planStatus = $('#backup-restore-plan-status')
+      planStatus.dataset.state = 'blocked'
+      planStatus.textContent = message
+      planStatus.title = message
+      libraryBackupControls.dataset.state = 'error'
+      libraryBackupStatus.textContent = message
+      libraryBackupStatus.title = restorePreparation.receiptPath
+    } finally {
+      setLibraryBackupBusy(false, 'preflight')
+    }
+    return
+  }
   setLibraryBackupBusy(true, 'prepare')
   const planStatus = $('#backup-restore-plan-status')
   planStatus.dataset.state = 'compatible'
@@ -806,14 +844,11 @@ async function prepareUserDataRestore() {
       return
     }
     restorePreparation = result
-    planStatus.dataset.state = 'compatible'
-    planStatus.textContent = `外部回滚点已创建并复核：${formatBytes(result.rollbackBackup.totalBytes)}。准备凭据已保存；当前数据尚未恢复或替换。`
-    planStatus.title = `${result.rollbackBackup.path}\n${result.receiptPath}`
-    libraryBackupControls.dataset.state = 'success'
-    libraryBackupStatus.textContent = '恢复准备完成 · 尚未执行恢复'
-    libraryBackupStatus.title = result.receiptPath
+    showRestorePreflight(await bridge.preflightUserDataRestore(result.receiptPath))
   } catch (error) {
-    const message = `恢复准备失败：${formatError(error)}`
+    const message = restorePreparation
+      ? `外部回滚点已创建，但准备状态复核失败：${formatError(error)}`
+      : `恢复准备失败：${formatError(error)}`
     planStatus.dataset.state = 'blocked'
     planStatus.textContent = message
     planStatus.title = message

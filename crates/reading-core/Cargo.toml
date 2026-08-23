@@ -9,7 +9,7 @@ repository = "https://github.com/haryqs/lightnovel-reader"
 [features]
 default = ["native"]
 # 桌面/移动用，全量：书库/标注存储 + 插件宿主 + 连接器
-native = ["rusqlite", "image", "csv", "base64", "ring"]
+native = ["rusqlite", "image", "csv", "base64", "ring", "fs2"]
 # 网页用，纯计算（EPUB 解析、HTML 清洗、分页），不带任何 I/O
 wasm = ["wasm-bindgen"]
 # QuickJS 引擎（桌面/移动端插件运行时）
@@ -42,3 +42,5 @@ rquickjs = { version = "0.9", optional = true }
 # 官方插件包 Ed25519 验签；仅 native 插件仓库路径启用。
 base64 = { version = "0.22", optional = true }
 ring = { version = "0.17", optional = true }
+# 恢复事务预检需要跨平台读取目标卷对普通用户实际可用的空间。
+fs2 = { version = "0.4.3", optional = true }

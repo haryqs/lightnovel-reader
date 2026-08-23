@@ -723,6 +723,22 @@ async function runFirstSession() {
   assertCheck(restorePreparation.restoreExecuted === false, 'restore preparation must not execute restore', restorePreparation)
   const restoreReceipt = JSON.parse(readFileSync(restorePreparation.receiptPath, 'utf8'))
   assertCheck(restoreReceipt.rollbackManifestSha256 === restorePreparation.rollbackManifestSha256, 'restore receipt mismatch', restoreReceipt)
+  const restorePreflight = await invoke(
+    'preflight_user_data_restore',
+    { receiptPath: restorePreparation.receiptPath },
+    30_000,
+  )
+  assertCheck(restorePreflight.schemaVersion === 1, 'restore preflight schema mismatch', restorePreflight)
+  assertCheck(restorePreflight.receiptPath === restorePreparation.receiptPath, 'restore preflight receipt mismatch', restorePreflight)
+  assertCheck(restorePreflight.sourceManifestSha256 === restorePreparation.sourceManifestSha256, 'preflight source pin mismatch', restorePreflight)
+  assertCheck(restorePreflight.rollbackManifestSha256 === restorePreparation.rollbackManifestSha256, 'preflight rollback pin mismatch', restorePreflight)
+  assertCheck(restorePreflight.targetAvailableBytes >= restorePreflight.requiredTotalBytes, 'restore preflight space check failed', restorePreflight)
+  assertCheck(restorePreflight.requiredStagingBytes === backup.totalBytes, 'restore staging size mismatch', restorePreflight)
+  assertCheck(restorePreflight.safetyMarginBytes >= 64 * 1024 * 1024, 'restore safety margin is too small', restorePreflight)
+  assertCheck(restorePreflight.preflightPassed === true, 'restore preflight should pass', restorePreflight)
+  assertCheck(restorePreflight.requiresFreshRollbackAtExecution === true, 'restore execution must refresh rollback', restorePreflight)
+  assertCheck(restorePreflight.restoreAuthorized === false, 'preflight must not authorize restore', restorePreflight)
+  assertCheck(restorePreflight.restoreExecuted === false, 'preflight must not execute restore', restorePreflight)
 
   return {
     boot,
@@ -739,6 +755,7 @@ async function runFirstSession() {
     backupInspection,
     restorePlan,
     restorePreparation,
+    restorePreflight,
     libraryOrganize: {
       initial: libraryOrganizeInitial,
       unread: libraryOrganizeUnread,
@@ -833,6 +850,7 @@ async function main() {
           backupInspection: first.backupInspection,
           restorePlan: first.restorePlan,
           restorePreparation: first.restorePreparation,
+          restorePreflight: first.restorePreflight,
           openTimingMs: {
             first: Number(first.firstOpenMs.toFixed(2)),
             second: Number(second.secondOpenMs.toFixed(2)),
