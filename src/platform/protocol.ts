@@ -387,6 +387,19 @@ export interface UserDataRestorePlan {
   warnings: string[]
 }
 
+/** userData.prepareRestore 创建外部回滚点后的准备凭据；restoreExecuted 恒为 false。 */
+export interface UserDataRestorePreparation {
+  schemaVersion: number
+  preparedAt: number
+  plan: UserDataRestorePlan
+  rollbackBackup: UserDataBackupInspection
+  sourceManifestSha256: string
+  rollbackManifestSha256: string
+  receiptPath: string
+  requiresRestart: boolean
+  restoreExecuted: boolean
+}
+
 // ---- 桥接接口:每个方法对应协议里的一条消息 ----
 
 export interface ReaderBridge {
@@ -448,6 +461,8 @@ export interface ReaderBridge {
   inspectUserDataBackup(): Promise<UserDataBackupInspection | null>
   /** userData.planRestore — 选择备份并只读比较当前数据，返回整体替换/回滚/重启计划 */
   planUserDataRestore(): Promise<UserDataRestorePlan | null>
+  /** userData.prepareRestore — 选择外部目录，创建并复核当前数据回滚点；不执行恢复 */
+  prepareUserDataRestore(backupDir: string): Promise<UserDataRestorePreparation | null>
   /** plugin.selectPackagePath — 选择源插件 zip 安装包，返回本地路径或 null */
   selectPluginPackagePath(): Promise<string | null>
   /** plugin.inspectPackage — 读取 zip manifest/入口并返回安装前确认信息，不执行插件代码 */

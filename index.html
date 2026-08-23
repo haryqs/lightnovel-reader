@@ -286,7 +286,7 @@
           <button id="btn-backup-inspection-dialog-close" class="icon-btn app-update-dialog-close" type="button" aria-label="关闭备份预览">×</button>
         </header>
         <p id="backup-inspection-dialog-description" class="app-update-dialog-description">
-          已只读核验备份并与当前数据比较；箭头左侧是当前数据，右侧是备份。此预览不会修改数据，恢复功能尚未开放。
+          已只读核验备份并与当前数据比较；箭头左侧是当前数据，右侧是备份。可创建并复核外部回滚点，但不会替换当前数据。
         </p>
         <dl class="backup-inspection-summary">
           <div><dt>来源版本</dt><dd id="backup-inspection-version">—</dd></div>
@@ -305,7 +305,8 @@
         <p id="backup-restore-plan-status" class="backup-restore-plan-status"></p>
         <ul id="backup-inspection-warnings" class="backup-inspection-warnings" hidden></ul>
         <footer class="app-update-dialog-actions">
-          <button id="btn-backup-inspection-close" class="btn btn-primary" type="button" autofocus>关闭</button>
+          <button id="btn-backup-inspection-close" class="btn" type="button" autofocus>关闭</button>
+          <button id="btn-backup-restore-prepare" class="btn btn-primary" type="button" disabled>创建外部回滚点（不恢复）</button>
         </footer>
       </div>
     </dialog>

@@ -707,6 +707,22 @@ async function runFirstSession() {
   assertCheck(restorePlan.requiresPreRestoreBackup === true, 'restore plan must require rollback backup', restorePlan)
   assertCheck(restorePlan.versionCompatible === true, 'current-version backup should be compatible', restorePlan)
   assertCheck(restorePlan.blockedReasons.length === 0, 'current-version restore plan should not be blocked', restorePlan)
+  const restorePreparation = await invoke(
+    'prepare_user_data_restore',
+    { backupDir: backupPath, rollbackParent: backupRoot },
+    30_000,
+  )
+  assertCheck(restorePreparation.schemaVersion === 1, 'restore preparation schema mismatch', restorePreparation)
+  assertCheck(restorePreparation.plan.backup.path === backup.path, 'restore preparation source mismatch', restorePreparation)
+  assertCheck(restorePreparation.rollbackBackup.path !== backup.path, 'rollback backup must be independent', restorePreparation)
+  assertCheck(existsSync(restorePreparation.rollbackBackup.path), 'rollback backup directory is missing', restorePreparation)
+  assertCheck(existsSync(restorePreparation.receiptPath), 'restore preparation receipt is missing', restorePreparation)
+  assertCheck(restorePreparation.sourceManifestSha256.length === 64, 'source manifest pin is missing', restorePreparation)
+  assertCheck(restorePreparation.rollbackManifestSha256.length === 64, 'rollback manifest pin is missing', restorePreparation)
+  assertCheck(restorePreparation.requiresRestart === true, 'restore preparation must require restart', restorePreparation)
+  assertCheck(restorePreparation.restoreExecuted === false, 'restore preparation must not execute restore', restorePreparation)
+  const restoreReceipt = JSON.parse(readFileSync(restorePreparation.receiptPath, 'utf8'))
+  assertCheck(restoreReceipt.rollbackManifestSha256 === restorePreparation.rollbackManifestSha256, 'restore receipt mismatch', restoreReceipt)
 
   return {
     boot,
@@ -722,6 +738,7 @@ async function runFirstSession() {
     backup,
     backupInspection,
     restorePlan,
+    restorePreparation,
     libraryOrganize: {
       initial: libraryOrganizeInitial,
       unread: libraryOrganizeUnread,
@@ -815,6 +832,7 @@ async function main() {
           backup: first.backup,
           backupInspection: first.backupInspection,
           restorePlan: first.restorePlan,
+          restorePreparation: first.restorePreparation,
           openTimingMs: {
             first: Number(first.firstOpenMs.toFixed(2)),
             second: Number(second.secondOpenMs.toFixed(2)),

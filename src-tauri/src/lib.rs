@@ -236,6 +236,43 @@ fn plan_user_data_restore(
     .map_err(BridgeError::parse)
 }
 
+#[tauri::command]
+fn prepare_user_data_restore(
+    state: tauri::State<AppState>,
+    app_data_dir: tauri::State<PathBuf>,
+    backup_dir: String,
+    rollback_parent: String,
+) -> Result<backup::UserDataRestorePreparation, BridgeError> {
+    if backup_dir.trim().is_empty() || rollback_parent.trim().is_empty() {
+        return Err(BridgeError::invalid_argument(
+            "恢复来源和回滚点目标目录不能为空",
+        ));
+    }
+    let storage_db = state
+        .db
+        .lock()
+        .map_err(|error| BridgeError::storage(error.to_string()))?;
+    let library_db = state
+        .library_db
+        .lock()
+        .map_err(|error| BridgeError::storage(error.to_string()))?;
+    backup::prepare_user_data_restore(
+        &storage_db,
+        &library_db,
+        &app_data_dir,
+        Path::new(&backup_dir),
+        Path::new(&rollback_parent),
+        env!("CARGO_PKG_VERSION"),
+    )
+    .map_err(|error| {
+        if error.starts_with("恢复准备已阻断") {
+            BridgeError::forbidden(error)
+        } else {
+            BridgeError::storage(error)
+        }
+    })
+}
+
 const AOZORA_CATALOG_MAX_AGE: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 const AOZORA_SEARCH_LIMIT: usize = 40;
 const NAROU_SEARCH_LIMIT: usize = 40;
@@ -2177,6 +2214,7 @@ pub fn run() {
             export_user_data_backup,
             inspect_user_data_backup,
             plan_user_data_restore,
+            prepare_user_data_restore,
             sync_commands::sync_status,
             sync_commands::sync_pair,
             sync_commands::sync_pair_join,

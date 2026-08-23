@@ -477,8 +477,11 @@ async function main() {
       labelledBy: dialog.getAttribute('aria-labelledby') || '',
       describedBy: dialog.getAttribute('aria-describedby') || '',
       summaryItems: dialog.querySelectorAll('.backup-inspection-summary > div').length,
-      hasReadOnlyCopy: (document.querySelector('#backup-inspection-dialog-description')?.textContent || '').includes('不会修改数据'),
+      hasReadOnlyCopy: (document.querySelector('#backup-inspection-dialog-description')?.textContent || '').includes('不会替换当前数据'),
       hasRestorePlanStatus: !!document.querySelector('#backup-restore-plan-status'),
+      prepareLabel: document.querySelector('#btn-backup-restore-prepare')?.textContent || '',
+      prepareType: document.querySelector('#btn-backup-restore-prepare')?.type || '',
+      prepareDisabledWithoutPlan: document.querySelector('#btn-backup-restore-prepare')?.disabled === true,
       title: document.querySelector('#backup-inspection-dialog-title')?.textContent || '',
       closeType: document.querySelector('#btn-backup-inspection-close')?.type || '',
     }
@@ -489,6 +492,9 @@ async function main() {
   assertCheck(backupInspectionDialogProbe.summaryItems === 8, 'backup inspection summary is incomplete', backupInspectionDialogProbe)
   assertCheck(backupInspectionDialogProbe.hasReadOnlyCopy, 'backup inspection safety copy is missing', backupInspectionDialogProbe)
   assertCheck(backupInspectionDialogProbe.hasRestorePlanStatus, 'restore plan status is missing', backupInspectionDialogProbe)
+  assertCheck(backupInspectionDialogProbe.prepareLabel.includes('不恢复'), 'restore preparation safety label is missing', backupInspectionDialogProbe)
+  assertCheck(backupInspectionDialogProbe.prepareType === 'button', 'restore preparation must be an explicit button', backupInspectionDialogProbe)
+  assertCheck(backupInspectionDialogProbe.prepareDisabledWithoutPlan, 'restore preparation must stay disabled without a plan', backupInspectionDialogProbe)
   assertCheck(backupInspectionDialogProbe.title === '备份校验与恢复计划', 'restore plan title is wrong', backupInspectionDialogProbe)
   assertCheck(backupInspectionDialogProbe.closeType === 'button', 'backup inspection close action must be explicit', backupInspectionDialogProbe)
   await execute(`document.querySelector('#btn-backup-inspection-close')?.click(); return true`)

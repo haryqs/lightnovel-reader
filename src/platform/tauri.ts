@@ -35,6 +35,7 @@ import type {
   UserDataBackupResult,
   UserDataBackupInspection,
   UserDataRestorePlan,
+  UserDataRestorePreparation,
 } from './protocol'
 
 let pendingAppUpdate: Update | null = null
@@ -245,6 +246,23 @@ export const tauriBridge: ReaderBridge = {
     if (typeof selected !== 'string') return null
     return invoke<UserDataRestorePlan>('plan_user_data_restore', {
       backupDir: selected,
+    })
+  },
+  prepareUserDataRestore: async (backupDir) => {
+    let selected: string | string[] | null
+    try {
+      selected = await open({
+        directory: true,
+        multiple: false,
+        title: '选择外部回滚点保存位置',
+      })
+    } catch (err) {
+      throw bridgeError('platformError', '打开回滚点目录选择器失败', err instanceof Error ? err.message : err)
+    }
+    if (typeof selected !== 'string') return null
+    return invoke<UserDataRestorePreparation>('prepare_user_data_restore', {
+      backupDir,
+      rollbackParent: selected,
     })
   },
   selectPluginPackagePath: async () => {
