@@ -16,7 +16,9 @@ pub const BACKUP_SCHEMA_VERSION: u32 = 1;
 const BACKUP_PREFIX: &str = "lightnovel-reader-backup-v1";
 const RESTORE_PREPARATION_PREFIX: &str = "lightnovel-reader-restore-preparation-v1";
 const MAX_MANIFEST_BYTES: u64 = 8 * 1024 * 1024;
+const MAX_RESTORE_PREPARATION_BYTES: u64 = 8 * 1024 * 1024;
 const MAX_BACKUP_FILES: usize = 200_000;
+const MIN_RESTORE_SAFETY_MARGIN_BYTES: u64 = 64 * 1024 * 1024;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -93,6 +95,28 @@ pub struct UserDataRestorePreparation {
     pub receipt_path: String,
     pub requires_restart: bool,
     pub restore_executed: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct UserDataRestorePreflight {
+    pub schema_version: u32,
+    pub checked_at: i64,
+    pub receipt_path: String,
+    pub source_backup: UserDataBackupInspection,
+    pub rollback_backup: UserDataBackupInspection,
+    pub source_manifest_sha256: String,
+    pub rollback_manifest_sha256: String,
+    pub target_available_bytes: u64,
+    pub required_staging_bytes: u64,
+    pub safety_margin_bytes: u64,
+    pub required_total_bytes: u64,
+    pub preflight_passed: bool,
+    pub requires_fresh_rollback_at_execution: bool,
+    pub restore_authorized: bool,
+    pub restore_executed: bool,
+    pub blocked_reasons: Vec<String>,
+    pub warnings: Vec<String>,
 }
 
 /// 只读生成恢复事务计划。该计划比较当前数据与已验证备份，不执行复制或覆盖。
@@ -256,6 +280,202 @@ pub fn prepare_user_data_restore(
             Err(error)
         }
     }
+}
+
+/// 只读复核恢复准备凭据、来源/回滚点和目标卷空间。
+/// 通过预检不代表用户已授权恢复，也不会写入或替换应用数据。
+pub fn preflight_user_data_restore(
+    receipt_path: &Path,
+    app_data_dir: &Path,
+    current_app_version: &str,
+) -> Result<UserDataRestorePreflight, String> {
+    let available_bytes = fs2::available_space(app_data_dir)
+        .map_err(|error| format!("读取应用数据所在磁盘的可用空间失败: {error}"))?;
+    preflight_user_data_restore_with_available_bytes(
+        receipt_path,
+        app_data_dir,
+        current_app_version,
+        available_bytes,
+    )
+}
+
+fn preflight_user_data_restore_with_available_bytes(
+    receipt_path: &Path,
+    app_data_dir: &Path,
+    current_app_version: &str,
+    target_available_bytes: u64,
+) -> Result<UserDataRestorePreflight, String> {
+    if current_app_version.trim().is_empty() {
+        return Err("当前应用版本不能为空".into());
+    }
+    let receipt_metadata = fs::symlink_metadata(receipt_path)
+        .map_err(|error| format!("读取恢复准备凭据失败: {error}"))?;
+    if receipt_metadata.file_type().is_symlink() || !receipt_metadata.is_file() {
+        return Err("恢复准备凭据必须是普通 JSON 文件，不能是符号链接".into());
+    }
+    if receipt_metadata.len() > MAX_RESTORE_PREPARATION_BYTES {
+        return Err(format!(
+            "恢复准备凭据超过 {} MiB 安全上限",
+            MAX_RESTORE_PREPARATION_BYTES / 1024 / 1024
+        ));
+    }
+    let receipt_path = receipt_path
+        .canonicalize()
+        .map_err(|error| format!("无法解析恢复准备凭据路径: {error}"))?;
+    let app_data_dir = app_data_dir
+        .canonicalize()
+        .map_err(|error| format!("无法解析应用数据目录: {error}"))?;
+    if path_is_within(&receipt_path, &app_data_dir) {
+        return Err("恢复准备凭据不能位于应用数据目录内部".into());
+    }
+
+    let preparation: UserDataRestorePreparation = serde_json::from_slice(
+        &fs::read(&receipt_path).map_err(|error| format!("读取恢复准备凭据失败: {error}"))?,
+    )
+    .map_err(|error| format!("解析恢复准备凭据失败: {error}"))?;
+    validate_restore_preparation_shape(&preparation)?;
+
+    let recorded_receipt_path = PathBuf::from(&preparation.receipt_path)
+        .canonicalize()
+        .map_err(|error| format!("无法解析凭据记录的自身路径: {error}"))?;
+    if !paths_equal(&receipt_path, &recorded_receipt_path) {
+        return Err("恢复准备凭据路径与其记录的 receiptPath 不一致".into());
+    }
+
+    let source_dir = PathBuf::from(&preparation.plan.backup.path)
+        .canonicalize()
+        .map_err(|error| format!("无法解析恢复来源目录: {error}"))?;
+    let rollback_dir = PathBuf::from(&preparation.rollback_backup.path)
+        .canonicalize()
+        .map_err(|error| format!("无法解析外部回滚点目录: {error}"))?;
+    if paths_equal(&source_dir, &rollback_dir) {
+        return Err("恢复来源与外部回滚点不能是同一目录".into());
+    }
+    if path_is_within(&source_dir, &app_data_dir) || path_is_within(&rollback_dir, &app_data_dir) {
+        return Err("恢复来源和外部回滚点都必须位于应用数据目录之外".into());
+    }
+    let receipt_parent = receipt_path
+        .parent()
+        .ok_or_else(|| "恢复准备凭据缺少父目录".to_string())?;
+    let rollback_parent = rollback_dir
+        .parent()
+        .ok_or_else(|| "外部回滚点缺少父目录".to_string())?;
+    if !paths_equal(receipt_parent, rollback_parent) {
+        return Err("恢复准备凭据必须与外部回滚点位于同一父目录".into());
+    }
+
+    let source_backup = inspect_user_data_backup(&source_dir, current_app_version)?;
+    let rollback_backup = inspect_user_data_backup(&rollback_dir, current_app_version)?;
+    ensure_backup_inspection_matches("恢复来源", &preparation.plan.backup, &source_backup)?;
+    ensure_backup_inspection_matches("外部回滚点", &preparation.rollback_backup, &rollback_backup)?;
+
+    let source_manifest_sha256 = sha256_file(&source_dir.join("manifest.json"))?;
+    let rollback_manifest_sha256 = sha256_file(&rollback_dir.join("manifest.json"))?;
+    if source_manifest_sha256 != preparation.source_manifest_sha256 {
+        return Err("恢复来源 manifest 摘要与准备凭据不一致".into());
+    }
+    if rollback_manifest_sha256 != preparation.rollback_manifest_sha256 {
+        return Err("外部回滚点 manifest 摘要与准备凭据不一致".into());
+    }
+
+    let required_staging_bytes = source_backup.total_bytes;
+    let safety_margin_bytes = (required_staging_bytes / 10).max(MIN_RESTORE_SAFETY_MARGIN_BYTES);
+    let required_total_bytes = required_staging_bytes
+        .checked_add(safety_margin_bytes)
+        .ok_or_else(|| "恢复 staging 空间需求溢出".to_string())?;
+    let mut blocked_reasons = Vec::new();
+    if source_backup.newer_than_current_app {
+        blocked_reasons.push(format!(
+            "恢复来源来自较新的应用版本 v{}",
+            source_backup.source_app_version
+        ));
+    }
+    if target_available_bytes < required_total_bytes {
+        blocked_reasons.push(format!(
+            "应用数据所在磁盘可用空间不足：需要至少 {required_total_bytes} 字节，当前 {target_available_bytes} 字节"
+        ));
+    }
+    let preflight_passed = blocked_reasons.is_empty();
+
+    Ok(UserDataRestorePreflight {
+        schema_version: 1,
+        checked_at: now_ms(),
+        receipt_path: display_path(&receipt_path),
+        source_backup,
+        rollback_backup,
+        source_manifest_sha256,
+        rollback_manifest_sha256,
+        target_available_bytes,
+        required_staging_bytes,
+        safety_margin_bytes,
+        required_total_bytes,
+        preflight_passed,
+        requires_fresh_rollback_at_execution: true,
+        restore_authorized: false,
+        restore_executed: false,
+        blocked_reasons,
+        warnings: vec![
+            "预检通过不代表用户已授权恢复；执行前仍需明确二次确认".into(),
+            "准备后当前数据仍可能变化；真正执行前必须刷新外部回滚点".into(),
+        ],
+    })
+}
+
+fn validate_restore_preparation_shape(
+    preparation: &UserDataRestorePreparation,
+) -> Result<(), String> {
+    if preparation.schema_version != 1 {
+        return Err(format!(
+            "不支持的恢复准备凭据 schemaVersion: {}",
+            preparation.schema_version
+        ));
+    }
+    if !preparation.requires_restart
+        || preparation.restore_executed
+        || !preparation.plan.requires_restart
+        || !preparation.plan.requires_pre_restore_backup
+        || !preparation.plan.version_compatible
+        || !preparation.plan.blocked_reasons.is_empty()
+    {
+        return Err("恢复准备凭据状态不允许进入预检".into());
+    }
+    if !is_sha256_hex(&preparation.source_manifest_sha256)
+        || !is_sha256_hex(&preparation.rollback_manifest_sha256)
+    {
+        return Err("恢复准备凭据中的 manifest 摘要格式无效".into());
+    }
+    Ok(())
+}
+
+fn ensure_backup_inspection_matches(
+    label: &str,
+    recorded: &UserDataBackupInspection,
+    inspected: &UserDataBackupInspection,
+) -> Result<(), String> {
+    let recorded_path = PathBuf::from(&recorded.path)
+        .canonicalize()
+        .map_err(|error| format!("无法解析凭据记录的{label}路径: {error}"))?;
+    let inspected_path = PathBuf::from(&inspected.path)
+        .canonicalize()
+        .map_err(|error| format!("无法解析复核后的{label}路径: {error}"))?;
+    let immutable_fields_match = recorded.schema_version == inspected.schema_version
+        && recorded.source_app_version == inspected.source_app_version
+        && recorded.created_at == inspected.created_at
+        && recorded.file_count == inspected.file_count
+        && recorded.total_bytes == inspected.total_bytes
+        && recorded.library_book_count == inspected.library_book_count
+        && recorded.reading_progress_count == inspected.reading_progress_count
+        && recorded.annotation_count == inspected.annotation_count
+        && recorded.plugin_count == inspected.plugin_count
+        && recorded.epub_file_count == inspected.epub_file_count;
+    if !paths_equal(&recorded_path, &inspected_path) || !immutable_fields_match {
+        return Err(format!("{label}摘要与恢复准备凭据不一致"));
+    }
+    Ok(())
+}
+
+fn is_sha256_hex(value: &str) -> bool {
+    value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
 fn ensure_restore_plan_is_compatible(plan: &UserDataRestorePlan) -> Result<(), String> {
@@ -906,6 +1126,10 @@ fn now_ms() -> i64 {
         .as_millis() as i64
 }
 
+fn paths_equal(left: &Path, right: &Path) -> bool {
+    path_is_within(left, right) && path_is_within(right, left)
+}
+
 #[cfg(windows)]
 fn path_is_within(path: &Path, root: &Path) -> bool {
     let path = path
@@ -1317,8 +1541,97 @@ mod tests {
         let receipt: UserDataRestorePreparation =
             serde_json::from_slice(&fs::read(&preparation.receipt_path).unwrap()).unwrap();
         assert_eq!(receipt, preparation);
+
+        let preflight = preflight_user_data_restore_with_available_bytes(
+            Path::new(&preparation.receipt_path),
+            &source.0,
+            "0.7.3",
+            u64::MAX,
+        )
+        .unwrap();
+        assert!(preflight.preflight_passed);
+        assert!(preflight.blocked_reasons.is_empty());
+        assert_eq!(preflight.source_backup.path, preparation.plan.backup.path);
+        assert_eq!(
+            preflight.rollback_backup.path,
+            preparation.rollback_backup.path
+        );
+        assert_eq!(preflight.target_available_bytes, u64::MAX);
+        assert_eq!(
+            preflight.required_staging_bytes,
+            preparation.plan.backup.total_bytes
+        );
+        assert_eq!(
+            preflight.safety_margin_bytes,
+            MIN_RESTORE_SAFETY_MARGIN_BYTES
+        );
+        assert!(preflight.requires_fresh_rollback_at_execution);
+        assert!(!preflight.restore_authorized);
+        assert!(!preflight.restore_executed);
+
+        let insufficient = preflight_user_data_restore_with_available_bytes(
+            Path::new(&preparation.receipt_path),
+            &source.0,
+            "0.7.3",
+            0,
+        )
+        .unwrap();
+        assert!(!insufficient.preflight_passed);
+        assert_eq!(insufficient.blocked_reasons.len(), 1);
+        assert!(insufficient.blocked_reasons[0].contains("可用空间不足"));
         assert_eq!(table_count(&storage, "reading_state").unwrap(), 2);
         assert!(source.0.join("library/objects/book-2.epub").is_file());
+    }
+
+    #[test]
+    fn preflight_rejects_tampered_receipt_and_manifest_drift() {
+        let (source, storage, library) = fixture();
+        let source_parent = TestDir::new("preflight-source");
+        let exported =
+            export_user_data_backup(&storage, &library, &source.0, &source_parent.0, "0.7.3")
+                .unwrap();
+        let rollback_parent = TestDir::new("preflight-rollback");
+        let preparation = prepare_user_data_restore(
+            &storage,
+            &library,
+            &source.0,
+            Path::new(&exported.path),
+            &rollback_parent.0,
+            "0.7.3",
+        )
+        .unwrap();
+        let receipt_path = PathBuf::from(&preparation.receipt_path);
+
+        let mut tampered = preparation.clone();
+        tampered.source_manifest_sha256 = "0".repeat(64);
+        fs::write(&receipt_path, serde_json::to_vec_pretty(&tampered).unwrap()).unwrap();
+        let error = preflight_user_data_restore_with_available_bytes(
+            &receipt_path,
+            &source.0,
+            "0.7.3",
+            u64::MAX,
+        )
+        .unwrap_err();
+        assert!(error.contains("来源 manifest 摘要"));
+
+        fs::write(
+            &receipt_path,
+            serde_json::to_vec_pretty(&preparation).unwrap(),
+        )
+        .unwrap();
+        fs::write(
+            Path::new(&exported.path).join("library/objects/book.epub"),
+            b"changed-after-preparation",
+        )
+        .unwrap();
+        let error = preflight_user_data_restore_with_available_bytes(
+            &receipt_path,
+            &source.0,
+            "0.7.3",
+            u64::MAX,
+        )
+        .unwrap_err();
+        assert!(error.contains("校验失败"));
     }
 
     #[test]

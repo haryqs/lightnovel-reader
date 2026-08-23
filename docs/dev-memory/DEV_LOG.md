@@ -3848,3 +3848,35 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
 
 - 发下一版前人工点击三个 Windows 原生目录选择器；当前自动化不操作系统目录选择窗口。
 - 当前没有恢复执行器或执行按钮，也没有磁盘空间预检、二次确认、启动期事务和故障注入覆盖。
+
+## 2026-08-24：新增恢复准备只读预检与目标卷空间门
+
+完成：
+
+- `reading-core::backup` 新增 `preflight_user_data_restore` / `UserDataRestorePreflight`：只接受 app data 外部普通
+  JSON 凭据，核对 schema、状态、自身路径、来源/回滚目录关系和已记录摘要，再重新完整检查两份备份及
+  manifest SHA-256；凭据、来源或载荷漂移直接拒绝。
+- native core 新增 `fs2 0.4.3`，读取 app data 所在文件系统对普通用户实际可用空间；staging 需求按来源载荷
+  加 `max(10%, 64 MiB)` 安全余量计算，空间不足返回可展示的阻断原因。
+- 新增 additive `userData.preflightRestore`，同步 Rust command、ReaderBridge、Tauri/Web 壳和协议文档；准备完成后
+  自动预检，用户也可“重新复核准备状态（不恢复）”。结果固定 `requiresFreshRollbackAtExecution=true`、
+  `restoreAuthorized=false`、`restoreExecuted=false`，没有执行恢复消息。
+- README、本地书库设计、桥接协议、发布测试、项目记忆、决策记录和下一步队列同步更新；下一阶段必须先做
+  二次确认、持锁刷新回滚点、启动期事务与故障注入，不能把历史预检直接转成授权。
+
+验证：
+
+- `cargo test -p reading-core backup --locked`：13 passed，覆盖充足/不足空间、凭据 manifest 摘要篡改和来源载荷漂移。
+- `cargo test --workspace --locked`：Tauri 8 passed / 1 个公网测试 ignored，reading-core 162 passed；
+  `cargo test -p reading-core --features quickjs --locked`：162 passed。
+- `npm.cmd run check:project`、`npm.cmd run build`、`cargo check --workspace --locked`、`cargo fmt --all -- --check`、
+  `git diff --check` 与两份 smoke 脚本语法检查：通过。
+- `npm.cmd run tauri -- build --debug --no-bundle`：通过；`npm.cmd run smoke:tauri` 真实 WebView2 全绿，安全说明
+  明确磁盘空间、不授权和不替换，且无计划时准备按钮禁用。
+- `npm.cmd run smoke:p0`：真实 Tauri 预检复核两份备份及摘要，测试卷可用 7,399,952,384 字节；来源载荷
+  331,270 字节加 64 MiB 余量后需求 67,440,134 字节，预检通过但固定未授权/未执行，进度和标注跨会话保持。
+
+未验证 / 下一步：
+
+- Windows 三个原生目录选择器仍需发版前人工点击；当前自动化不操作系统选择窗口。
+- 当前没有执行恢复命令、二次确认、持锁刷新回滚点、启动期 staging/替换/复核/失败回滚或故障注入覆盖。

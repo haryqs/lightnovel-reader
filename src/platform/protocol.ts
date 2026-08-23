@@ -400,6 +400,27 @@ export interface UserDataRestorePreparation {
   restoreExecuted: boolean
 }
 
+/** userData.preflightRestore 的只读复核结果；不授权也不执行恢复。 */
+export interface UserDataRestorePreflight {
+  schemaVersion: number
+  checkedAt: number
+  receiptPath: string
+  sourceBackup: UserDataBackupInspection
+  rollbackBackup: UserDataBackupInspection
+  sourceManifestSha256: string
+  rollbackManifestSha256: string
+  targetAvailableBytes: number
+  requiredStagingBytes: number
+  safetyMarginBytes: number
+  requiredTotalBytes: number
+  preflightPassed: boolean
+  requiresFreshRollbackAtExecution: boolean
+  restoreAuthorized: boolean
+  restoreExecuted: boolean
+  blockedReasons: string[]
+  warnings: string[]
+}
+
 // ---- 桥接接口:每个方法对应协议里的一条消息 ----
 
 export interface ReaderBridge {
@@ -463,6 +484,8 @@ export interface ReaderBridge {
   planUserDataRestore(): Promise<UserDataRestorePlan | null>
   /** userData.prepareRestore — 选择外部目录，创建并复核当前数据回滚点；不执行恢复 */
   prepareUserDataRestore(backupDir: string): Promise<UserDataRestorePreparation | null>
+  /** userData.preflightRestore — 复核准备凭据、来源/回滚和目标卷空间；不授权恢复 */
+  preflightUserDataRestore(receiptPath: string): Promise<UserDataRestorePreflight>
   /** plugin.selectPackagePath — 选择源插件 zip 安装包，返回本地路径或 null */
   selectPluginPackagePath(): Promise<string | null>
   /** plugin.inspectPackage — 读取 zip manifest/入口并返回安装前确认信息，不执行插件代码 */

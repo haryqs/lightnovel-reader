@@ -273,6 +273,22 @@ fn prepare_user_data_restore(
     })
 }
 
+#[tauri::command]
+fn preflight_user_data_restore(
+    app_data_dir: tauri::State<PathBuf>,
+    receipt_path: String,
+) -> Result<backup::UserDataRestorePreflight, BridgeError> {
+    if receipt_path.trim().is_empty() {
+        return Err(BridgeError::invalid_argument("恢复准备凭据路径不能为空"));
+    }
+    backup::preflight_user_data_restore(
+        Path::new(&receipt_path),
+        &app_data_dir,
+        env!("CARGO_PKG_VERSION"),
+    )
+    .map_err(BridgeError::parse)
+}
+
 const AOZORA_CATALOG_MAX_AGE: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 const AOZORA_SEARCH_LIMIT: usize = 40;
 const NAROU_SEARCH_LIMIT: usize = 40;
@@ -2215,6 +2231,7 @@ pub fn run() {
             inspect_user_data_backup,
             plan_user_data_restore,
             prepare_user_data_restore,
+            preflight_user_data_restore,
             sync_commands::sync_status,
             sync_commands::sync_pair,
             sync_commands::sync_pair_join,
