@@ -1,9 +1,12 @@
 //! 启动期用户数据恢复事务内核。
 //!
-//! 本模块只处理已关闭数据库连接后的文件系统事务，不负责 UI 二次确认、退出应用或创建新鲜回滚点。
-//! 当前没有平台壳调用该入口；先用隔离目录与故障注入证明 staging、替换、复核和回滚语义。
+//! 本模块包含两个尚未接平台壳的低层阶段：数据库仍持锁时刷新回滚点并发布一次性启动请求，以及连接关闭后的
+//! 文件系统事务。UI 二次确认和退出/重启编排仍由未来平台壳负责；当前只在隔离目录证明调度、替换和回滚语义。
 
-use crate::backup::{inspect_user_data_backup, BackupManifest, UserDataBackupInspection};
+use crate::backup::{
+    inspect_user_data_backup, preflight_user_data_restore, prepare_user_data_restore,
+    BackupManifest, UserDataBackupInspection, UserDataRestorePreparation,
+};
 use rusqlite::{Connection, OpenFlags};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -30,6 +33,35 @@ const MANAGED_CURRENT_ENTRIES: [&str; 5] = [
     "plugins",
 ];
 const MANAGED_SOURCE_ENTRIES: [&str; 3] = ["reader.db", "library", "plugins"];
+const STARTUP_REQUEST_FILE: &str = ".restore-startup-request-v1.json";
+const STARTUP_REQUEST_PARTIAL_FILE: &str = ".restore-startup-request-v1.partial";
+
+pub const USER_DATA_RESTORE_CONFIRMATION_PHRASE: &str = "恢复并替换当前数据";
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct UserDataRestoreAuthorization {
+    pub confirmation_phrase: String,
+    pub confirms_full_replacement: bool,
+    pub confirms_restart: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct UserDataRestoreStartupRequest {
+    pub schema_version: u32,
+    pub scheduled_at: i64,
+    pub app_data_path: String,
+    pub source_backup_path: String,
+    pub rollback_backup_path: String,
+    pub source_manifest_sha256: String,
+    pub rollback_manifest_sha256: String,
+    pub preparation_receipt_path: String,
+    pub startup_request_path: String,
+    pub requires_restart: bool,
+    pub restore_authorized: bool,
+    pub restore_executed: bool,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -66,6 +98,115 @@ enum RestoreFaultPoint {
     AfterActivation,
     CorruptAfterActivation,
     BeforeRollback,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RestoreScheduleFaultPoint {
+    None,
+    AfterFreshPreparation,
+}
+
+/// 在两份活动数据库连接仍由调用方持锁时，刷新外部回滚点并发布一次性启动请求。
+///
+/// 当前平台壳没有调用该函数。未来接入必须由明确的二次确认流程构造 `authorization`，发布成功后再退出连接。
+pub fn schedule_user_data_restore_for_startup(
+    storage_db: &Connection,
+    library_db: &Connection,
+    app_data_dir: &Path,
+    preparation_receipt_path: &Path,
+    current_app_version: &str,
+    authorization: &UserDataRestoreAuthorization,
+) -> Result<UserDataRestoreStartupRequest, String> {
+    schedule_with_fault(
+        storage_db,
+        library_db,
+        app_data_dir,
+        preparation_receipt_path,
+        current_app_version,
+        authorization,
+        RestoreScheduleFaultPoint::None,
+    )
+}
+
+fn schedule_with_fault(
+    storage_db: &Connection,
+    library_db: &Connection,
+    app_data_dir: &Path,
+    preparation_receipt_path: &Path,
+    current_app_version: &str,
+    authorization: &UserDataRestoreAuthorization,
+    fault: RestoreScheduleFaultPoint,
+) -> Result<UserDataRestoreStartupRequest, String> {
+    validate_restore_authorization(authorization)?;
+    let app_data_dir = validate_app_data_dir(app_data_dir)?;
+    let (partial_request_path, final_request_path) = startup_request_paths(&app_data_dir);
+    ensure_startup_request_slot_available(&partial_request_path, &final_request_path)?;
+
+    let prior_preflight =
+        preflight_user_data_restore(preparation_receipt_path, &app_data_dir, current_app_version)?;
+    ensure_preflight_passed(
+        &prior_preflight.blocked_reasons,
+        prior_preflight.preflight_passed,
+    )?;
+    let rollback_parent = PathBuf::from(&prior_preflight.rollback_backup.path)
+        .parent()
+        .ok_or_else(|| "外部回滚点缺少父目录".to_string())?
+        .to_path_buf();
+
+    let fresh_preparation = prepare_user_data_restore(
+        storage_db,
+        library_db,
+        &app_data_dir,
+        Path::new(&prior_preflight.source_backup.path),
+        &rollback_parent,
+        current_app_version,
+    )?;
+
+    let scheduled = (|| {
+        if fault == RestoreScheduleFaultPoint::AfterFreshPreparation {
+            return Err("故障注入：刷新外部回滚点后中断".into());
+        }
+        if fresh_preparation.source_manifest_sha256 != prior_preflight.source_manifest_sha256 {
+            return Err("恢复来源在确认后发生变化，已取消调度".into());
+        }
+        let fresh_preflight = preflight_user_data_restore(
+            Path::new(&fresh_preparation.receipt_path),
+            &app_data_dir,
+            current_app_version,
+        )?;
+        ensure_preflight_passed(
+            &fresh_preflight.blocked_reasons,
+            fresh_preflight.preflight_passed,
+        )?;
+        if fresh_preflight.source_manifest_sha256 != prior_preflight.source_manifest_sha256 {
+            return Err("恢复来源在刷新回滚点后发生变化，已取消调度".into());
+        }
+
+        let request = UserDataRestoreStartupRequest {
+            schema_version: TRANSACTION_SCHEMA_VERSION,
+            scheduled_at: now_ms(),
+            app_data_path: display_path(&app_data_dir),
+            source_backup_path: fresh_preflight.source_backup.path,
+            rollback_backup_path: fresh_preflight.rollback_backup.path,
+            source_manifest_sha256: fresh_preflight.source_manifest_sha256,
+            rollback_manifest_sha256: fresh_preflight.rollback_manifest_sha256,
+            preparation_receipt_path: fresh_preflight.receipt_path,
+            startup_request_path: display_path(&final_request_path),
+            requires_restart: true,
+            restore_authorized: true,
+            restore_executed: false,
+        };
+        publish_startup_request(&partial_request_path, &final_request_path, &request)?;
+        Ok(request)
+    })();
+
+    match scheduled {
+        Ok(request) => Ok(request),
+        Err(error) => match cleanup_fresh_preparation(&fresh_preparation) {
+            Ok(()) => Err(error),
+            Err(cleanup_error) => Err(format!("{error}；清理本次刷新产物失败: {cleanup_error}")),
+        },
+    }
 }
 
 /// 在数据库连接全部关闭后执行低层恢复事务。
@@ -272,6 +413,93 @@ fn validate_app_data_dir(path: &Path) -> Result<PathBuf, String> {
         }
     }
     Ok(path)
+}
+
+fn validate_restore_authorization(
+    authorization: &UserDataRestoreAuthorization,
+) -> Result<(), String> {
+    if authorization.confirmation_phrase != USER_DATA_RESTORE_CONFIRMATION_PHRASE
+        || !authorization.confirms_full_replacement
+        || !authorization.confirms_restart
+    {
+        return Err(format!(
+            "恢复调度未获完整确认：必须输入“{USER_DATA_RESTORE_CONFIRMATION_PHRASE}”，并确认整体替换与应用重启"
+        ));
+    }
+    Ok(())
+}
+
+fn startup_request_paths(app_data_dir: &Path) -> (PathBuf, PathBuf) {
+    (
+        app_data_dir.join(STARTUP_REQUEST_PARTIAL_FILE),
+        app_data_dir.join(STARTUP_REQUEST_FILE),
+    )
+}
+
+fn ensure_startup_request_slot_available(
+    partial_request_path: &Path,
+    final_request_path: &Path,
+) -> Result<(), String> {
+    for path in [partial_request_path, final_request_path] {
+        match fs::symlink_metadata(path) {
+            Ok(_) => {
+                return Err(format!(
+                    "已有启动恢复请求或未完成发布文件，拒绝重复调度: {}",
+                    path.display()
+                ))
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => {
+                return Err(format!(
+                    "检查启动恢复请求槽位失败 {}: {error}",
+                    path.display()
+                ))
+            }
+        }
+    }
+    Ok(())
+}
+
+fn ensure_preflight_passed(blocked_reasons: &[String], passed: bool) -> Result<(), String> {
+    if passed && blocked_reasons.is_empty() {
+        return Ok(());
+    }
+    let details = if blocked_reasons.is_empty() {
+        "预检未通过".to_string()
+    } else {
+        blocked_reasons.join("；")
+    };
+    Err(format!("恢复调度已阻断: {details}"))
+}
+
+fn publish_startup_request(
+    partial_request_path: &Path,
+    final_request_path: &Path,
+    request: &UserDataRestoreStartupRequest,
+) -> Result<(), String> {
+    write_json_create_new(partial_request_path, request)?;
+    if let Err(error) = fs::hard_link(partial_request_path, final_request_path) {
+        let _ = fs::remove_file(partial_request_path);
+        return Err(format!("原子发布一次性启动恢复请求失败: {error}"));
+    }
+    let _ = fs::remove_file(partial_request_path);
+    Ok(())
+}
+
+fn cleanup_fresh_preparation(preparation: &UserDataRestorePreparation) -> Result<(), String> {
+    let receipt = PathBuf::from(&preparation.receipt_path);
+    let rollback = PathBuf::from(&preparation.rollback_backup.path);
+    let receipt_parent = receipt
+        .parent()
+        .ok_or_else(|| "本次刷新凭据缺少父目录".to_string())?;
+    let rollback_parent = rollback
+        .parent()
+        .ok_or_else(|| "本次刷新回滚点缺少父目录".to_string())?;
+    if !paths_equal(receipt_parent, rollback_parent) {
+        return Err("本次刷新凭据与回滚点不在同一父目录，拒绝自动清理".into());
+    }
+    remove_path_if_exists(&receipt)?;
+    remove_path_if_exists(&rollback)
 }
 
 fn validate_external_backup_relationships(
@@ -822,6 +1050,15 @@ mod tests {
         rollback_backup: PathBuf,
     }
 
+    struct ScheduleFixture {
+        _root: TestDir,
+        app_data: PathBuf,
+        rollback_parent: PathBuf,
+        initial_preparation: UserDataRestorePreparation,
+        storage: Connection,
+        library: Connection,
+    }
+
     fn fixture() -> Fixture {
         let root = TestDir::new("transaction");
         let app_data = root.0.join("app-data");
@@ -897,6 +1134,56 @@ mod tests {
             source_backup: PathBuf::from(source.path),
             rollback_backup: PathBuf::from(rollback.path),
         }
+    }
+
+    fn schedule_fixture() -> ScheduleFixture {
+        let fixture = fixture();
+        let storage = Connection::open(fixture.app_data.join("reader.db")).unwrap();
+        let library = Connection::open(fixture.app_data.join("library/library.sqlite")).unwrap();
+        let rollback_parent = fixture.source_backup.parent().unwrap().to_path_buf();
+        let initial_preparation = prepare_user_data_restore(
+            &storage,
+            &library,
+            &fixture.app_data,
+            &fixture.source_backup,
+            &rollback_parent,
+            "0.7.3",
+        )
+        .unwrap();
+        ScheduleFixture {
+            _root: fixture._root,
+            app_data: fixture.app_data,
+            rollback_parent,
+            initial_preparation,
+            storage,
+            library,
+        }
+    }
+
+    fn authorization() -> UserDataRestoreAuthorization {
+        UserDataRestoreAuthorization {
+            confirmation_phrase: USER_DATA_RESTORE_CONFIRMATION_PHRASE.into(),
+            confirms_full_replacement: true,
+            confirms_restart: true,
+        }
+    }
+
+    fn rollback_parent_entry_count(fixture: &ScheduleFixture) -> usize {
+        fs::read_dir(&fixture.rollback_parent).unwrap().count()
+    }
+
+    fn backup_reading_book(backup_dir: &Path) -> String {
+        Connection::open(backup_dir.join("reader.db"))
+            .unwrap()
+            .query_row("SELECT book_id FROM reading_state", [], |row| row.get(0))
+            .unwrap()
+    }
+
+    fn backup_library_book(backup_dir: &Path) -> String {
+        Connection::open(backup_dir.join("library/library.sqlite"))
+            .unwrap()
+            .query_row("SELECT id FROM books", [], |row| row.get(0))
+            .unwrap()
     }
 
     fn reading_book(app_data: &Path) -> String {
@@ -1058,5 +1345,169 @@ mod tests {
         assert!(result.resumed_incomplete_transaction);
         assert_source(&fixture);
         assert!(!transaction_root(&fixture.app_data).unwrap().exists());
+    }
+
+    #[test]
+    fn schedules_with_fresh_rollback_without_changing_active_data() {
+        let fixture = schedule_fixture();
+        fixture
+            .storage
+            .execute("DELETE FROM reading_state", [])
+            .unwrap();
+        fixture
+            .storage
+            .execute(
+                "INSERT INTO reading_state VALUES (?1)",
+                params!["latest-book"],
+            )
+            .unwrap();
+        fixture.library.execute("DELETE FROM books", []).unwrap();
+        fixture
+            .library
+            .execute(
+                "INSERT INTO books VALUES (?1)",
+                params!["latest-library-book"],
+            )
+            .unwrap();
+        let initial_rollback = fixture.initial_preparation.rollback_backup.path.clone();
+
+        let request = schedule_user_data_restore_for_startup(
+            &fixture.storage,
+            &fixture.library,
+            &fixture.app_data,
+            Path::new(&fixture.initial_preparation.receipt_path),
+            "0.7.3",
+            &authorization(),
+        )
+        .unwrap();
+
+        assert_eq!(reading_book(&fixture.app_data), "latest-book");
+        assert_ne!(request.rollback_backup_path, initial_rollback);
+        assert_eq!(
+            backup_reading_book(Path::new(&request.rollback_backup_path)),
+            "latest-book"
+        );
+        assert_eq!(
+            backup_library_book(Path::new(&request.rollback_backup_path)),
+            "latest-library-book"
+        );
+        assert!(Path::new(&initial_rollback).is_dir());
+        assert!(Path::new(&fixture.initial_preparation.receipt_path).is_file());
+        assert!(request.requires_restart);
+        assert!(request.restore_authorized);
+        assert!(!request.restore_executed);
+        let request_path = PathBuf::from(&request.startup_request_path);
+        let stored: UserDataRestoreStartupRequest =
+            serde_json::from_slice(&fs::read(&request_path).unwrap()).unwrap();
+        assert_eq!(stored, request);
+        assert!(!fixture.app_data.join(STARTUP_REQUEST_PARTIAL_FILE).exists());
+    }
+
+    #[test]
+    fn rejects_incomplete_authorization_without_creating_artifacts() {
+        let fixture = schedule_fixture();
+        let before = rollback_parent_entry_count(&fixture);
+        for invalid in [
+            UserDataRestoreAuthorization {
+                confirmation_phrase: "恢复".into(),
+                ..authorization()
+            },
+            UserDataRestoreAuthorization {
+                confirms_full_replacement: false,
+                ..authorization()
+            },
+            UserDataRestoreAuthorization {
+                confirms_restart: false,
+                ..authorization()
+            },
+        ] {
+            let error = schedule_user_data_restore_for_startup(
+                &fixture.storage,
+                &fixture.library,
+                &fixture.app_data,
+                Path::new(&fixture.initial_preparation.receipt_path),
+                "0.7.3",
+                &invalid,
+            )
+            .unwrap_err();
+            assert!(error.contains("未获完整确认"));
+        }
+        assert_eq!(rollback_parent_entry_count(&fixture), before);
+        assert!(!fixture.app_data.join(STARTUP_REQUEST_FILE).exists());
+    }
+
+    #[test]
+    fn refuses_duplicate_request_before_refreshing_again() {
+        let fixture = schedule_fixture();
+        schedule_user_data_restore_for_startup(
+            &fixture.storage,
+            &fixture.library,
+            &fixture.app_data,
+            Path::new(&fixture.initial_preparation.receipt_path),
+            "0.7.3",
+            &authorization(),
+        )
+        .unwrap();
+        let after_first = rollback_parent_entry_count(&fixture);
+
+        let error = schedule_user_data_restore_for_startup(
+            &fixture.storage,
+            &fixture.library,
+            &fixture.app_data,
+            Path::new(&fixture.initial_preparation.receipt_path),
+            "0.7.3",
+            &authorization(),
+        )
+        .unwrap_err();
+
+        assert!(error.contains("拒绝重复调度"));
+        assert_eq!(rollback_parent_entry_count(&fixture), after_first);
+    }
+
+    #[test]
+    fn cleans_fresh_artifacts_when_scheduling_fails_before_publish() {
+        let fixture = schedule_fixture();
+        let before = rollback_parent_entry_count(&fixture);
+
+        let error = schedule_with_fault(
+            &fixture.storage,
+            &fixture.library,
+            &fixture.app_data,
+            Path::new(&fixture.initial_preparation.receipt_path),
+            "0.7.3",
+            &authorization(),
+            RestoreScheduleFaultPoint::AfterFreshPreparation,
+        )
+        .unwrap_err();
+
+        assert!(error.contains("刷新外部回滚点后中断"));
+        assert_eq!(rollback_parent_entry_count(&fixture), before);
+        assert!(!fixture.app_data.join(STARTUP_REQUEST_FILE).exists());
+    }
+
+    #[test]
+    fn rejects_source_drift_before_refreshing_rollback() {
+        let fixture = schedule_fixture();
+        let before = rollback_parent_entry_count(&fixture);
+        let source = PathBuf::from(&fixture.initial_preparation.plan.backup.path);
+        fs::write(
+            source.join("library/objects/source.epub"),
+            b"drifted-source",
+        )
+        .unwrap();
+
+        let error = schedule_user_data_restore_for_startup(
+            &fixture.storage,
+            &fixture.library,
+            &fixture.app_data,
+            Path::new(&fixture.initial_preparation.receipt_path),
+            "0.7.3",
+            &authorization(),
+        )
+        .unwrap_err();
+
+        assert!(error.contains("校验") || error.contains("摘要"));
+        assert_eq!(rollback_parent_entry_count(&fixture), before);
+        assert!(!fixture.app_data.join(STARTUP_REQUEST_FILE).exists());
     }
 }
