@@ -3880,3 +3880,35 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
 
 - Windows 三个原生目录选择器仍需发版前人工点击；当前自动化不操作系统选择窗口。
 - 当前没有执行恢复命令、二次确认、持锁刷新回滚点、启动期 staging/替换/复核/失败回滚或故障注入覆盖。
+
+## 2026-08-24：新增隔离启动期恢复事务内核与故障自救
+
+完成：
+
+- native `reading-core::restore_transaction` 新增尚未接平台壳的低层入口：完整校验来源和外部回滚点后，在 app data
+  同级固定事务目录 staging；不可变请求钉住路径、manifest SHA-256 与原始受管项，阶段标记只创建一次。
+- `reader.db`、WAL/SHM、`library/`、`plugins/` 先以同卷 rename 移入 `displaced/`，再激活来源的
+  `reader.db/library/plugins`；`sync.json`、缓存与未知顶层状态保持原位。成功前精确核对文件集合、大小、
+  SHA-256，并对两份 SQLite 执行 `PRAGMA quick_check`。
+- 中断恢复优先读取同卷事务：部分移出/激活会幂等恢复 displaced 原数据；来源已激活则使用 staging 保留的
+  manifest 独立复核并完成，即使外部来源和回滚目录离线也不会先把 app data 留在半替换状态。
+- 故障注入覆盖 staging 后、单项移出中、移出后、单项激活中、激活后、激活数据损坏和回滚前再次中断；
+  初始化残留可安全清理重建，已开始移动但请求非法则阻断，不猜测原始数据集合。
+- 同步本地书库设计、桥接边界、发布测试、项目记忆、决策和下一步队列。当前没有 Tauri command、
+  `ReaderBridge` 消息、启动消费标记或 UI 按钮，本轮测试只操作系统临时目录。
+
+验证：
+
+- `cargo test -p reading-core restore_transaction --locked`：6 passed。
+- `cargo test --workspace --locked`：Tauri 8 passed / 1 个公网测试 ignored，reading-core 168 passed；
+  `cargo test -p reading-core --features quickjs --locked`：168 passed。
+- `npm.cmd run check:project`、`npm.cmd run build`、`cargo check --workspace --locked`、
+  `cargo fmt --all -- --check`：通过。
+- 额外 `cargo clippy --workspace --all-targets --locked -- -D warnings` 仍被仓库既有 13 项 lint 债务阻断；
+  本增量发现的 `large_enum_variant` 已修复，该严格命令当前不是项目门。
+
+未验证 / 下一步：
+
+- 本轮未运行 GUI smoke：恢复原语尚未连接 Tauri/UI，现有 smoke 不会经过它；真实 app data 未被读取或修改。
+- 下一步实现授权/调度外壳：明确二次确认后，在持有活动数据库锁时重跑预检并刷新外部回滚点，原子写一次性
+  启动请求，再退出连接、重启消费；需先用隔离 app data 做真实退出/重启 smoke，才考虑开放执行按钮。
