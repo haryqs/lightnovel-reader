@@ -31,6 +31,8 @@ pub mod plugin_source;
 #[cfg(feature = "native")]
 pub mod plugin_store;
 #[cfg(feature = "native")]
+pub mod restore_transaction;
+#[cfg(feature = "native")]
 pub mod storage;
 pub mod sync;
 
