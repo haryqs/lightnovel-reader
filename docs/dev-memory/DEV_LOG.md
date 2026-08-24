@@ -3912,3 +3912,36 @@ Runtime 149.0.4022.62 精确匹配）。Claude 接手把两套冒烟真正跑通
 - 本轮未运行 GUI smoke：恢复原语尚未连接 Tauri/UI，现有 smoke 不会经过它；真实 app data 未被读取或修改。
 - 下一步实现授权/调度外壳：明确二次确认后，在持有活动数据库锁时重跑预检并刷新外部回滚点，原子写一次性
   启动请求，再退出连接、重启消费；需先用隔离 app data 做真实退出/重启 smoke，才考虑开放执行按钮。
+
+## 2026-08-24：新增 core-only 一次性启动恢复调度与新鲜回滚点
+
+完成：
+
+- `reading-core::restore_transaction` 新增 `UserDataRestoreAuthorization`、`UserDataRestoreStartupRequest` 与
+  `schedule_user_data_restore_for_startup`；当前没有 Tauri command、ReaderBridge 消息或 UI 调用。
+- 授权必须精确输入“恢复并替换当前数据”，并同时确认整体替换与应用重启；不完整确认在读取历史凭据和创建
+  新文件前拒绝。固定 final/partial 任一已存在时同样先阻断，避免重复刷新回滚点。
+- 调度先重新完整预检历史准备凭据，再使用调用方仍持锁的两份 SQLite 连接，在原外部回滚父目录导出全新的
+  当前数据回滚点和凭据；随后再次预检，并要求来源 manifest SHA-256 与确认前相同。
+- 一次性请求记录 app data、来源、新鲜回滚点、刷新凭据、自身路径和两份摘要，固定
+  `requiresRestart=true/restoreAuthorized=true/restoreExecuted=false`。完整 JSON 先写入并同步 `.partial`，再用
+  同 inode 硬链接发布 `.restore-startup-request-v1.json`，最终路径不会出现半写内容。
+- 发布前故障会精确删除本次新建的回滚目录与凭据，历史退路保持；成功只发布请求，不关闭连接、不替换数据。
+  项目记忆、决策、下一步、本地书库设计、桥接边界和发布测试文档同步更新。
+
+验证：
+
+- `cargo test -p reading-core restore_transaction --locked`：11 passed，新增确认拒绝、持锁刷新捕获最新进度、
+  来源漂移、重复调度与发布前故障清理覆盖。
+- `cargo test --workspace --locked`：Tauri 8 passed / 1 个公网测试 ignored，reading-core 173 passed；
+  `cargo test -p reading-core --features quickjs --locked`：173 passed。
+- `npm.cmd run check:project`、`npm.cmd run build`、`cargo check --workspace --locked`、
+  `cargo fmt --all -- --check`、`git diff --check`：通过。
+- `cargo clippy -p reading-core --lib --locked`：退出码 0，变更模块无 warning。
+
+未验证 / 下一步：
+
+- 当前没有启动请求校验/消费、完成或失败结果日志、退出/重启编排；本轮没有运行 GUI smoke，也没有读取或修改
+  真实 `%APPDATA%`。一次性请求只在系统临时测试目录生成。
+- 下一步先实现 SQLite 初始化前的请求检查和恰好一次消费，并在受控测试开关与隔离 app data 下做真实进程重启
+  smoke；该闭环通过前不得暴露正式恢复按钮。
